@@ -830,11 +830,11 @@ fn iht4x4_add(
   bit_depth: usize
 ) {
   // SIMD code may assert for transform types beyond TxType::IDTX.
-  if tx_type <= TxType::ADST_ADST
+  /*if tx_type <= TxType::ADST_ADST
     || (tx_type >= TxType::IDTX && tx_type <= TxType::H_ADST)
   {
     Block4x4::inv_txfm2d_add_rs(input, output, stride, tx_type, bit_depth);
-  } else if tx_type < TxType::IDTX {
+  } else */if tx_type < TxType::IDTX {
     unsafe {
       av1_inv_txfm2d_add_4x4(
         input.as_ptr(),
@@ -890,11 +890,11 @@ fn iht8x8_add(
   bit_depth: usize
 ) {
   // SIMD code may assert for transform types beyond TxType::IDTX.
-  if tx_type <= TxType::ADST_ADST
+  /*if tx_type <= TxType::ADST_ADST
     || (tx_type >= TxType::IDTX && tx_type <= TxType::H_ADST)
   {
     Block8x8::inv_txfm2d_add_rs(input, output, stride, tx_type, bit_depth);
-  } else if tx_type < TxType::IDTX {
+  } else*/ if tx_type < TxType::IDTX {
     unsafe {
       av1_inv_txfm2d_add_8x8(
         input.as_ptr(),
@@ -950,11 +950,11 @@ fn iht16x16_add(
   bit_depth: usize
 ) {
   unsafe {
-    if tx_type <= TxType::ADST_ADST
+    /*if tx_type <= TxType::ADST_ADST
       || (tx_type >= TxType::IDTX && tx_type <= TxType::H_ADST)
     {
       Block16x16::inv_txfm2d_add_rs(input, output, stride, tx_type, bit_depth);
-    } else if tx_type < TxType::IDTX {
+    } else*/ if tx_type < TxType::IDTX {
       // SSE C code asserts for transform types beyond TxType::IDTX.
       av1_inv_txfm2d_add_16x16(
         input.as_ptr(),
