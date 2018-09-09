@@ -514,6 +514,117 @@ const SUBPEL_FILTERS: [[[i32; 8]; 16]; 6] = [
   ]
 ];
 
+const SUBPEL_FILTERS_16: [[[i16; 8]; 16]; 6] = [
+  [
+    [0, 0, 0, 128, 0, 0, 0, 0],
+    [0, 2, -6, 126, 8, -2, 0, 0],
+    [0, 2, -10, 122, 18, -4, 0, 0],
+    [0, 2, -12, 116, 28, -8, 2, 0],
+    [0, 2, -14, 110, 38, -10, 2, 0],
+    [0, 2, -14, 102, 48, -12, 2, 0],
+    [0, 2, -16, 94, 58, -12, 2, 0],
+    [0, 2, -14, 84, 66, -12, 2, 0],
+    [0, 2, -14, 76, 76, -14, 2, 0],
+    [0, 2, -12, 66, 84, -14, 2, 0],
+    [0, 2, -12, 58, 94, -16, 2, 0],
+    [0, 2, -12, 48, 102, -14, 2, 0],
+    [0, 2, -10, 38, 110, -14, 2, 0],
+    [0, 2, -8, 28, 116, -12, 2, 0],
+    [0, 0, -4, 18, 122, -10, 2, 0],
+    [0, 0, -2, 8, 126, -6, 2, 0]
+  ],
+  [
+    [0, 0, 0, 128, 0, 0, 0, 0],
+    [0, 2, 28, 62, 34, 2, 0, 0],
+    [0, 0, 26, 62, 36, 4, 0, 0],
+    [0, 0, 22, 62, 40, 4, 0, 0],
+    [0, 0, 20, 60, 42, 6, 0, 0],
+    [0, 0, 18, 58, 44, 8, 0, 0],
+    [0, 0, 16, 56, 46, 10, 0, 0],
+    [0, -2, 16, 54, 48, 12, 0, 0],
+    [0, -2, 14, 52, 52, 14, -2, 0],
+    [0, 0, 12, 48, 54, 16, -2, 0],
+    [0, 0, 10, 46, 56, 16, 0, 0],
+    [0, 0, 8, 44, 58, 18, 0, 0],
+    [0, 0, 6, 42, 60, 20, 0, 0],
+    [0, 0, 4, 40, 62, 22, 0, 0],
+    [0, 0, 4, 36, 62, 26, 0, 0],
+    [0, 0, 2, 34, 62, 28, 2, 0]
+  ],
+  [
+    [0, 0, 0, 128, 0, 0, 0, 0],
+    [-2, 2, -6, 126, 8, -2, 2, 0],
+    [-2, 6, -12, 124, 16, -6, 4, -2],
+    [-2, 8, -18, 120, 26, -10, 6, -2],
+    [-4, 10, -22, 116, 38, -14, 6, -2],
+    [-4, 10, -22, 108, 48, -18, 8, -2],
+    [-4, 10, -24, 100, 60, -20, 8, -2],
+    [-4, 10, -24, 90, 70, -22, 10, -2],
+    [-4, 12, -24, 80, 80, -24, 12, -4],
+    [-2, 10, -22, 70, 90, -24, 10, -4],
+    [-2, 8, -20, 60, 100, -24, 10, -4],
+    [-2, 8, -18, 48, 108, -22, 10, -4],
+    [-2, 6, -14, 38, 116, -22, 10, -4],
+    [-2, 6, -10, 26, 120, -18, 8, -2],
+    [-2, 4, -6, 16, 124, -12, 6, -2],
+    [0, 2, -2, 8, 126, -6, 2, -2]
+  ],
+  [
+    [0, 0, 0, 128, 0, 0, 0, 0],
+    [0, 0, 0, 120, 8, 0, 0, 0],
+    [0, 0, 0, 112, 16, 0, 0, 0],
+    [0, 0, 0, 104, 24, 0, 0, 0],
+    [0, 0, 0, 96, 32, 0, 0, 0],
+    [0, 0, 0, 88, 40, 0, 0, 0],
+    [0, 0, 0, 80, 48, 0, 0, 0],
+    [0, 0, 0, 72, 56, 0, 0, 0],
+    [0, 0, 0, 64, 64, 0, 0, 0],
+    [0, 0, 0, 56, 72, 0, 0, 0],
+    [0, 0, 0, 48, 80, 0, 0, 0],
+    [0, 0, 0, 40, 88, 0, 0, 0],
+    [0, 0, 0, 32, 96, 0, 0, 0],
+    [0, 0, 0, 24, 104, 0, 0, 0],
+    [0, 0, 0, 16, 112, 0, 0, 0],
+    [0, 0, 0, 8, 120, 0, 0, 0]
+  ],
+  [
+    [0, 0, 0, 128, 0, 0, 0, 0],
+    [0, 0, -4, 126, 8, -2, 0, 0],
+    [0, 0, -8, 122, 18, -4, 0, 0],
+    [0, 0, -10, 116, 28, -6, 0, 0],
+    [0, 0, -12, 110, 38, -8, 0, 0],
+    [0, 0, -12, 102, 48, -10, 0, 0],
+    [0, 0, -14, 94, 58, -10, 0, 0],
+    [0, 0, -12, 84, 66, -10, 0, 0],
+    [0, 0, -12, 76, 76, -12, 0, 0],
+    [0, 0, -10, 66, 84, -12, 0, 0],
+    [0, 0, -10, 58, 94, -14, 0, 0],
+    [0, 0, -10, 48, 102, -12, 0, 0],
+    [0, 0, -8, 38, 110, -12, 0, 0],
+    [0, 0, -6, 28, 116, -10, 0, 0],
+    [0, 0, -4, 18, 122, -8, 0, 0],
+    [0, 0, -2, 8, 126, -4, 0, 0]
+  ],
+  [
+    [0, 0, 0, 128, 0, 0, 0, 0],
+    [0, 0, 30, 62, 34, 2, 0, 0],
+    [0, 0, 26, 62, 36, 4, 0, 0],
+    [0, 0, 22, 62, 40, 4, 0, 0],
+    [0, 0, 20, 60, 42, 6, 0, 0],
+    [0, 0, 18, 58, 44, 8, 0, 0],
+    [0, 0, 16, 56, 46, 10, 0, 0],
+    [0, 0, 14, 54, 48, 12, 0, 0],
+    [0, 0, 12, 52, 52, 12, 0, 0],
+    [0, 0, 12, 48, 54, 14, 0, 0],
+    [0, 0, 10, 46, 56, 16, 0, 0],
+    [0, 0, 8, 44, 58, 18, 0, 0],
+    [0, 0, 6, 42, 60, 20, 0, 0],
+    [0, 0, 4, 40, 62, 22, 0, 0],
+    [0, 0, 4, 36, 62, 26, 0, 0],
+    [0, 0, 2, 34, 62, 30, 0, 0]
+  ]
+];
+
 /* Symbols for coding which components are zero jointly */
 pub const MV_JOINTS: usize = 4;
 
@@ -676,7 +787,7 @@ impl PredictionMode {
     self >= PredictionMode::V_PRED && self <= PredictionMode::D63_PRED
   }
 
-  pub fn predict_inter<'a>(
+  fn predict_inter_fallback<'a>(
     self, fi: &FrameInvariants, p: usize, po: &PlaneOffset,
     dst: &'a mut PlaneMutSlice<'a>, width: usize, height: usize,
     ref_frame: usize, mv: &MotionVector, bit_depth: usize
@@ -795,6 +906,206 @@ impl PredictionMode {
                 }
               }
             }
+          }
+        }
+      }
+      None => ()
+    }
+  }
+
+  pub fn predict_inter<'a>(
+    self, fi: &FrameInvariants, p: usize, po: &PlaneOffset,
+    dst: &'a mut PlaneMutSlice<'a>, width: usize, height: usize,
+    ref_frame: usize, mv: &MotionVector, bit_depth: usize
+  ) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe { self.predict_inter_avx2(fi, p, po, dst, width, height, ref_frame, mv, bit_depth) };
+        } // 1,524,017
+    }
+    self.predict_inter_fallback(fi, p, po, dst, width, height, ref_frame, mv, bit_depth);
+  }
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+  unsafe fn predict_inter_avx2<'a>(
+    self, fi: &FrameInvariants, p: usize, po: &PlaneOffset,
+    dst: &'a mut PlaneMutSlice<'a>, width: usize, height: usize,
+    ref_frame: usize, mv: &MotionVector, bit_depth: usize
+  ) {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+    assert!(!self.is_intra());
+    assert!(ref_frame == LAST_FRAME);
+
+    let prepare_coeffs = |filter_idx: usize, fraction| {
+      let filter = _mm_loadu_si128(SUBPEL_FILTERS_16[filter_idx][fraction as usize].as_ptr() as *const _);
+      let coeffs = _mm256_broadcastsi128_si256(filter);
+      (// coeffs 0 1 0 1 0 1 0 1
+       _mm256_shuffle_epi32(coeffs, 0x00),
+       // coeffs 2 3 2 3 2 3 2 3
+       _mm256_shuffle_epi32(coeffs, 0x55),
+       // coeffs 4 5 4 5 4 5 4 5
+       _mm256_shuffle_epi32(coeffs, 0xaa),
+       // coeffs 6 7 6 7 6 7 6 7
+       _mm256_shuffle_epi32(coeffs, 0xff)
+      )
+    };
+
+    let convolve = |input: (__m256i, __m256i, __m256i, __m256i), coeffs: (__m256i, __m256i, __m256i, __m256i)| {
+      let madds = (
+        _mm256_madd_epi16(input.0, coeffs.0),
+        _mm256_madd_epi16(input.1, coeffs.1),
+        _mm256_madd_epi16(input.2, coeffs.2),
+        _mm256_madd_epi16(input.3, coeffs.3)
+      );
+      _mm256_add_epi32(_mm256_add_epi32(madds.0, madds.1),
+                       _mm256_add_epi32(madds.2, madds.3))
+    };
+
+    match fi.rec_buffer.frames[fi.ref_frames[ref_frame - LAST_FRAME]] {
+      Some(ref rec) => {
+        let rec_cfg = &rec.frame.planes[p].cfg;
+        let shift_row = 3 + rec_cfg.ydec;
+        let shift_col = 3 + rec_cfg.xdec;
+        let row_offset = mv.row as i32 >> shift_row;
+        let col_offset = mv.col as i32 >> shift_col;
+        let row_frac =
+          (mv.row as i32 - (row_offset << shift_row)) << (4 - shift_row);
+        let col_frac =
+          (mv.col as i32 - (col_offset << shift_col)) << (4 - shift_col);
+        let ref_stride = rec_cfg.stride;
+
+        let max_sample_val = ((1 << bit_depth) - 1) as i32;
+        let y_filter_idx = if height <= 4 { 4 } else { 0 };
+        let x_filter_idx = if width <= 4 { 4 } else { 0 };
+
+        if (width < 8) || (row_frac == 0 && col_frac == 0) {
+          self.predict_inter_fallback(fi, p, po, dst, width, height, ref_frame, mv, bit_depth);
+        }
+        else {
+          let stride = dst.plane.cfg.stride;
+          let slice = dst.as_mut_slice();
+
+          let mut intermediate = [0 as i16; 8 * (128 + 7 + 1)];
+
+          let qo = PlaneOffset {
+            x: po.x + col_offset as isize - 3,
+            y: po.y + row_offset as isize - 3
+          };
+          let ps = rec.frame.planes[p].slice(&qo);
+          let s = ps.as_slice_clamped();
+          let x_coeffs = prepare_coeffs(x_filter_idx, col_frac);
+          let y_coeffs = prepare_coeffs(y_filter_idx, row_frac);
+
+          let round_const_x = _mm256_set1_epi32(4);
+          let round_const_y = _mm256_set1_epi32(1024);
+          let round_x = |input| {
+            _mm256_srai_epi32(_mm256_add_epi32(input, round_const_x), 3)
+          };
+          let round_y = |input| {
+            _mm256_srai_epi32(_mm256_add_epi32(input, round_const_y), 11)
+          };
+          for cg in (0..width).step_by(8) {
+            for r in (0..height + 7).step_by(2) {
+              let row0 = _mm256_loadu_si256(s.as_ptr().offset((r * ref_stride + cg) as isize) as *const _);
+                let row1 = if r + 1 < height + 7 {
+                  _mm256_loadu_si256(s.as_ptr().offset(((r + 1) * ref_stride + cg) as isize) as *const _)
+                } else {
+                  _mm256_undefined_si256()
+                };
+
+              let r0 = _mm256_permute2x128_si256(row0, row1, 0x20);
+              let r1 = _mm256_permute2x128_si256(row0, row1, 0x31);
+
+              let convolve_input = (
+                _mm256_alignr_epi8(r1, r0, 0),
+                _mm256_alignr_epi8(r1, r0, 4),
+                _mm256_alignr_epi8(r1, r0, 8),
+                _mm256_alignr_epi8(r1, r0, 12)
+              );
+              let res_even = round_x(convolve(convolve_input, x_coeffs));
+
+              let convolve_input = (
+                _mm256_alignr_epi8(r1, r0, 2),
+                _mm256_alignr_epi8(r1, r0, 6),
+                _mm256_alignr_epi8(r1, r0, 10),
+                _mm256_alignr_epi8(r1, r0, 14)
+              );
+              let res_odd = round_x(convolve(convolve_input, x_coeffs));
+
+              let res = _mm256_unpacklo_epi16(_mm256_packs_epi32(res_even, res_even), _mm256_packs_epi32(res_odd, res_odd));
+              _mm256_storeu_si256(intermediate.as_mut_ptr().offset(8 * r as isize) as *mut _, res);
+            }
+            {
+              let rows = (
+                _mm256_loadu_si256(intermediate.as_ptr().offset(0 * 8) as *const _),
+                _mm256_loadu_si256(intermediate.as_ptr().offset(1 * 8) as *const _),
+                _mm256_loadu_si256(intermediate.as_ptr().offset(2 * 8) as *const _),
+                _mm256_loadu_si256(intermediate.as_ptr().offset(3 * 8) as *const _),
+                _mm256_loadu_si256(intermediate.as_ptr().offset(4 * 8) as *const _),
+                _mm256_loadu_si256(intermediate.as_ptr().offset(5 * 8) as *const _)
+              );
+              let mut prev_rows_lo = (
+                _mm256_unpacklo_epi16(rows.0, rows.1),
+                _mm256_unpacklo_epi16(rows.2, rows.3),
+                _mm256_unpacklo_epi16(rows.4, rows.5)
+              );
+              let mut prev_rows_hi = (
+                _mm256_unpackhi_epi16(rows.0, rows.1),
+                _mm256_unpackhi_epi16(rows.2, rows.3),
+                _mm256_unpackhi_epi16(rows.4, rows.5)
+              );
+              for r in (0..height).step_by(2) {
+                let data = intermediate.as_ptr().offset(r as isize * 8);
+                let new_rows = (
+                  _mm256_loadu_si256(data.offset(6 * 8) as *const _),
+                  _mm256_loadu_si256(data.offset(7 * 8) as *const _)
+                );
+                let new_rows_lo = _mm256_unpacklo_epi16(new_rows.0, new_rows.1);
+                let new_rows_hi = _mm256_unpackhi_epi16(new_rows.0, new_rows.1);
+
+                let convolve_input = (
+                  prev_rows_lo.0, prev_rows_lo.1, prev_rows_lo.2, new_rows_lo
+                );
+                let res_a = round_y(convolve(convolve_input, y_coeffs));
+
+                let convolve_input = (
+                  prev_rows_hi.0, prev_rows_hi.1, prev_rows_hi.2, new_rows_hi
+                );
+                let res_b = round_y(convolve(convolve_input, y_coeffs));
+
+                let res_16bit = _mm256_packs_epi32(res_a, res_b);
+                let clamped = _mm256_max_epi16(_mm256_min_epi16(res_16bit, _mm256_set1_epi16(max_sample_val as i16)), _mm256_setzero_si256());
+                _mm_storeu_si128(slice.as_mut_ptr().offset((r * stride + cg) as isize) as *mut _,
+                                 _mm256_castsi256_si128(clamped));
+                _mm_storeu_si128(slice.as_mut_ptr().offset(((r + 1) * stride + cg) as isize) as *mut _,
+                                 _mm256_extracti128_si256(clamped, 1));
+
+                prev_rows_lo = (
+                  prev_rows_lo.1, prev_rows_lo.2, new_rows_lo
+                );
+                prev_rows_hi = (
+                  prev_rows_hi.1, prev_rows_hi.2, new_rows_hi
+                );
+              }
+            }
+
+            /*for r in 0..height {
+              for c in cg..(cg + 8).min(width) {
+                let mut sum: i32 = 0;
+                for k in 0..8 {
+                  sum += intermediate[8 * (r + k) + c - cg] as i32
+                    * SUBPEL_FILTERS[y_filter_idx][row_frac as usize][k];
+                }
+                let output_index = r * stride + c;
+                let val = ((sum + 1024) >> 11).max(0).min(max_sample_val);
+                slice[output_index] = val as u16;
+              }
+            }*/
           }
         }
       }
