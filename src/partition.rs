@@ -983,8 +983,39 @@ impl PredictionMode {
         let y_filter_idx = if height <= 4 { 4 } else { 0 };
         let x_filter_idx = if width <= 4 { 4 } else { 0 };
 
-        if (width < 8) || (row_frac == 0 && col_frac == 0) {
+        if width < 8 {
           self.predict_inter_fallback(fi, p, po, dst, width, height, ref_frame, mv, bit_depth);
+        }
+        else if row_frac == 0 && col_frac == 0 {
+           /*let qo = PlaneOffset {
+              x: po.x + col_offset as isize,
+              y: po.y + row_offset as isize
+            };
+            let ps = rec.frame.planes[p].slice(&qo);
+            let s = ps.as_slice_clamped();
+            for r in 0..height {
+              for c in 0..width {
+                let output_index = r * stride + c;
+                slice[output_index] = s[r * ref_stride + c];
+              }
+            }*/
+          let stride = dst.plane.cfg.stride;
+          let slice = dst.as_mut_slice();
+
+          let qo = PlaneOffset {
+            x: po.x + col_offset as isize,
+            y: po.y + row_offset as isize
+          };
+          let ps = rec.frame.planes[p].slice(&qo);
+          let s = ps.as_slice_clamped();
+
+          for r in (0..height).step_by(1) {
+            for cg in (0..width).step_by(8) {
+              let row = _mm_loadu_si128(s.as_ptr().offset((r * ref_stride + cg) as isize) as *const _);
+              _mm_storeu_si128(slice.as_mut_ptr().offset((r * stride + cg) as isize) as *mut _,
+                                 row);
+            }
+          }
         }
         else {
           let stride = dst.plane.cfg.stride;
@@ -1093,19 +1124,6 @@ impl PredictionMode {
                 );
               }
             }
-
-            /*for r in 0..height {
-              for c in cg..(cg + 8).min(width) {
-                let mut sum: i32 = 0;
-                for k in 0..8 {
-                  sum += intermediate[8 * (r + k) + c - cg] as i32
-                    * SUBPEL_FILTERS[y_filter_idx][row_frac as usize][k];
-                }
-                let output_index = r * stride + c;
-                let val = ((sum + 1024) >> 11).max(0).min(max_sample_val);
-                slice[output_index] = val as u16;
-              }
-            }*/
           }
         }
       }
