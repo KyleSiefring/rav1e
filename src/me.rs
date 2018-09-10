@@ -175,7 +175,7 @@ pub fn motion_estimation(fi: &FrameInvariants, fs: &mut FrameState, bsize: Block
       let mode = PredictionMode::NEWMV;
       let mut tmp_plane = Plane::new(blk_w, blk_h, 0, 0, 0, 0);
 
-      let mut steps = vec![32, 16, 8];
+      let mut steps = vec![64, 32, 16, 8];
       if fi.allow_high_precision_mv {
         steps.push(1);
       }
@@ -199,7 +199,7 @@ pub fn motion_estimation(fi: &FrameInvariants, fs: &mut FrameState, bsize: Block
                 lowest_sad = sad;
                 best_mv = cand_mv;
               }
-            }//412,502
+            }
             else
             {
             {
