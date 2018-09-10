@@ -720,6 +720,12 @@ extern {
     input: *const i16, output: *mut i32, stride: libc::c_int,
     tx_type: libc::c_int, bd: libc::c_int
   );
+  #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+  #[target_feature(enable = "sse2")]
+  fn av1_lowbd_fwd_txfm2d_32x32_sse2(
+    input: *const i16, output: *mut i32, stride: libc::c_int,
+    tx_type: libc::c_int, bd: libc::c_int
+  );
 }
 
 extern {
@@ -979,6 +985,18 @@ fn fht32x32(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
+  #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+  {
+    if is_x86_feature_detected!("sse2") && bit_depth == 8 {
+      return unsafe {av1_lowbd_fwd_txfm2d_32x32_sse2(
+        input.as_ptr(),
+        output.as_mut_ptr(),
+        stride as libc::c_int,
+        tx_type as libc::c_int,
+        bit_depth as libc::c_int
+      )};
+    }
+  }
   // SIMD code may assert for transform types that aren't TxType::DCT_DCT.
   if tx_type == TxType::DCT_DCT {
     unsafe {

@@ -146,7 +146,7 @@ pub fn motion_estimation(fi: &FrameInvariants, fs: &mut FrameState, bsize: Block
   match fi.rec_buffer.frames[fi.ref_frames[ref_frame - LAST_FRAME]] {
     Some(ref rec) => {
       let po = PlaneOffset { x: (bo.x as isize) << BLOCK_TO_PLANE_SHIFT, y: (bo.y as isize) << BLOCK_TO_PLANE_SHIFT };
-      let range = 32 as isize;
+      let range = 16 as isize;
       let blk_w = bsize.width();
       let blk_h = bsize.height();
       let x_lo = po.x - range;
@@ -157,8 +157,8 @@ pub fn motion_estimation(fi: &FrameInvariants, fs: &mut FrameState, bsize: Block
       let mut lowest_sad = 128*128*4096 as u32;
       let mut best_mv = MotionVector { row: 0, col: 0 };
 
-      for y in (y_lo..y_hi).step_by(8) {
-        for x in (x_lo..x_hi).step_by(8) {
+      for y in (y_lo..y_hi).step_by(16) {
+        for x in (x_lo..x_hi).step_by(16) {
           let mut plane_org = fs.input.planes[0].slice(&po);
           let mut plane_ref = rec.frame.planes[0].slice(&PlaneOffset { x: x, y: y });
 
@@ -175,7 +175,7 @@ pub fn motion_estimation(fi: &FrameInvariants, fs: &mut FrameState, bsize: Block
       let mode = PredictionMode::NEWMV;
       let mut tmp_plane = Plane::new(blk_w, blk_h, 0, 0, 0, 0);
 
-      let mut steps = vec![32, 16, 8, 4, 2];
+      let mut steps = vec![64, 32, 16, 8];
       if fi.allow_high_precision_mv {
         steps.push(1);
       }
@@ -189,7 +189,19 @@ pub fn motion_estimation(fi: &FrameInvariants, fs: &mut FrameState, bsize: Block
 
             let cand_mv = MotionVector { row: center_mv_h.row + step*(i as i16 - 1),
             col: center_mv_h.col + step*(j as i16 - 1) };
+            if cand_mv.row & 7 == 0 && cand_mv.col & 7 == 0 {
+              let mut plane_org = fs.input.planes[0].slice(&po);
+              let mut plane_ref = rec.frame.planes[0].slice(&PlaneOffset { x: cand_mv.row as isize >> 3, y: cand_mv.col as isize >> 3 });
 
+              let sad = get_sad(&mut plane_org, &mut plane_ref, blk_h, blk_w);
+
+              if sad < lowest_sad {
+                lowest_sad = sad;
+                best_mv = cand_mv;
+              }
+            }
+            else
+            {
             {
               let tmp_slice = &mut tmp_plane.mut_slice(&PlaneOffset { x:0, y:0 });
 
@@ -204,6 +216,7 @@ pub fn motion_estimation(fi: &FrameInvariants, fs: &mut FrameState, bsize: Block
             if sad < lowest_sad {
               lowest_sad = sad;
               best_mv = cand_mv;
+            }
             }
           }
         }
