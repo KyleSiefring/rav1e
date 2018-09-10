@@ -303,9 +303,9 @@ pub fn rdo_mode_decision(
       mode_set_chroma.push(PredictionMode::DC_PRED);
     }
 
-    if is_chroma_block && luma_mode.is_intra() && bsize.cfl_allowed() {
+    /*if is_chroma_block && luma_mode.is_intra() && bsize.cfl_allowed() {
       mode_set_chroma.push(PredictionMode::UV_CFL_PRED);
-    }
+    }*/
 
     let ref_frame =
       if luma_mode.is_intra() { INTRA_FRAME } else { LAST_FRAME };
@@ -359,7 +359,7 @@ pub fn rdo_mode_decision(
 
       for &skip in &[false, true] {
         // Don't skip when using intra modes
-        if skip && luma_mode.is_intra() {
+        if skip /*&& luma_mode.is_intra()*/ {
           continue;
         }
 
