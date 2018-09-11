@@ -268,7 +268,7 @@ pub fn rdo_mode_decision(
   let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
   let is_chroma_block = has_chroma(bo, bsize, xdec, ydec);
 
-  let cw_checkpoint = cw.checkpoint();
+  //let cw_checkpoint = cw.checkpoint();
 
   // Exclude complex prediction modes at higher speed levels
   let intra_mode_set = if (fi.frame_type == FrameType::KEY
@@ -365,7 +365,7 @@ pub fn rdo_mode_decision(
           continue;
         }
 
-        let mut wr: &mut dyn Writer = &mut WriterCounter::new();
+        /*let mut wr: &mut dyn Writer = &mut WriterCounter::new();
         let tell = wr.tell_frac();
 
         encode_block_a(seq, cw, wr, bsize, bo, skip);
@@ -401,19 +401,19 @@ pub fn rdo_mode_decision(
           cost,
           seq.bit_depth,
           false
-        );
+        );*/
 
-        if rd < best_rd {
-          best_rd = rd;
+        //if rd < best_rd {
+          //best_rd = rd;
           best_mode_luma = luma_mode;
           best_mode_chroma = chroma_mode;
           best_cfl_params = cfl;
           best_ref_frame = ref_frame;
           best_mv = mv;
           best_skip = skip;
-        }
+        //}
 
-        cw.rollback(&cw_checkpoint);
+        //cw.rollback(&cw_checkpoint);
       }
     }
   }
