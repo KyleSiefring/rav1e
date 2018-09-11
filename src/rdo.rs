@@ -285,7 +285,9 @@ pub fn rdo_mode_decision(
   if fi.frame_type == FrameType::INTER {
     mode_set.extend_from_slice(RAV1E_INTER_MODES);
   }
-  mode_set.extend_from_slice(intra_mode_set);
+  else {
+    mode_set.extend_from_slice(intra_mode_set);
+  }
 
   let mut mv_stack = Vec::new();
   let mode_context =
