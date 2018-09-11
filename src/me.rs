@@ -9,6 +9,7 @@
 
 use context::BlockOffset;
 use context::BLOCK_TO_PLANE_SHIFT;
+use context::MI_SIZE;
 use partition::*;
 use plane::*;
 use FrameInvariants;
