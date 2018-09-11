@@ -148,6 +148,8 @@ pub fn motion_estimation(fi: &FrameInvariants, fs: &mut FrameState, bsize: Block
     Some(ref rec) => {
       let po = PlaneOffset { x: (bo.x as isize) << BLOCK_TO_PLANE_SHIFT, y: (bo.y as isize) << BLOCK_TO_PLANE_SHIFT };
       let range = 16 as isize;
+      let blk_w = bsize.width();
+      let blk_h = bsize.height();
       let border_w = 128 + blk_w as isize * 8;
       let border_h = 128 + blk_h as isize * 8;
       let cols = (rec.frame.planes[0].cfg.width + MI_SIZE - 1) / MI_SIZE;
