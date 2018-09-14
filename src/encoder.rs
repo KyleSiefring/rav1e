@@ -1729,8 +1729,8 @@ fn encode_partition_bottomup(seq: &Sequence, fi: &FrameInvariants, fs: &mut Fram
             &BlockOffset{ x: bo.x, y: bo.y + hbs as usize },
             &BlockOffset{ x: bo.x + hbs as usize, y: bo.y + hbs as usize }
         ];
-        rd_cost += partitions.iter().map(|&offset| {
-                encode_partition_bottomup(
+        partitions.iter().for_each(|&offset| {
+                rd_cost += encode_partition_bottomup(
                     seq,
                     fi,
                     fs,
@@ -1740,7 +1740,7 @@ fn encode_partition_bottomup(seq: &Sequence, fi: &FrameInvariants, fs: &mut Fram
                     subsize,
                     offset
                 )
-            }).sum::<f64>();
+            });
 
         // Recode the full block if it is more efficient
         if !must_split && nosplit_rd_cost < rd_cost {
