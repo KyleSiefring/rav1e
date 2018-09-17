@@ -207,6 +207,91 @@ fn compute_rd_cost(
   (distortion as f64) + lambda * rate
 }
 
+// Sum of Squared Error for a wxh block
+fn sse_wxh_half(
+  src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, w: usize, h: usize
+) -> u64 {
+  assert!(w & (MI_SIZE - 1) == 0);
+  assert!(h & (MI_SIZE - 1) == 0);
+
+  let mut sse: u64 = 0;
+  for j in (0..h).step_by(2) {
+    let src1ja = src1.subslice(0, j);
+    let src1jb = src1.subslice(0, j + 1);
+    let s1a = src1ja.as_slice();
+    let s1b = src1jb.as_slice();
+    let src2j = src2.subslice(0, j / 2);
+    let s2 = src2j.as_slice();
+
+    for i in (0..w).step_by(2) {
+      let c = s2[i / 2] as i16 - ((s1a[i] + s1a[i + 1] + s1b[i] + s1b[i + 1] + 2) / 4) as i16;
+      sse += (c * c) as u64;
+    }
+
+    /*let row_sse = s1
+      .iter()
+      .zip(s2)
+      .map(|(&a, &b)| {
+        let c = (a as i16 - b as i16) as i32;
+        (c * c) as u32
+      }).sum::<u32>();
+    sse += row_sse as u64;*/
+  }
+  sse
+}
+
+fn compute_rd_cost_half(
+  fi: &FrameInvariants, fs: &FrameState, w_y: usize, h_y: usize,
+  is_chroma_block: bool, bo: &BlockOffset, bit_cost: u32, bit_depth: usize,
+  luma_only: bool
+) -> f64 {
+  let lambda = get_lambda(fi, bit_depth);
+
+  // Compute distortion
+  let po = bo.plane_offset(&fs.input.planes[0].cfg);
+  let mut distortion = if fi.config.tune == Tune::Psnr {
+    sse_wxh_half(
+      &fs.input.planes[0].slice(&po),
+      &fs.rec.planes[0].slice(&po),
+      w_y,
+      h_y
+    )
+  } else {
+    unimplemented!();
+  };
+
+  if !luma_only {
+  let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
+
+  let mask = !(MI_SIZE - 1);
+  let mut w_uv = (w_y >> xdec) & mask;
+  let mut h_uv = (h_y >> ydec) & mask;
+
+  if (w_uv == 0 || h_uv == 0) && is_chroma_block {
+    w_uv = MI_SIZE;
+    h_uv = MI_SIZE;
+  }
+
+  // Add chroma distortion only when it is available
+  if w_uv > 0 && h_uv > 0 {
+    for p in 1..3 {
+      let po = bo.plane_offset(&fs.input.planes[p].cfg);
+
+      distortion += sse_wxh(
+        &fs.input.planes[p].slice(&po),
+        &fs.rec.planes[p].slice(&po),
+        w_uv,
+        h_uv
+      );
+    }
+  };
+  }
+  // Compute rate
+  let rate = (bit_cost as f64) / ((1 << OD_BITRES) as f64);
+
+  (distortion as f64) + lambda * rate
+}
+
 pub fn rdo_tx_size_type(
   seq: &Sequence, fi: &FrameInvariants, fs: &mut FrameState,
   cw: &mut ContextWriter, bsize: BlockSize, bo: &BlockOffset,

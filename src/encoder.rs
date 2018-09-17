@@ -1214,6 +1214,107 @@ fn diff(dst: &mut [i16], src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, width: us
   }
 }
 
+fn diff_half(dst: &mut [i16], src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, width: usize, height: usize) {
+  let src1_stride = src1.plane.cfg.stride;
+  let src2_stride = src2.plane.cfg.stride;
+  let src1_slice = src1.as_slice();
+  let src2_slice = src2.as_slice();
+
+  let dst_width = width / 2;
+
+  for i in (0..height).step_by(2) {
+		for j in (0..width).step_by(2) {
+      let sub = |i, j| {
+        src1_slice[i * src1_stride + j] as i16 - src2_slice[i * src2_stride + j] as i16
+      };
+      dst[(dst_width * i + j) / 2] = (sub(i, j) + sub(i, j + 1) + sub(i + 1, j) + sub(i + 1, j + 1) + 2) / 4;
+		}
+  }
+
+  /*for ((l, s1), s2) in dst.chunks_mut(width).take(height)
+                        .zip(src1.as_slice().chunks(src1_stride))
+                        .zip(src2.as_slice().chunks(src2_stride)) {
+    for ((r, v1), v2) in l.iter_mut().zip(s1).zip(s2) {
+      *r = *v1 as i16 - *v2 as i16;
+    }
+  }*/
+}
+
+// For a transform block,
+// predict, transform, quantize, write coefficients to a bitstream,
+// dequantize, inverse-transform.
+pub fn encode_tx_block_half(
+  fi: &FrameInvariants, fs: &mut FrameState, cw: &mut ContextWriter,
+  w: &mut dyn Writer, p: usize, bo: &BlockOffset, bo_h: &BlockOffset, mode: PredictionMode,
+  tx_size: TxSize, tx_type: TxType, plane_bsize: BlockSize, po: &PlaneOffset, po_h: &PlaneOffset,
+  skip: bool, bit_depth: usize, ac: &[i16], alpha: i16
+) -> bool {
+  let (small_tx_size, use_full_tx) = {
+    use self::TxSize::*;
+    match tx_size {
+      TX_4X4 => (TX_4X4, true),
+      TX_8X8 => (TX_4X4, false),
+      TX_16X16 => (TX_8X8, false),
+      TX_32X32 => (TX_16X16, false),
+      TX_64X64 => (TX_32X32, false),
+      _ => (tx_size, true),
+    }
+/*  TX_8X8,
+  TX_16X16,
+  TX_32X32,
+  TX_64X64,
+  TX_4X8,
+  TX_8X4,
+  TX_8X16,
+  TX_16X8,
+  TX_16X32,
+  TX_32X16,
+  TX_32X64,
+  TX_64X32,
+  TX_4X16,
+  TX_16X4,
+  TX_8X32,
+  TX_32X8,
+  TX_16X64,
+  TX_64X16*/
+    };
+    if use_full_tx {
+      return encode_tx_block(fi, fs, cw, w, p, bo, mode, tx_size, tx_type,
+                             plane_bsize, po, skip, bit_depth, ac, alpha);
+    }
+    let rec = &mut fs.rec.planes[p];
+    let PlaneConfig { stride, xdec, ydec, .. } = fs.input.planes[p].cfg;
+
+    if mode.is_intra() {
+      mode.predict_intra(&mut rec.mut_slice(po), tx_size, bit_depth, &ac, alpha);
+    }
+
+    if skip { return false; }
+
+    let mut residual: AlignedArray<[i16; 64 * 64]> = UninitializedAlignedArray();
+    let mut coeffs_storage: AlignedArray<[i32; 64 * 64]> = UninitializedAlignedArray();
+    let mut rcoeffs: AlignedArray<[i32; 64 * 64]> = UninitializedAlignedArray();
+    let coeffs = &mut coeffs_storage.array[..small_tx_size.area()];
+
+    diff_half(&mut residual.array,
+         &fs.input.planes[p].slice(po),
+         &rec.slice(po),
+         tx_size.width(), // Keep these the same
+         tx_size.height());
+
+    forward_transform(&residual.array, coeffs, small_tx_size.width(), small_tx_size, tx_type, bit_depth);
+    fs.qc.quantize(coeffs);
+
+    let has_coeff = cw.write_coeffs_lv_map(w, p, bo_h, &coeffs, mode, small_tx_size, tx_type, plane_bsize, xdec, ydec,
+                            fi.use_reduced_tx_set);
+
+    // Reconstruct
+    dequantize(fi.base_q_idx, &coeffs, &mut rcoeffs.array, small_tx_size, bit_depth);
+
+    inverse_transform_add(&rcoeffs.array, &mut rec.mut_slice(po_h).as_mut_slice(), stride, small_tx_size, tx_type, bit_depth);
+    has_coeff
+}
+
 // For a transform block,
 // predict, transform, quantize, write coefficients to a bitstream,
 // dequantize, inverse-transform.
@@ -1506,6 +1607,95 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
             let po = tx_bo.plane_offset(&fs.input.planes[0].cfg);
             encode_tx_block(
               fi, fs, cw, w, 0, &tx_bo, luma_mode, tx_size, tx_type, bsize, &po,
+              skip, bit_depth, ac, 0,
+            );
+        }
+    }
+
+    if luma_only { return };
+
+    // TODO: these are only valid for 4:2:0
+    let uv_tx_size = match bsize {
+        BlockSize::BLOCK_4X4 | BlockSize::BLOCK_8X8 => TxSize::TX_4X4,
+        BlockSize::BLOCK_16X16 => TxSize::TX_8X8,
+        BlockSize::BLOCK_32X32 => TxSize::TX_16X16,
+        _ => TxSize::TX_32X32
+    };
+
+    let mut bw_uv = (bw * tx_size.width_mi()) >> xdec;
+    let mut bh_uv = (bh * tx_size.height_mi()) >> ydec;
+
+    if (bw_uv == 0 || bh_uv == 0) && has_chroma(bo, bsize, xdec, ydec) {
+        bw_uv = 1;
+        bh_uv = 1;
+    }
+
+    bw_uv /= uv_tx_size.width_mi();
+    bh_uv /= uv_tx_size.height_mi();
+
+    let plane_bsize = get_plane_block_size(bsize, xdec, ydec);
+
+    if chroma_mode.is_cfl() {
+      luma_ac(ac, fs, bo, bsize);
+    }
+
+    if bw_uv > 0 && bh_uv > 0 {
+        let uv_tx_type = uv_intra_mode_to_tx_type_context(chroma_mode);
+        fs.qc.update(fi.base_q_idx, uv_tx_size, true, bit_depth);
+
+        for p in 1..3 {
+            let alpha = cfl.alpha(p - 1);
+            for by in 0..bh_uv {
+                for bx in 0..bw_uv {
+                    let tx_bo =
+                        BlockOffset {
+                            x: bo.x + ((bx * uv_tx_size.width_mi()) << xdec) -
+                                ((bw * tx_size.width_mi() == 1) as usize),
+                            y: bo.y + ((by * uv_tx_size.height_mi()) << ydec) -
+                                ((bh * tx_size.height_mi() == 1) as usize)
+                        };
+
+                    let mut po = bo.plane_offset(&fs.input.planes[p].cfg);
+                    po.x += (bx * uv_tx_size.width()) as isize;
+                    po.y += (by * uv_tx_size.height()) as isize;
+
+                    encode_tx_block(fi, fs, cw, w, p, &tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
+                                    plane_bsize, &po, skip, bit_depth, ac, alpha);
+                }
+            }
+        }
+    }
+}
+
+pub fn write_tx_blocks_half(fi: &FrameInvariants, fs: &mut FrameState,
+                       cw: &mut ContextWriter, w: &mut dyn Writer,
+                       luma_mode: PredictionMode, chroma_mode: PredictionMode, bo: &BlockOffset,
+                       bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool, bit_depth: usize,
+                       cfl: CFLParams, luma_only: bool) {
+    let bw = bsize.width_mi() / tx_size.width_mi();
+    let bh = bsize.height_mi() / tx_size.height_mi();
+
+    let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
+    let ac = &mut [0i16; 32 * 32];
+
+    fs.qc.update(fi.base_q_idx, tx_size, luma_mode.is_intra(), bit_depth);
+
+    for by in 0..bh {
+        for bx in 0..bw {
+            let tx_bo = BlockOffset {
+                x: bo.x + bx * tx_size.width_mi(),
+                y: bo.y + by * tx_size.height_mi()
+            };
+
+            let tx_bo_h = BlockOffset {
+                x: bo.x + bx * tx_size.width_mi()/2,
+                y: bo.y + by * tx_size.height_mi()/2
+            };
+
+            let po = tx_bo.plane_offset(&fs.input.planes[0].cfg);
+            let po_h = tx_bo_h.plane_offset(&fs.input.planes[0].cfg);
+            encode_tx_block_half(
+              fi, fs, cw, w, 0, &tx_bo, &tx_bo/2, luma_mode, tx_size, tx_type, bsize, &po, &po_h,
               skip, bit_depth, ac, 0,
             );
         }
