@@ -49,7 +49,7 @@ pub fn motion_estimation(
         x: (bo.x as isize) << BLOCK_TO_PLANE_SHIFT,
         y: (bo.y as isize) << BLOCK_TO_PLANE_SHIFT
       };
-      let no_pmv = pmv.col == 0 && pmv.row == 0;
+      let no_pmv = pmv.col / 8 == 0 && pmv.row / 8 == 0;
       let range = 32 as isize;
       let blk_w = bsize.width();
       let blk_h = bsize.height();
