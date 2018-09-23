@@ -58,10 +58,16 @@ pub fn motion_estimation(
       let mvx_max = (fi.w_in_b - bo.x - blk_w / MI_SIZE) as isize * (8 * MI_SIZE) as isize + border_w;
       let mvy_min = -(bo.y as isize) * (8 * MI_SIZE) as isize - border_h;
       let mvy_max = (fi.h_in_b - bo.y - blk_h / MI_SIZE) as isize * (8 * MI_SIZE) as isize + border_h;
-      let x_lo = po.x + ((-range + ((pmv.col + 4) / 8) as isize).max(mvx_min / 8));
-      let x_hi = po.x + ((range + ((pmv.col + 4) / 8) as isize).min(mvx_max / 8));
-      let y_lo = po.y + ((-range + ((pmv.row + 4) / 8) as isize).max(mvy_min / 8));
-      let y_hi = po.y + ((range + ((pmv.row + 4) / 8) as isize).min(mvy_max / 8));
+      let (x_lo, x_hi) = {
+        let center = (pmv.col + 4 - if pmv.col < 0 { 1 } else { 0 }) / 8;
+        (po.x + (-range + center as isize).max(mvx_min / 8),
+        po.x + (range + center as isize).min(mvx_max / 8))
+      };
+      let (y_lo, y_hi) = {
+        let center = (pmv.row + 4 - if pmv.row < 0 { 1 } else { 0 }) / 8;
+        (po.y + (-range + center as isize).max(mvy_min / 8),
+        po.y + (range + center as isize).min(mvy_max / 8))
+      };
 
       let mut lowest_sad = 128 * 128 * 4096 as u32;
       let mut best_mv = MotionVector { row: 0, col: 0 };
