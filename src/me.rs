@@ -59,12 +59,12 @@ pub fn motion_estimation(
       let mvy_min = -(bo.y as isize) * (8 * MI_SIZE) as isize - border_h;
       let mvy_max = (fi.h_in_b - bo.y - blk_h / MI_SIZE) as isize * (8 * MI_SIZE) as isize + border_h;
       let (x_lo, x_hi) = {
-        let center = (pmv.col + 4 - if pmv.col < 0 { 1 } else { 0 }) / 8;
+        let center = (pmv.col + if pmv.col < 0 { -4 } else { 4 }) / 8;
         (po.x + (-range + center as isize).max(mvx_min / 8),
         po.x + (range + center as isize).min(mvx_max / 8))
       };
       let (y_lo, y_hi) = {
-        let center = (pmv.row + 4 - if pmv.row < 0 { 1 } else { 0 }) / 8;
+        let center = (pmv.row + if pmv.row < 0 { -4 } else { 4 }) / 8;
         (po.y + (-range + center as isize).max(mvy_min / 8),
         po.y + (range + center as isize).min(mvy_max / 8))
       };
