@@ -26,41 +26,41 @@ use std::io::*;
 use std::rc::Rc;
 
 extern {
-    pub fn av1_rtcd();
-    pub fn aom_dsp_rtcd();
+  pub fn av1_rtcd();
+  pub fn aom_dsp_rtcd();
 }
 
 #[derive(Debug, Clone)]
 pub struct Frame {
-    pub planes: [Plane; 3]
+  pub planes: [Plane; 3]
 }
 
 impl Frame {
-    pub fn new(width: usize, height:usize) -> Frame {
-        Frame {
-            planes: [
-                Plane::new(width, height, 0, 0, 128+8, 128+8),
-                Plane::new(width/2, height/2, 1, 1, 64+8, 64+8),
-                Plane::new(width/2, height/2, 1, 1, 64+8, 64+8)
-            ]
-        }
+  pub fn new(width: usize, height: usize) -> Frame {
+    Frame {
+      planes: [
+        Plane::new(width, height, 0, 0, 128 + 8, 128 + 8),
+        Plane::new(width / 2, height / 2, 1, 1, 64 + 8, 64 + 8),
+        Plane::new(width / 2, height / 2, 1, 1, 64 + 8, 64 + 8)
+      ]
     }
+  }
 
-    pub fn pad(&mut self) {
-        for p in self.planes.iter_mut() {
-            p.pad();
-        }
+  pub fn pad(&mut self) {
+    for p in self.planes.iter_mut() {
+      p.pad();
     }
+  }
 
-    pub fn window(&self, sbo: &SuperBlockOffset) -> Frame {
-        Frame {
-            planes: [
-                self.planes[0].window(&sbo.plane_offset(&self.planes[0].cfg)),
-                self.planes[1].window(&sbo.plane_offset(&self.planes[1].cfg)),
-                self.planes[2].window(&sbo.plane_offset(&self.planes[2].cfg))
-            ]
-        }
+  pub fn window(&self, sbo: &SuperBlockOffset) -> Frame {
+    Frame {
+      planes: [
+        self.planes[0].window(&sbo.plane_offset(&self.planes[0].cfg)),
+        self.planes[1].window(&sbo.plane_offset(&self.planes[1].cfg)),
+        self.planes[2].window(&sbo.plane_offset(&self.planes[2].cfg))
+      ]
     }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -72,17 +72,17 @@ pub struct ReferenceFrame {
 
 #[derive(Debug)]
 pub struct ReferenceFramesSet {
-    pub frames: [Option<Rc<ReferenceFrame>>; (REF_FRAMES as usize)],
-    pub deblock: [DeblockState; (REF_FRAMES as usize)]
+  pub frames: [Option<Rc<ReferenceFrame>>; (REF_FRAMES as usize)],
+  pub deblock: [DeblockState; (REF_FRAMES as usize)]
 }
 
 impl ReferenceFramesSet {
-    pub fn new() -> ReferenceFramesSet {
-        ReferenceFramesSet {
-            frames: Default::default(),
-            deblock: Default::default()
-        }
+  pub fn new() -> ReferenceFramesSet {
+    ReferenceFramesSet {
+      frames: Default::default(),
+      deblock: Default::default()
     }
+  }
 }
 
 const MAX_NUM_TEMPORAL_LAYERS: usize = 8;
@@ -101,355 +101,383 @@ arg_enum!{
 }
 
 impl Default for Tune {
-    fn default() -> Self {
-        Tune::Psnr
-    }
+  fn default() -> Self {
+    Tune::Psnr
+  }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ChromaSampling {
-    Cs420,
-    Cs422,
-    Cs444
+  Cs420,
+  Cs422,
+  Cs444
 }
 
 impl Default for ChromaSampling {
-    fn default() -> Self {
-        ChromaSampling::Cs420
-    }
+  fn default() -> Self {
+    ChromaSampling::Cs420
+  }
 }
 
 #[derive(Copy, Clone)]
 pub struct Sequence {
   // OBU Sequence header of AV1
-    pub profile: u8,
-    pub num_bits_width: u32,
-    pub num_bits_height: u32,
-    pub bit_depth: usize,
-    pub chroma_sampling: ChromaSampling,
-    pub max_frame_width: u32,
-    pub max_frame_height: u32,
-    pub frame_id_numbers_present_flag: bool,
-    pub frame_id_length: u32,
-    pub delta_frame_id_length: u32,
-    pub use_128x128_superblock: bool,
-    pub order_hint_bits_minus_1: u32,
-    pub force_screen_content_tools: u32,  // 0 - force off
-                                           // 1 - force on
-                                           // 2 - adaptive
-    pub force_integer_mv: u32,      // 0 - Not to force. MV can be in 1/4 or 1/8
-                                     // 1 - force to integer
-                                     // 2 - adaptive
-    pub still_picture: bool,               // Video is a single frame still picture
-    pub reduced_still_picture_hdr: bool,   // Use reduced header for still picture
-    pub monochrome: bool,                  // Monochrome video
-    pub enable_filter_intra: bool,         // enables/disables filterintra
-    pub enable_intra_edge_filter: bool,    // enables/disables corner/edge/upsampling
-    pub enable_interintra_compound: bool,  // enables/disables interintra_compound
-    pub enable_masked_compound: bool,      // enables/disables masked compound
-    pub enable_dual_filter: bool,         // 0 - disable dual interpolation filter
-                                          // 1 - enable vert/horiz filter selection
-    pub enable_order_hint: bool,     // 0 - disable order hint, and related tools
-                                     // jnt_comp, ref_frame_mvs, frame_sign_bias
-                                     // if 0, enable_jnt_comp and
-                                     // enable_ref_frame_mvs must be set zs 0.
-    pub enable_jnt_comp: bool,        // 0 - disable joint compound modes
-                                     // 1 - enable it
-    pub enable_ref_frame_mvs: bool,  // 0 - disable ref frame mvs
-                                     // 1 - enable it
-    pub enable_warped_motion: bool,   // 0 - disable warped motion for sequence
-                                     // 1 - enable it for the sequence
-    pub enable_superres: bool,// 0 - Disable superres for the sequence, and disable
-                              //     transmitting per-frame superres enabled flag.
-                              // 1 - Enable superres for the sequence, and also
-                              //     enable per-frame flag to denote if superres is
-                              //     enabled for that frame.
-    pub enable_cdef: bool,         // To turn on/off CDEF
-    pub enable_restoration: bool,  // To turn on/off loop restoration
-    pub operating_points_cnt_minus_1: usize,
-    pub operating_point_idc: [u16; MAX_NUM_OPERATING_POINTS],
-    pub display_model_info_present_flag: bool,
-    pub decoder_model_info_present_flag: bool,
-    pub level: [[usize; 2]; MAX_NUM_OPERATING_POINTS],	// minor, major
-    pub tier: [usize; MAX_NUM_OPERATING_POINTS],  // seq_tier in the spec. One bit: 0
-                                                  // or 1.
-    pub film_grain_params_present: bool,
-    pub separate_uv_delta_q: bool,
+  pub profile: u8,
+  pub num_bits_width: u32,
+  pub num_bits_height: u32,
+  pub bit_depth: usize,
+  pub chroma_sampling: ChromaSampling,
+  pub max_frame_width: u32,
+  pub max_frame_height: u32,
+  pub frame_id_numbers_present_flag: bool,
+  pub frame_id_length: u32,
+  pub delta_frame_id_length: u32,
+  pub use_128x128_superblock: bool,
+  pub order_hint_bits_minus_1: u32,
+  pub force_screen_content_tools: u32, // 0 - force off
+  // 1 - force on
+  // 2 - adaptive
+  pub force_integer_mv: u32, // 0 - Not to force. MV can be in 1/4 or 1/8
+  // 1 - force to integer
+  // 2 - adaptive
+  pub still_picture: bool, // Video is a single frame still picture
+  pub reduced_still_picture_hdr: bool, // Use reduced header for still picture
+  pub monochrome: bool,    // Monochrome video
+  pub enable_filter_intra: bool, // enables/disables filterintra
+  pub enable_intra_edge_filter: bool, // enables/disables corner/edge/upsampling
+  pub enable_interintra_compound: bool, // enables/disables interintra_compound
+  pub enable_masked_compound: bool,   // enables/disables masked compound
+  pub enable_dual_filter: bool,       // 0 - disable dual interpolation filter
+  // 1 - enable vert/horiz filter selection
+  pub enable_order_hint: bool, // 0 - disable order hint, and related tools
+  // jnt_comp, ref_frame_mvs, frame_sign_bias
+  // if 0, enable_jnt_comp and
+  // enable_ref_frame_mvs must be set zs 0.
+  pub enable_jnt_comp: bool, // 0 - disable joint compound modes
+  // 1 - enable it
+  pub enable_ref_frame_mvs: bool, // 0 - disable ref frame mvs
+  // 1 - enable it
+  pub enable_warped_motion: bool, // 0 - disable warped motion for sequence
+  // 1 - enable it for the sequence
+  pub enable_superres: bool, // 0 - Disable superres for the sequence, and disable
+  //     transmitting per-frame superres enabled flag.
+  // 1 - Enable superres for the sequence, and also
+  //     enable per-frame flag to denote if superres is
+  //     enabled for that frame.
+  pub enable_cdef: bool,        // To turn on/off CDEF
+  pub enable_restoration: bool, // To turn on/off loop restoration
+  pub operating_points_cnt_minus_1: usize,
+  pub operating_point_idc: [u16; MAX_NUM_OPERATING_POINTS],
+  pub display_model_info_present_flag: bool,
+  pub decoder_model_info_present_flag: bool,
+  pub level: [[usize; 2]; MAX_NUM_OPERATING_POINTS], // minor, major
+  pub tier: [usize; MAX_NUM_OPERATING_POINTS], // seq_tier in the spec. One bit: 0
+  // or 1.
+  pub film_grain_params_present: bool,
+  pub separate_uv_delta_q: bool
 }
 
 impl Sequence {
-    pub fn new(width: usize, height: usize, bit_depth: usize, chroma_sampling: ChromaSampling) -> Sequence {
-        let width_bits = 32 - (width as u32).leading_zeros();
-        let height_bits = 32 - (height as u32).leading_zeros();
-        assert!(width_bits <= 16);
-        assert!(height_bits <= 16);
+  pub fn new(
+    width: usize, height: usize, bit_depth: usize,
+    chroma_sampling: ChromaSampling
+  ) -> Sequence {
+    let width_bits = 32 - (width as u32).leading_zeros();
+    let height_bits = 32 - (height as u32).leading_zeros();
+    assert!(width_bits <= 16);
+    assert!(height_bits <= 16);
 
-        let profile = if bit_depth == 12 {
-            2
-        } else if chroma_sampling == ChromaSampling::Cs444 {
-            1
-        } else {
-            0
-        };
+    let profile = if bit_depth == 12 {
+      2
+    } else if chroma_sampling == ChromaSampling::Cs444 {
+      1
+    } else {
+      0
+    };
 
-        let mut operating_point_idc = [0 as u16; MAX_NUM_OPERATING_POINTS];
-        let mut level = [[1, 2 as usize]; MAX_NUM_OPERATING_POINTS];
-        let mut tier = [0 as usize; MAX_NUM_OPERATING_POINTS];
+    let mut operating_point_idc = [0 as u16; MAX_NUM_OPERATING_POINTS];
+    let mut level = [[1, 2 as usize]; MAX_NUM_OPERATING_POINTS];
+    let mut tier = [0 as usize; MAX_NUM_OPERATING_POINTS];
 
-        for i in 0..MAX_NUM_OPERATING_POINTS {
-            operating_point_idc[i] = 0;
-            level[i][0] = 1;	// minor
-            level[i][1] = 2;	// major
-            tier[i] = 0;
-        }
-
-        Sequence {
-            profile: profile,
-            num_bits_width: width_bits,
-            num_bits_height: height_bits,
-            bit_depth: bit_depth,
-            chroma_sampling: chroma_sampling,
-            max_frame_width: width as u32,
-            max_frame_height: height as u32,
-            frame_id_numbers_present_flag: false,
-            frame_id_length: 0,
-            delta_frame_id_length: 0,
-            use_128x128_superblock: false,
-            order_hint_bits_minus_1: 0,
-            force_screen_content_tools: 0,
-            force_integer_mv: 2,
-            still_picture: false,
-            reduced_still_picture_hdr: false,
-            monochrome: false,
-            enable_filter_intra: true,
-            enable_intra_edge_filter: true,
-            enable_interintra_compound: false,
-            enable_masked_compound: false,
-            enable_dual_filter: false,
-            enable_order_hint: true,
-            enable_jnt_comp: false,
-            enable_ref_frame_mvs: false,
-            enable_warped_motion: false,
-            enable_superres: false,
-            enable_cdef: true,
-            enable_restoration: true,
-            operating_points_cnt_minus_1: 0,
-            operating_point_idc: operating_point_idc,
-            display_model_info_present_flag: false,
-            decoder_model_info_present_flag: false,
-            level: level,
-            tier: tier,
-            film_grain_params_present: false,
-            separate_uv_delta_q: false,
-        }
+    for i in 0..MAX_NUM_OPERATING_POINTS {
+      operating_point_idc[i] = 0;
+      level[i][0] = 1; // minor
+      level[i][1] = 2; // major
+      tier[i] = 0;
     }
+
+    Sequence {
+      profile,
+      num_bits_width: width_bits,
+      num_bits_height: height_bits,
+      bit_depth,
+      chroma_sampling,
+      max_frame_width: width as u32,
+      max_frame_height: height as u32,
+      frame_id_numbers_present_flag: false,
+      frame_id_length: 0,
+      delta_frame_id_length: 0,
+      use_128x128_superblock: false,
+      order_hint_bits_minus_1: 0,
+      force_screen_content_tools: 0,
+      force_integer_mv: 2,
+      still_picture: false,
+      reduced_still_picture_hdr: false,
+      monochrome: false,
+      enable_filter_intra: true,
+      enable_intra_edge_filter: true,
+      enable_interintra_compound: false,
+      enable_masked_compound: false,
+      enable_dual_filter: false,
+      enable_order_hint: true,
+      enable_jnt_comp: false,
+      enable_ref_frame_mvs: false,
+      enable_warped_motion: false,
+      enable_superres: false,
+      enable_cdef: true,
+      enable_restoration: true,
+      operating_points_cnt_minus_1: 0,
+      operating_point_idc,
+      display_model_info_present_flag: false,
+      decoder_model_info_present_flag: false,
+      level,
+      tier,
+      film_grain_params_present: false,
+      separate_uv_delta_q: false
+    }
+  }
 }
 
 use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct FrameState {
-    pub input: Arc<Frame>,
-    pub rec: Frame,
-    pub qc: QuantizationContext,
-    pub cdfs: CDFContext,
-    pub deblock: DeblockState,
+  pub input: Arc<Frame>,
+  pub rec: Frame,
+  pub qc: QuantizationContext,
+  pub cdfs: CDFContext,
+  pub deblock: DeblockState
 }
 
 impl FrameState {
-    pub fn new(fi: &FrameInvariants) -> FrameState {
-        FrameState {
-            input: Arc::new(Frame::new(fi.padded_w, fi.padded_h)),
-            rec: Frame::new(fi.padded_w, fi.padded_h),
-            qc: Default::default(),
-            cdfs: CDFContext::new(0),
-            deblock: Default::default(),
-        }
+  pub fn new(fi: &FrameInvariants) -> FrameState {
+    FrameState {
+      input: Arc::new(Frame::new(fi.padded_w, fi.padded_h)),
+      rec: Frame::new(fi.padded_w, fi.padded_h),
+      qc: Default::default(),
+      cdfs: CDFContext::new(0),
+      deblock: Default::default()
     }
+  }
 
-    pub fn window(&self, sbo: &SuperBlockOffset) -> FrameState {
-        FrameState {
-            input: Arc::new(self.input.window(sbo)),
-            rec: self.rec.window(sbo),
-            qc: self.qc.clone(),
-            cdfs: self.cdfs.clone(),
-            deblock: self.deblock.clone()
-        }
+  pub fn window(&self, sbo: &SuperBlockOffset) -> FrameState {
+    FrameState {
+      input: Arc::new(self.input.window(sbo)),
+      rec: self.rec.window(sbo),
+      qc: self.qc.clone(),
+      cdfs: self.cdfs.clone(),
+      deblock: self.deblock.clone()
     }
+  }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct DeblockState {
-    pub levels: [u8; PLANES+1],  // Y vertical edges, Y horizontal, U, V
-    pub sharpness: u8,
-    pub deltas_enabled: bool,
-    pub delta_updates_enabled: bool,
-    pub ref_deltas: [i8; REF_FRAMES],
-    pub mode_deltas: [i8; 2],
-    pub block_deltas_enabled: bool,
-    pub block_delta_shift: u8,
-    pub block_delta_multi: bool,
+  pub levels: [u8; PLANES + 1], // Y vertical edges, Y horizontal, U, V
+  pub sharpness: u8,
+  pub deltas_enabled: bool,
+  pub delta_updates_enabled: bool,
+  pub ref_deltas: [i8; REF_FRAMES],
+  pub mode_deltas: [i8; 2],
+  pub block_deltas_enabled: bool,
+  pub block_delta_shift: u8,
+  pub block_delta_multi: bool
 }
 
 impl Default for DeblockState {
-    fn default() -> Self {
-        DeblockState {
-            levels: [8,8,4,4],
-            sharpness: 0,
-            deltas_enabled: false, // requires delta_q_enabled
-            delta_updates_enabled: false,
-            ref_deltas: [1, 0, 0, 0, 0, -1, -1, -1],
-            mode_deltas: [0, 0],
-            block_deltas_enabled: false,
-            block_delta_shift: 0,
-            block_delta_multi: false
-        }
+  fn default() -> Self {
+    DeblockState {
+      levels: [8, 8, 4, 4],
+      sharpness: 0,
+      deltas_enabled: false, // requires delta_q_enabled
+      delta_updates_enabled: false,
+      ref_deltas: [1, 0, 0, 0, 0, -1, -1, -1],
+      mode_deltas: [0, 0],
+      block_deltas_enabled: false,
+      block_delta_shift: 0,
+      block_delta_multi: false
     }
+  }
 }
 
 // Frame Invariants are invariant inside a frame
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct FrameInvariants {
-    pub width: usize,
-    pub height: usize,
-    pub padded_w: usize,
-    pub padded_h: usize,
-    pub sb_width: usize,
-    pub sb_height: usize,
-    pub w_in_b: usize,
-    pub h_in_b: usize,
-    pub number: u64,
-    pub order_hint: u32,
-    pub show_frame: bool,
-    pub showable_frame: bool,
-    pub error_resilient: bool,
-    pub intra_only: bool,
-    pub allow_high_precision_mv: bool,
-    pub frame_type: FrameType,
-    pub show_existing_frame: bool,
-    pub use_reduced_tx_set: bool,
-    pub reference_mode: ReferenceMode,
-    pub use_prev_frame_mvs: bool,
-    pub min_partition_size: BlockSize,
-    pub globalmv_transformation_type: [GlobalMVMode; ALTREF_FRAME + 1],
-    pub num_tg: usize,
-    pub large_scale_tile: bool,
-    pub disable_cdf_update: bool,
-    pub allow_screen_content_tools: u32,
-    pub force_integer_mv: u32,
-    pub primary_ref_frame: u32,
-    pub refresh_frame_flags: u32,  // a bitmask that specifies which
-    // reference frame slots will be updated with the current frame
-    // after it is decoded.
-    pub allow_intrabc: bool,
-    pub use_ref_frame_mvs: bool,
-    pub is_filter_switchable: bool,
-    pub is_motion_mode_switchable: bool,
-    pub disable_frame_end_update_cdf: bool,
-    pub allow_warped_motion: bool,
-    pub cdef_damping: u8,
-    pub cdef_bits: u8,
-    pub cdef_y_strengths: [u8; 8],
-    pub cdef_uv_strengths: [u8; 8],
-    pub delta_q_present: bool,
-    pub config: EncoderConfig,
-    pub ref_frames: [usize; INTER_REFS_PER_FRAME],
-    pub rec_buffer: ReferenceFramesSet,
-    pub base_q_idx: u8,
+  pub width: usize,
+  pub height: usize,
+  pub padded_w: usize,
+  pub padded_h: usize,
+  pub sb_width: usize,
+  pub sb_height: usize,
+  pub w_in_b: usize,
+  pub h_in_b: usize,
+  pub number: u64,
+  pub order_hint: u32,
+  pub show_frame: bool,
+  pub showable_frame: bool,
+  pub error_resilient: bool,
+  pub intra_only: bool,
+  pub allow_high_precision_mv: bool,
+  pub frame_type: FrameType,
+  pub show_existing_frame: bool,
+  pub use_reduced_tx_set: bool,
+  pub reference_mode: ReferenceMode,
+  pub use_prev_frame_mvs: bool,
+  pub min_partition_size: BlockSize,
+  pub globalmv_transformation_type: [GlobalMVMode; ALTREF_FRAME + 1],
+  pub num_tg: usize,
+  pub large_scale_tile: bool,
+  pub disable_cdf_update: bool,
+  pub allow_screen_content_tools: u32,
+  pub force_integer_mv: u32,
+  pub primary_ref_frame: u32,
+  pub refresh_frame_flags: u32, // a bitmask that specifies which
+  // reference frame slots will be updated with the current frame
+  // after it is decoded.
+  pub allow_intrabc: bool,
+  pub use_ref_frame_mvs: bool,
+  pub is_filter_switchable: bool,
+  pub is_motion_mode_switchable: bool,
+  pub disable_frame_end_update_cdf: bool,
+  pub allow_warped_motion: bool,
+  pub cdef_damping: u8,
+  pub cdef_bits: u8,
+  pub cdef_y_strengths: [u8; 8],
+  pub cdef_uv_strengths: [u8; 8],
+  pub delta_q_present: bool,
+  pub config: EncoderConfig,
+  pub ref_frames: [usize; INTER_REFS_PER_FRAME],
+  pub rec_buffer: ReferenceFramesSet,
+  pub base_q_idx: u8
 }
 
 impl FrameInvariants {
-    pub fn new(width: usize, height: usize, config: EncoderConfig) -> FrameInvariants {
-        // Speed level decides the minimum partition size, i.e. higher speed --> larger min partition size,
-        // with exception that SBs on right or bottom frame borders split down to BLOCK_4X4.
-        // At speed = 0, RDO search is exhaustive.
-        let mut min_partition_size = if config.speed <= 1 { BlockSize::BLOCK_4X4 }
-                                 else if config.speed <= 2 { BlockSize::BLOCK_8X8 }
-                                 else if config.speed <= 3 { BlockSize::BLOCK_16X16 }
-                                 else { BlockSize::BLOCK_32X32 };
+  pub fn new(
+    width: usize, height: usize, config: EncoderConfig
+  ) -> FrameInvariants {
+    // Speed level decides the minimum partition size, i.e. higher speed --> larger min partition size,
+    // with exception that SBs on right or bottom frame borders split down to BLOCK_4X4.
+    // At speed = 0, RDO search is exhaustive.
+    let mut min_partition_size = if config.speed <= 1 {
+      BlockSize::BLOCK_4X4
+    } else if config.speed <= 2 {
+      BlockSize::BLOCK_8X8
+    } else if config.speed <= 3 {
+      BlockSize::BLOCK_16X16
+    } else {
+      BlockSize::BLOCK_32X32
+    };
 
-        if config.tune == Tune::Psychovisual {
-            if min_partition_size < BlockSize::BLOCK_8X8 {
-                // TODO: Display message that min partition size is enforced to 8x8
-                min_partition_size = BlockSize::BLOCK_8X8;
-                println!("If tune=Psychovisual is used, min partition size is enforced to 8x8");
-            }
-        }
-        let use_reduced_tx_set = config.speed > 1;
-
-        FrameInvariants {
-            width,
-            height,
-            padded_w: width.align_power_of_two(3),
-            padded_h: height.align_power_of_two(3),
-            sb_width: width.align_power_of_two_and_shift(6),
-            sb_height: height.align_power_of_two_and_shift(6),
-            w_in_b: 2 * width.align_power_of_two_and_shift(3), // MiCols, ((width+7)/8)<<3 >> MI_SIZE_LOG2
-            h_in_b: 2 * height.align_power_of_two_and_shift(3), // MiRows, ((height+7)/8)<<3 >> MI_SIZE_LOG2
-            number: 0,
-            order_hint: 0,
-            show_frame: true,
-            showable_frame: true,
-            error_resilient: false,
-            intra_only: false,
-            allow_high_precision_mv: false,
-            frame_type: FrameType::KEY,
-            show_existing_frame: false,
-            use_reduced_tx_set,
-            reference_mode: ReferenceMode::SINGLE,
-            use_prev_frame_mvs: false,
-            min_partition_size,
-            globalmv_transformation_type: [GlobalMVMode::IDENTITY; ALTREF_FRAME + 1],
-            num_tg: 1,
-            large_scale_tile: false,
-            disable_cdf_update: false,
-            allow_screen_content_tools: 0,
-            force_integer_mv: 0,
-            primary_ref_frame: PRIMARY_REF_NONE,
-            refresh_frame_flags: 0,
-            allow_intrabc: false,
-            use_ref_frame_mvs: false,
-            is_filter_switchable: false,
-            is_motion_mode_switchable: false, // 0: only the SIMPLE motion mode will be used.
-            disable_frame_end_update_cdf: false,
-            allow_warped_motion: false,
-            cdef_damping: 3,
-            cdef_bits: 3,
-            cdef_y_strengths: [0*4+0, 1*4+0, 2*4+1, 3*4+1, 5*4+2, 7*4+3, 10*4+3, 13*4+3],
-            cdef_uv_strengths: [0*4+0, 1*4+0, 2*4+1, 3*4+1, 5*4+2, 7*4+3, 10*4+3, 13*4+3],
-            delta_q_present: false,
-            config,
-            ref_frames: [0; INTER_REFS_PER_FRAME],
-            rec_buffer: ReferenceFramesSet::new(),
-            base_q_idx: config.quantizer as u8,
-        }
+    if config.tune == Tune::Psychovisual {
+      if min_partition_size < BlockSize::BLOCK_8X8 {
+        // TODO: Display message that min partition size is enforced to 8x8
+        min_partition_size = BlockSize::BLOCK_8X8;
+        println!("If tune=Psychovisual is used, min partition size is enforced to 8x8");
+      }
     }
+    let use_reduced_tx_set = config.speed > 1;
 
-    pub fn new_frame_state(&self) -> FrameState {
-        FrameState {
-            input: Arc::new(Frame::new(self.padded_w, self.padded_h)),
-            rec: Frame::new(self.padded_w, self.padded_h),
-            qc: Default::default(),
-            cdfs: CDFContext::new(0),
-            deblock: Default::default(),
-        }
+    FrameInvariants {
+      width,
+      height,
+      padded_w: width.align_power_of_two(3),
+      padded_h: height.align_power_of_two(3),
+      sb_width: width.align_power_of_two_and_shift(6),
+      sb_height: height.align_power_of_two_and_shift(6),
+      w_in_b: 2 * width.align_power_of_two_and_shift(3), // MiCols, ((width+7)/8)<<3 >> MI_SIZE_LOG2
+      h_in_b: 2 * height.align_power_of_two_and_shift(3), // MiRows, ((height+7)/8)<<3 >> MI_SIZE_LOG2
+      number: 0,
+      order_hint: 0,
+      show_frame: true,
+      showable_frame: true,
+      error_resilient: false,
+      intra_only: false,
+      allow_high_precision_mv: false,
+      frame_type: FrameType::KEY,
+      show_existing_frame: false,
+      use_reduced_tx_set,
+      reference_mode: ReferenceMode::SINGLE,
+      use_prev_frame_mvs: false,
+      min_partition_size,
+      globalmv_transformation_type: [GlobalMVMode::IDENTITY; ALTREF_FRAME + 1],
+      num_tg: 1,
+      large_scale_tile: false,
+      disable_cdf_update: false,
+      allow_screen_content_tools: 0,
+      force_integer_mv: 0,
+      primary_ref_frame: PRIMARY_REF_NONE,
+      refresh_frame_flags: 0,
+      allow_intrabc: false,
+      use_ref_frame_mvs: false,
+      is_filter_switchable: false,
+      is_motion_mode_switchable: false, // 0: only the SIMPLE motion mode will be used.
+      disable_frame_end_update_cdf: false,
+      allow_warped_motion: false,
+      cdef_damping: 3,
+      cdef_bits: 3,
+      cdef_y_strengths: [
+        0 * 4 + 0,
+        1 * 4 + 0,
+        2 * 4 + 1,
+        3 * 4 + 1,
+        5 * 4 + 2,
+        7 * 4 + 3,
+        10 * 4 + 3,
+        13 * 4 + 3
+      ],
+      cdef_uv_strengths: [
+        0 * 4 + 0,
+        1 * 4 + 0,
+        2 * 4 + 1,
+        3 * 4 + 1,
+        5 * 4 + 2,
+        7 * 4 + 3,
+        10 * 4 + 3,
+        13 * 4 + 3
+      ],
+      delta_q_present: false,
+      config,
+      ref_frames: [0; INTER_REFS_PER_FRAME],
+      rec_buffer: ReferenceFramesSet::new(),
+      base_q_idx: config.quantizer as u8
     }
+  }
+
+  pub fn new_frame_state(&self) -> FrameState {
+    FrameState {
+      input: Arc::new(Frame::new(self.padded_w, self.padded_h)),
+      rec: Frame::new(self.padded_w, self.padded_h),
+      qc: Default::default(),
+      cdfs: CDFContext::new(0),
+      deblock: Default::default()
+    }
+  }
 }
 
-impl fmt::Display for FrameInvariants{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Frame {} - {}", self.number, self.frame_type)
-    }
+impl fmt::Display for FrameInvariants {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "Frame {} - {}", self.number, self.frame_type)
+  }
 }
 
 #[allow(dead_code,non_camel_case_types)]
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum FrameType {
-    KEY,
-    INTER,
-    INTRA_ONLY,
-    SWITCH,
+  KEY,
+  INTER,
+  INTRA_ONLY,
+  SWITCH
 }
 
 //const REFERENCE_MODES: usize = 3;
@@ -464,74 +492,84 @@ pub enum ReferenceMode {
 
 pub const ALL_REF_FRAMES_MASK: u32 = (1 << REF_FRAMES) - 1;
 
-impl fmt::Display for FrameType{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FrameType::KEY => write!(f, "Key frame"),
-            FrameType::INTER => write!(f, "Inter frame"),
-            FrameType::INTRA_ONLY => write!(f, "Intra only frame"),
-            FrameType::SWITCH => write!(f, "Switching frame"),
-        }
+impl fmt::Display for FrameType {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      FrameType::KEY => write!(f, "Key frame"),
+      FrameType::INTER => write!(f, "Inter frame"),
+      FrameType::INTRA_ONLY => write!(f, "Intra only frame"),
+      FrameType::SWITCH => write!(f, "Switching frame")
     }
+  }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct EncoderConfig {
-    pub limit: u64,
-    pub quantizer: usize,
-    pub speed: usize,
-    pub tune: Tune
+  pub limit: u64,
+  pub quantizer: usize,
+  pub speed: usize,
+  pub tune: Tune
 }
 
 impl Default for EncoderConfig {
-    fn default() -> Self {
-        EncoderConfig {
-            limit: 0,
-            quantizer: 100,
-            speed: 0,
-            tune: Tune::Psnr,
-        }
-    }
+  fn default() -> Self {
+    EncoderConfig { limit: 0, quantizer: 100, speed: 0, tune: Tune::Psnr }
+  }
 }
 
-pub fn write_ivf_header(output_file: &mut dyn io::Write, width: usize, height: usize, num: usize, den: usize) {
-    let mut bw = BitWriter::<LE>::new(output_file);
-    bw.write_bytes(b"DKIF").unwrap();
-    bw.write(16, 0).unwrap(); // version
-    bw.write(16, 32).unwrap(); // version
-    bw.write_bytes(b"AV01").unwrap();
-    bw.write(16, width as u16).unwrap();
-    bw.write(16, height as u16).unwrap();
-    bw.write(32, num as u32).unwrap();
-    bw.write(32, den as u32).unwrap();
-    bw.write(32, 0).unwrap();
-    bw.write(32, 0).unwrap();
+pub fn write_ivf_header(
+  output_file: &mut dyn io::Write, width: usize, height: usize, num: usize,
+  den: usize
+) {
+  let mut bw = BitWriter::<LE>::new(output_file);
+  bw.write_bytes(b"DKIF").unwrap();
+  bw.write(16, 0).unwrap(); // version
+  bw.write(16, 32).unwrap(); // version
+  bw.write_bytes(b"AV01").unwrap();
+  bw.write(16, width as u16).unwrap();
+  bw.write(16, height as u16).unwrap();
+  bw.write(32, num as u32).unwrap();
+  bw.write(32, den as u32).unwrap();
+  bw.write(32, 0).unwrap();
+  bw.write(32, 0).unwrap();
 }
 
-pub fn write_ivf_frame(output_file: &mut dyn io::Write, pts: u64, data: &[u8]) {
-    let mut bw = BitWriter::<LE>::new(output_file);
-    bw.write(32, data.len() as u32).unwrap();
-    bw.write(64, pts).unwrap();
-    bw.write_bytes(data).unwrap();
+pub fn write_ivf_frame(
+  output_file: &mut dyn io::Write, pts: u64, data: &[u8]
+) {
+  let mut bw = BitWriter::<LE>::new(output_file);
+  bw.write(32, data.len() as u32).unwrap();
+  bw.write(64, pts).unwrap();
+  bw.write_bytes(data).unwrap();
 }
 
 trait UncompressedHeader {
-    // Start of OBU Headers
-    fn write_obu_header(&mut self, obu_type: OBU_Type, obu_extension: u32)
-            -> io::Result<()>;
-    fn write_sequence_header_obu(&mut self, seq: &mut Sequence, fi: &FrameInvariants)
-            -> io::Result<()>;
-    fn write_frame_header_obu(&mut self, seq: &Sequence, fi: &FrameInvariants, fs: &FrameState)
-            -> io::Result<()>;
-    fn write_sequence_header(&mut self, seq: &mut Sequence, fi: &FrameInvariants)
-                                    -> io::Result<()>;
-    fn write_color_config(&mut self, seq: &mut Sequence) -> io::Result<()>;
-    // End of OBU Headers
+  // Start of OBU Headers
+  fn write_obu_header(
+    &mut self, obu_type: OBU_Type, obu_extension: u32
+  ) -> io::Result<()>;
+  fn write_sequence_header_obu(
+    &mut self, seq: &mut Sequence, fi: &FrameInvariants
+  ) -> io::Result<()>;
+  fn write_frame_header_obu(
+    &mut self, seq: &Sequence, fi: &FrameInvariants, fs: &FrameState
+  ) -> io::Result<()>;
+  fn write_sequence_header(
+    &mut self, seq: &mut Sequence, fi: &FrameInvariants
+  ) -> io::Result<()>;
+  fn write_color_config(&mut self, seq: &mut Sequence) -> io::Result<()>;
+  // End of OBU Headers
 
-    fn write_frame_size(&mut self, fi: &FrameInvariants) -> io::Result<()>;
-    fn write_deblock_filter_a(&mut self, fi: &FrameInvariants, fs: &FrameState) -> io::Result<()>;
-    fn write_deblock_filter_b(&mut self, fi: &FrameInvariants, fs: &FrameState) -> io::Result<()>;
-    fn write_frame_cdef(&mut self, seq: &Sequence, fi: &FrameInvariants) -> io::Result<()>;
+  fn write_frame_size(&mut self, fi: &FrameInvariants) -> io::Result<()>;
+  fn write_deblock_filter_a(
+    &mut self, fi: &FrameInvariants, fs: &FrameState
+  ) -> io::Result<()>;
+  fn write_deblock_filter_b(
+    &mut self, fi: &FrameInvariants, fs: &FrameState
+  ) -> io::Result<()>;
+  fn write_frame_cdef(
+    &mut self, seq: &Sequence, fi: &FrameInvariants
+  ) -> io::Result<()>;
 }
 #[allow(unused)]
 const OP_POINTS_IDC_BITS:usize = 12;
@@ -547,552 +585,575 @@ const FRAME_ID_LENGTH: usize = 15;
 const DELTA_FRAME_ID_LENGTH: usize = 14;
 
 impl<'a> UncompressedHeader for BitWriter<'a, BE> {
-    // Start of OBU Headers
-    // Write OBU Header syntax
-    fn write_obu_header(&mut self, obu_type: OBU_Type, obu_extension: u32)
-            -> io::Result<()>{
-        self.write_bit(false)?; // forbidden bit.
-        self.write(4, obu_type as u32)?;
-        self.write_bit(obu_extension != 0)?;
-        self.write_bit(true)?; // obu_has_payload_length_field
-        self.write_bit(false)?; // reserved
+  // Start of OBU Headers
+  // Write OBU Header syntax
+  fn write_obu_header(
+    &mut self, obu_type: OBU_Type, obu_extension: u32
+  ) -> io::Result<()> {
+    self.write_bit(false)?; // forbidden bit.
+    self.write(4, obu_type as u32)?;
+    self.write_bit(obu_extension != 0)?;
+    self.write_bit(true)?; // obu_has_payload_length_field
+    self.write_bit(false)?; // reserved
 
-        if obu_extension != 0 {
-            assert!(false);
-            //self.write(8, obu_extension & 0xFF)?; size += 8;
-        }
-
-        Ok(())
+    if obu_extension != 0 {
+      assert!(false);
+      //self.write(8, obu_extension & 0xFF)?; size += 8;
     }
 
-    fn write_sequence_header_obu(&mut self, seq: &mut Sequence, fi: &FrameInvariants)
-        -> io::Result<()> {
-        self.write(3, seq.profile)?; // profile, 3 bits
-        self.write(1, 0)?; // still_picture
-        self.write(1, 0)?; // reduced_still_picture
-        self.write_bit(false)?; // display model present
-        self.write_bit(false)?; // no timing info present
-        self.write(5, 0)?; // one operating point
-        self.write(12,0)?; // idc
-        self.write(5, 31)?; // level
-        self.write(1, 0)?; // tier
-        if seq.reduced_still_picture_hdr {
-            assert!(false);
-        }
+    Ok(())
+  }
 
-        self.write_sequence_header(seq, fi)?;
-
-        self.write_color_config(seq)?;
-
-        self.write_bit(seq.film_grain_params_present)?;
-
-        self.write_bit(true)?; // add_trailing_bits
-
-        Ok(())
+  fn write_sequence_header_obu(
+    &mut self, seq: &mut Sequence, fi: &FrameInvariants
+  ) -> io::Result<()> {
+    self.write(3, seq.profile)?; // profile, 3 bits
+    self.write(1, 0)?; // still_picture
+    self.write(1, 0)?; // reduced_still_picture
+    self.write_bit(false)?; // display model present
+    self.write_bit(false)?; // no timing info present
+    self.write(5, 0)?; // one operating point
+    self.write(12, 0)?; // idc
+    self.write(5, 31)?; // level
+    self.write(1, 0)?; // tier
+    if seq.reduced_still_picture_hdr {
+      assert!(false);
     }
 
-    fn write_sequence_header(&mut self, seq: &mut Sequence, fi: &FrameInvariants)
-        -> io::Result<()> {
-        self.write_frame_size(fi)?;
+    self.write_sequence_header(seq, fi)?;
 
-        if !seq.reduced_still_picture_hdr {
-            seq.frame_id_numbers_present_flag = false;
-            seq.frame_id_length = FRAME_ID_LENGTH as u32;
-            seq.delta_frame_id_length = DELTA_FRAME_ID_LENGTH as u32;
+    self.write_color_config(seq)?;
 
-            self.write_bit(seq.frame_id_numbers_present_flag)?;
+    self.write_bit(seq.film_grain_params_present)?;
 
-            if seq.frame_id_numbers_present_flag {
-              // We must always have delta_frame_id_length < frame_id_length,
-              // in order for a frame to be referenced with a unique delta.
-              // Avoid wasting bits by using a coding that enforces this restriction.
-              self.write(4, seq.delta_frame_id_length - 2)?;
-              self.write(3, seq.frame_id_length - seq.delta_frame_id_length - 1)?;
-            }
-        }
+    self.write_bit(true)?; // add_trailing_bits
 
-        self.write_bit(seq.use_128x128_superblock)?;
-        self.write_bit(seq.enable_filter_intra)?;
-        self.write_bit(seq.enable_intra_edge_filter)?;
+    Ok(())
+  }
 
-        if !seq.reduced_still_picture_hdr {
-            self.write_bit(seq.enable_interintra_compound)?;
-            self.write_bit(seq.enable_masked_compound)?;
-            self.write_bit(seq.enable_warped_motion)?;
-            self.write_bit(seq.enable_dual_filter)?;
-            self.write_bit(seq.enable_order_hint)?;
+  fn write_sequence_header(
+    &mut self, seq: &mut Sequence, fi: &FrameInvariants
+  ) -> io::Result<()> {
+    self.write_frame_size(fi)?;
 
-            if seq.enable_order_hint {
-              self.write_bit(seq.enable_jnt_comp)?;
-              self.write_bit(seq.enable_ref_frame_mvs)?;
-            }
-            if seq.force_screen_content_tools == 2 {
-              self.write_bit(true)?;
-            } else {
-              self.write_bit(false)?;
-              self.write_bit(seq.force_screen_content_tools != 0)?;
-            }
-            if seq.force_screen_content_tools > 0 {
-              if seq.force_integer_mv == 2 {
-                self.write_bit(true)?;
-              } else {
-                self.write_bit(false)?;
-                self.write_bit(seq.force_integer_mv != 0)?;
-              }
-            } else {
-              assert!(seq.force_integer_mv == 2);
-            }
-            if seq.enable_order_hint {
-              self.write(3, seq.order_hint_bits_minus_1)?;
-            }
-        }
+    if !seq.reduced_still_picture_hdr {
+      seq.frame_id_numbers_present_flag = false;
+      seq.frame_id_length = FRAME_ID_LENGTH as u32;
+      seq.delta_frame_id_length = DELTA_FRAME_ID_LENGTH as u32;
 
-        self.write_bit(seq.enable_superres)?;
-        self.write_bit(seq.enable_cdef)?;
-        self.write_bit(seq.enable_restoration)?;
-
-        Ok(())
-    }
-
-    fn write_color_config(&mut self, seq: &mut Sequence) -> io::Result<()> {
-        let high_bd = seq.bit_depth > 8;
-
-        self.write_bit(high_bd)?; // high bit depth
-
-        if seq.bit_depth == 12 {
-            self.write_bit(true)?; // 12-bit
-        }
-
-        if seq.profile != 1 {
-            self.write_bit(seq.monochrome)?; // monochrome?
-        } else {
-            unimplemented!(); // 4:4:4 sampling at 8 or 10 bits
-        }
-
-        self.write_bit(false)?; // No color description present
-
-        if seq.monochrome {
-            assert!(false);
-        }
-
-        self.write_bit(false)?; // color range
-
-        let subsampling_x = seq.chroma_sampling != ChromaSampling::Cs444;
-        let subsampling_y = seq.chroma_sampling == ChromaSampling::Cs420;
-
-        if seq.bit_depth == 12 {
-            self.write_bit(subsampling_x)?;
-
-            if subsampling_x {
-                self.write_bit(subsampling_y)?;
-            }
-        }
-
-        if !subsampling_y {
-            unimplemented!(); // 4:2:2 or 4:4:4 sampling
-        }
-
-        self.write(2, 0)?; // chroma_sample_position == CSP_UNKNOWN
-
-        self.write_bit(false)?; // separate uv delta q
-
-        Ok(())
-    }
-
-#[allow(unused)]
-    fn write_frame_header_obu(&mut self, seq: &Sequence, fi: &FrameInvariants, fs: &FrameState)
-        -> io::Result<()> {
-      if seq.reduced_still_picture_hdr {
-        assert!(fi.show_existing_frame);
-        assert!(fi.frame_type == FrameType::KEY);
-        assert!(fi.show_frame);
-      } else {
-        if fi.show_existing_frame {
-          self.write_bit(true)?; // show_existing_frame=1
-          self.write(3, 0)?; // show last frame
-
-          //TODO:
-          /* temporal_point_info();
-            if seq.decoder_model_info_present_flag &&
-              timing_info.equal_picture_interval == 0 {
-            // write frame_presentation_delay;
-          }
-          if seq.frame_id_numbers_present_flag {
-            // write display_frame_id;
-          }*/
-
-          self.byte_align()?;
-          return Ok((()));
-        }
-        self.write_bit(false)?; // show_existing_frame=0
-        self.write(2, fi.frame_type as u32)?;
-        self.write_bit(fi.show_frame)?; // show frame
-
-        if fi.show_frame {
-          //TODO:
-          /* temporal_point_info();
-              if seq.decoder_model_info_present_flag &&
-              timing_info.equal_picture_interval == 0 {
-            // write frame_presentation_delay;*/
-        } else {
-          self.write_bit(fi.showable_frame)?;
-        }
-
-        if fi.frame_type == FrameType::SWITCH {
-          assert!(fi.error_resilient);
-        } else {
-          if !(fi.frame_type == FrameType::KEY && fi.show_frame) {
-            self.write_bit(fi.error_resilient)?; // error resilient
-          }
-        }
-      }
-
-      self.write_bit(fi.disable_cdf_update)?;
-
-      if seq.force_screen_content_tools == 2 {
-        self.write_bit(fi.allow_screen_content_tools != 0)?;
-      } else {
-        assert!(fi.allow_screen_content_tools ==
-                seq.force_screen_content_tools);
-      }
-
-      if fi.allow_screen_content_tools == 2 {
-        if seq.force_integer_mv == 2 {
-          self.write_bit(fi.force_integer_mv != 0)?;
-        } else {
-          assert!(fi.force_integer_mv == seq.force_integer_mv);
-        }
-      } else {
-        assert!(fi.allow_screen_content_tools ==
-                seq.force_screen_content_tools);
-      }
+      self.write_bit(seq.frame_id_numbers_present_flag)?;
 
       if seq.frame_id_numbers_present_flag {
-        assert!(false); // Not supported by rav1e yet!
-        //TODO:
-        //let frame_id_len = seq.frame_id_length;
-        //self.write(frame_id_len, fi.current_frame_id);
+        // We must always have delta_frame_id_length < frame_id_length,
+        // in order for a frame to be referenced with a unique delta.
+        // Avoid wasting bits by using a coding that enforces this restriction.
+        self.write(4, seq.delta_frame_id_length - 2)?;
+        self.write(3, seq.frame_id_length - seq.delta_frame_id_length - 1)?;
       }
+    }
 
-      let mut frame_size_override_flag = false;
-      if fi.frame_type == FrameType::SWITCH {
-        frame_size_override_flag = true;
-      } else if seq.reduced_still_picture_hdr {
-        frame_size_override_flag = false;
-      } else {
-        self.write_bit(frame_size_override_flag)?; // frame size overhead flag
-      }
+    self.write_bit(seq.use_128x128_superblock)?;
+    self.write_bit(seq.enable_filter_intra)?;
+    self.write_bit(seq.enable_intra_edge_filter)?;
+
+    if !seq.reduced_still_picture_hdr {
+      self.write_bit(seq.enable_interintra_compound)?;
+      self.write_bit(seq.enable_masked_compound)?;
+      self.write_bit(seq.enable_warped_motion)?;
+      self.write_bit(seq.enable_dual_filter)?;
+      self.write_bit(seq.enable_order_hint)?;
 
       if seq.enable_order_hint {
-        let n = seq.order_hint_bits_minus_1 + 1;
-        let mask = (1 << n) - 1;
-        self.write(n, fi.order_hint & mask)?;
+        self.write_bit(seq.enable_jnt_comp)?;
+        self.write_bit(seq.enable_ref_frame_mvs)?;
       }
-
-      if fi.error_resilient || fi.intra_only {
+      if seq.force_screen_content_tools == 2 {
+        self.write_bit(true)?;
       } else {
-        self.write(PRIMARY_REF_BITS, fi.primary_ref_frame)?;
+        self.write_bit(false)?;
+        self.write_bit(seq.force_screen_content_tools != 0)?;
+      }
+      if seq.force_screen_content_tools > 0 {
+        if seq.force_integer_mv == 2 {
+          self.write_bit(true)?;
+        } else {
+          self.write_bit(false)?;
+          self.write_bit(seq.force_integer_mv != 0)?;
+        }
+      } else {
+        assert!(seq.force_integer_mv == 2);
+      }
+      if seq.enable_order_hint {
+        self.write(3, seq.order_hint_bits_minus_1)?;
+      }
+    }
+
+    self.write_bit(seq.enable_superres)?;
+    self.write_bit(seq.enable_cdef)?;
+    self.write_bit(seq.enable_restoration)?;
+
+    Ok(())
+  }
+
+  fn write_color_config(&mut self, seq: &mut Sequence) -> io::Result<()> {
+    let high_bd = seq.bit_depth > 8;
+
+    self.write_bit(high_bd)?; // high bit depth
+
+    if seq.bit_depth == 12 {
+      self.write_bit(true)?; // 12-bit
+    }
+
+    if seq.profile != 1 {
+      self.write_bit(seq.monochrome)?; // monochrome?
+    } else {
+      unimplemented!(); // 4:4:4 sampling at 8 or 10 bits
+    }
+
+    self.write_bit(false)?; // No color description present
+
+    if seq.monochrome {
+      assert!(false);
+    }
+
+    self.write_bit(false)?; // color range
+
+    let subsampling_x = seq.chroma_sampling != ChromaSampling::Cs444;
+    let subsampling_y = seq.chroma_sampling == ChromaSampling::Cs420;
+
+    if seq.bit_depth == 12 {
+      self.write_bit(subsampling_x)?;
+
+      if subsampling_x {
+        self.write_bit(subsampling_y)?;
+      }
+    }
+
+    if !subsampling_y {
+      unimplemented!(); // 4:2:2 or 4:4:4 sampling
+    }
+
+    self.write(2, 0)?; // chroma_sample_position == CSP_UNKNOWN
+
+    self.write_bit(false)?; // separate uv delta q
+
+    Ok(())
+  }
+
+  #[allow(unused)]
+  fn write_frame_header_obu(
+    &mut self, seq: &Sequence, fi: &FrameInvariants, fs: &FrameState
+  ) -> io::Result<()> {
+    if seq.reduced_still_picture_hdr {
+      assert!(fi.show_existing_frame);
+      assert!(fi.frame_type == FrameType::KEY);
+      assert!(fi.show_frame);
+    } else {
+      if fi.show_existing_frame {
+        self.write_bit(true)?; // show_existing_frame=1
+        self.write(3, 0)?; // show last frame
+
+        //TODO:
+        /* temporal_point_info();
+          if seq.decoder_model_info_present_flag &&
+            timing_info.equal_picture_interval == 0 {
+          // write frame_presentation_delay;
+        }
+        if seq.frame_id_numbers_present_flag {
+          // write display_frame_id;
+        }*/
+
+        self.byte_align()?;
+        return Ok((()));
+      }
+      self.write_bit(false)?; // show_existing_frame=0
+      self.write(2, fi.frame_type as u32)?;
+      self.write_bit(fi.show_frame)?; // show frame
+
+      if fi.show_frame {
+        //TODO:
+        /* temporal_point_info();
+            if seq.decoder_model_info_present_flag &&
+            timing_info.equal_picture_interval == 0 {
+          // write frame_presentation_delay;*/
+      } else {
+        self.write_bit(fi.showable_frame)?;
       }
 
-      if seq.decoder_model_info_present_flag {
+      if fi.frame_type == FrameType::SWITCH {
+        assert!(fi.error_resilient);
+      } else {
+        if !(fi.frame_type == FrameType::KEY && fi.show_frame) {
+          self.write_bit(fi.error_resilient)?; // error resilient
+        }
+      }
+    }
+
+    self.write_bit(fi.disable_cdf_update)?;
+
+    if seq.force_screen_content_tools == 2 {
+      self.write_bit(fi.allow_screen_content_tools != 0)?;
+    } else {
+      assert!(fi.allow_screen_content_tools == seq.force_screen_content_tools);
+    }
+
+    if fi.allow_screen_content_tools == 2 {
+      if seq.force_integer_mv == 2 {
+        self.write_bit(fi.force_integer_mv != 0)?;
+      } else {
+        assert!(fi.force_integer_mv == seq.force_integer_mv);
+      }
+    } else {
+      assert!(fi.allow_screen_content_tools == seq.force_screen_content_tools);
+    }
+
+    if seq.frame_id_numbers_present_flag {
+      assert!(false); // Not supported by rav1e yet!
+
+      //TODO:
+      //let frame_id_len = seq.frame_id_length;
+      //self.write(frame_id_len, fi.current_frame_id);
+    }
+
+    let mut frame_size_override_flag = false;
+    if fi.frame_type == FrameType::SWITCH {
+      frame_size_override_flag = true;
+    } else if seq.reduced_still_picture_hdr {
+      frame_size_override_flag = false;
+    } else {
+      self.write_bit(frame_size_override_flag)?; // frame size overhead flag
+    }
+
+    if seq.enable_order_hint {
+      let n = seq.order_hint_bits_minus_1 + 1;
+      let mask = (1 << n) - 1;
+      self.write(n, fi.order_hint & mask)?;
+    }
+
+    if fi.error_resilient || fi.intra_only {
+    } else {
+      self.write(PRIMARY_REF_BITS, fi.primary_ref_frame)?;
+    }
+
+    if seq.decoder_model_info_present_flag {
+      assert!(false); // Not supported by rav1e yet!
+    }
+
+    if fi.frame_type == FrameType::KEY {
+      if !fi.show_frame {
+        // unshown keyframe (forward keyframe)
+        assert!(false); // Not supported by rav1e yet!
+        self.write(REF_FRAMES as u32, fi.refresh_frame_flags)?;
+      } else {
+        assert!(fi.refresh_frame_flags == ALL_REF_FRAMES_MASK);
+      }
+    } else {
+      // Inter frame info goes here
+      if fi.intra_only {
+        assert!(fi.refresh_frame_flags != ALL_REF_FRAMES_MASK);
+        self.write(REF_FRAMES as u32, fi.refresh_frame_flags)?;
+      } else {
+        // TODO: This should be set once inter mode is used
+        self.write(REF_FRAMES as u32, fi.refresh_frame_flags)?;
+      }
+    };
+
+    if (!fi.intra_only || fi.refresh_frame_flags != ALL_REF_FRAMES_MASK) {
+      // Write all ref frame order hints if error_resilient_mode == 1
+      if (fi.error_resilient && seq.enable_order_hint) {
+        assert!(false); // Not supported by rav1e yet!
+
+        //for _ in 0..REF_FRAMES {
+        //  self.write(order_hint_bits_minus_1,ref_order_hint[i])?; // order_hint
+        //}
+      }
+    }
+
+    // if KEY or INTRA_ONLY frame
+    // FIXME: Not sure whether putting frame/render size here is good idea
+    if fi.intra_only {
+      if frame_size_override_flag {
         assert!(false); // Not supported by rav1e yet!
       }
-
-      if fi.frame_type == FrameType::KEY {
-        if !fi.show_frame {  // unshown keyframe (forward keyframe)
-          assert!(false); // Not supported by rav1e yet!
-          self.write(REF_FRAMES as u32, fi.refresh_frame_flags)?;
-        } else {
-          assert!(fi.refresh_frame_flags == ALL_REF_FRAMES_MASK);
-        }
-      } else { // Inter frame info goes here
-        if fi.intra_only {
-          assert!(fi.refresh_frame_flags != ALL_REF_FRAMES_MASK);
-          self.write(REF_FRAMES as u32, fi.refresh_frame_flags)?;
-        } else {
-          // TODO: This should be set once inter mode is used
-          self.write(REF_FRAMES as u32, fi.refresh_frame_flags)?;
-        }
-
-      };
-
-      if (!fi.intra_only || fi.refresh_frame_flags != ALL_REF_FRAMES_MASK) {
-        // Write all ref frame order hints if error_resilient_mode == 1
-        if (fi.error_resilient && seq.enable_order_hint) {
-          assert!(false); // Not supported by rav1e yet!
-          //for _ in 0..REF_FRAMES {
-          //  self.write(order_hint_bits_minus_1,ref_order_hint[i])?; // order_hint
-          //}
-        }
+      if seq.enable_superres {
+        assert!(false); // Not supported by rav1e yet!
       }
+      self.write_bit(false)?; // render_and_frame_size_different
 
-      // if KEY or INTRA_ONLY frame
-      // FIXME: Not sure whether putting frame/render size here is good idea
+      //if render_and_frame_size_different { }
+
+      if fi.allow_screen_content_tools != 0 && true /* UpscaledWidth == FrameWidth */ {
+        self.write_bit(fi.allow_intrabc)?;
+      }
+    }
+
+    let frame_refs_short_signaling = false;
+    if fi.frame_type == FrameType::KEY {
+      // Done by above
+    } else {
       if fi.intra_only {
-        if frame_size_override_flag {
-          assert!(false); // Not supported by rav1e yet!
-        }
-        if seq.enable_superres {
-          assert!(false); // Not supported by rav1e yet!
-        }
-        self.write_bit(false)?; // render_and_frame_size_different
-        //if render_and_frame_size_different { }
-        if fi.allow_screen_content_tools != 0 && true /* UpscaledWidth == FrameWidth */ {
-          self.write_bit(fi.allow_intrabc)?;
-        }
-      }
-
-      let frame_refs_short_signaling = false;
-      if fi.frame_type == FrameType::KEY {
         // Done by above
       } else {
-        if fi.intra_only {
-          // Done by above
-        } else {
-          if seq.enable_order_hint {
-            self.write_bit(frame_refs_short_signaling)?;
-            if frame_refs_short_signaling {
-              assert!(false); // Not supported by rav1e yet!
-            }
-          }
-
-          for i in 0..INTER_REFS_PER_FRAME {
-            if !frame_refs_short_signaling {
-              self.write(REF_FRAMES_LOG2 as u32, fi.ref_frames[i] as u8)?;
-            }
-            if seq.frame_id_numbers_present_flag {
-              assert!(false); // Not supported by rav1e yet!
-            }
-          }
-          if fi.error_resilient && frame_size_override_flag {
+        if seq.enable_order_hint {
+          self.write_bit(frame_refs_short_signaling)?;
+          if frame_refs_short_signaling {
             assert!(false); // Not supported by rav1e yet!
-          } else {
-            if frame_size_override_flag {
-               assert!(false); // Not supported by rav1e yet!
-            }
-            if seq.enable_superres {
-              assert!(false); // Not supported by rav1e yet!
-            }
-            self.write_bit(false)?; // render_and_frame_size_different
-          }
-          if fi.force_integer_mv != 0 {
-          } else {
-            self.write_bit(fi.allow_high_precision_mv);
-          }
-          self.write_bit(fi.is_filter_switchable)?;
-          self.write_bit(fi.is_motion_mode_switchable)?;
-          self.write(2,0)?; // EIGHTTAP_REGULAR
-          if fi.error_resilient || !seq.enable_ref_frame_mvs {
-          } else {
-            self.write_bit(fi.use_ref_frame_mvs)?;
           }
         }
-      }
 
-      if !seq.reduced_still_picture_hdr && !fi.disable_cdf_update {
-        self.write_bit(fi.disable_frame_end_update_cdf)?;
-      }
-
-      // tile
-      self.write_bit(true)?; // uniform_tile_spacing_flag
-      if fi.width > 64 {
-        // TODO: if tile_cols > 1, write more increment_tile_cols_log2 bits
-        self.write_bit(false)?; // tile cols
-      }
-      if fi.height > 64 {
-        // TODO: if tile_rows > 1, write increment_tile_rows_log2 bits
-        self.write_bit(false)?; // tile rows
-      }
-      // TODO: if tile_cols * tile_rows > 1 {
-      // write context_update_tile_id and tile_size_bytes_minus_1 }
-
-      // quantization
-      assert!(fi.base_q_idx > 0);
-      self.write(8, fi.base_q_idx)?; // base_q_idx
-      self.write_bit(false)?; // y dc delta q
-      self.write_bit(false)?; // uv dc delta q
-      self.write_bit(false)?; // uv ac delta q
-      self.write_bit(false)?; // no qm
-
-      // segmentation
-      self.write_bit(false)?; // segmentation is disabled
-
-      // delta_q
-      self.write_bit(false)?; // delta_q_present_flag: no delta q
-
-      // delta_lf_params in the spec
-      self.write_deblock_filter_a(fi, fs)?;
-
-      // code for features not yet implemented....
-
-      // loop_filter_params in the spec
-      self.write_deblock_filter_b(fi, fs)?;
-
-      // cdef
-      self.write_frame_cdef(seq, fi)?;
-      // loop restoration
-      if seq.enable_restoration {
-          self.write(6,0)?; // no y, u or v loop restoration
-      }
-      self.write_bit(false)?; // tx mode == TX_MODE_SELECT ?
-
-      let mut reference_select = false;
-      if !fi.intra_only {
-        reference_select = fi.reference_mode != ReferenceMode::SINGLE;
-        self.write_bit(reference_select)?;
-      }
-
-      let skip_mode_allowed =
-        !(fi.intra_only  || !reference_select || !seq.enable_order_hint);
-      if skip_mode_allowed {
-        unimplemented!();
-        self.write_bit(false)?; // skip_mode_present
-      }
-
-      if fi.intra_only || fi.error_resilient || !seq.enable_warped_motion {
-      } else {
-        self.write_bit(fi.allow_warped_motion)?; // allow_warped_motion
-      }
-
-      self.write_bit(fi.use_reduced_tx_set)?; // reduced tx
-
-      // global motion
-      if !fi.intra_only {
-          for i in LAST_FRAME..ALTREF_FRAME+1 {
-              let mode = fi.globalmv_transformation_type[i];
-              self.write_bit(mode != GlobalMVMode::IDENTITY)?;
-              if mode != GlobalMVMode::IDENTITY {
-                  self.write_bit(mode == GlobalMVMode::ROTZOOM)?;
-                  if mode != GlobalMVMode::ROTZOOM {
-                      self.write_bit(mode == GlobalMVMode::TRANSLATION)?;
-                  }
-              }
-              match mode {
-                  GlobalMVMode::IDENTITY => { /* Nothing to do */ }
-                  GlobalMVMode::TRANSLATION => {
-                      let mv_x = 0;
-                      let mv_x_ref = 0;
-                      let mv_y = 0;
-                      let mv_y_ref = 0;
-                      let bits = 12 - 6 + 3 - !fi.allow_high_precision_mv as u8;
-                      let bits_diff = 12 - 3 + fi.allow_high_precision_mv as u8;
-                      BCodeWriter::write_s_refsubexpfin(self, (1 << bits) + 1,
-                                                        3, mv_x_ref >> bits_diff,
-                                                        mv_x >> bits_diff)?;
-                      BCodeWriter::write_s_refsubexpfin(self, (1 << bits) + 1,
-                                                        3, mv_y_ref >> bits_diff,
-                                                        mv_y >> bits_diff)?;
-                  }
-                  GlobalMVMode::ROTZOOM => unimplemented!(),
-                  GlobalMVMode::AFFINE => unimplemented!(),
-              };
+        for i in 0..INTER_REFS_PER_FRAME {
+          if !frame_refs_short_signaling {
+            self.write(REF_FRAMES_LOG2 as u32, fi.ref_frames[i] as u8)?;
           }
+          if seq.frame_id_numbers_present_flag {
+            assert!(false); // Not supported by rav1e yet!
+          }
+        }
+        if fi.error_resilient && frame_size_override_flag {
+          assert!(false); // Not supported by rav1e yet!
+        } else {
+          if frame_size_override_flag {
+            assert!(false); // Not supported by rav1e yet!
+          }
+          if seq.enable_superres {
+            assert!(false); // Not supported by rav1e yet!
+          }
+          self.write_bit(false)?; // render_and_frame_size_different
+        }
+        if fi.force_integer_mv != 0 {
+        } else {
+          self.write_bit(fi.allow_high_precision_mv);
+        }
+        self.write_bit(fi.is_filter_switchable)?;
+        self.write_bit(fi.is_motion_mode_switchable)?;
+        self.write(2, 0)?; // EIGHTTAP_REGULAR
+        if fi.error_resilient || !seq.enable_ref_frame_mvs {
+        } else {
+          self.write_bit(fi.use_ref_frame_mvs)?;
+        }
       }
+    }
 
-      if seq.film_grain_params_present && fi.show_frame {
-          unimplemented!();
+    if !seq.reduced_still_picture_hdr && !fi.disable_cdf_update {
+      self.write_bit(fi.disable_frame_end_update_cdf)?;
+    }
+
+    // tile
+    self.write_bit(true)?; // uniform_tile_spacing_flag
+    if fi.width > 64 {
+      // TODO: if tile_cols > 1, write more increment_tile_cols_log2 bits
+      self.write_bit(false)?; // tile cols
+    }
+    if fi.height > 64 {
+      // TODO: if tile_rows > 1, write increment_tile_rows_log2 bits
+      self.write_bit(false)?; // tile rows
+    }
+    // TODO: if tile_cols * tile_rows > 1 {
+    // write context_update_tile_id and tile_size_bytes_minus_1 }
+
+    // quantization
+    assert!(fi.base_q_idx > 0);
+    self.write(8, fi.base_q_idx)?; // base_q_idx
+    self.write_bit(false)?; // y dc delta q
+    self.write_bit(false)?; // uv dc delta q
+    self.write_bit(false)?; // uv ac delta q
+    self.write_bit(false)?; // no qm
+
+    // segmentation
+    self.write_bit(false)?; // segmentation is disabled
+
+    // delta_q
+    self.write_bit(false)?; // delta_q_present_flag: no delta q
+
+    // delta_lf_params in the spec
+    self.write_deblock_filter_a(fi, fs)?;
+
+    // code for features not yet implemented....
+
+    // loop_filter_params in the spec
+    self.write_deblock_filter_b(fi, fs)?;
+
+    // cdef
+    self.write_frame_cdef(seq, fi)?;
+    // loop restoration
+    if seq.enable_restoration {
+      self.write(6, 0)?; // no y, u or v loop restoration
+    }
+    self.write_bit(false)?; // tx mode == TX_MODE_SELECT ?
+
+    let mut reference_select = false;
+    if !fi.intra_only {
+      reference_select = fi.reference_mode != ReferenceMode::SINGLE;
+      self.write_bit(reference_select)?;
+    }
+
+    let skip_mode_allowed =
+      !(fi.intra_only || !reference_select || !seq.enable_order_hint);
+    if skip_mode_allowed {
+      unimplemented!();
+      self.write_bit(false)?; // skip_mode_present
+    }
+
+    if fi.intra_only || fi.error_resilient || !seq.enable_warped_motion {
+    } else {
+      self.write_bit(fi.allow_warped_motion)?; // allow_warped_motion
+    }
+
+    self.write_bit(fi.use_reduced_tx_set)?; // reduced tx
+
+    // global motion
+    if !fi.intra_only {
+      for i in LAST_FRAME..ALTREF_FRAME + 1 {
+        let mode = fi.globalmv_transformation_type[i];
+        self.write_bit(mode != GlobalMVMode::IDENTITY)?;
+        if mode != GlobalMVMode::IDENTITY {
+          self.write_bit(mode == GlobalMVMode::ROTZOOM)?;
+          if mode != GlobalMVMode::ROTZOOM {
+            self.write_bit(mode == GlobalMVMode::TRANSLATION)?;
+          }
+        }
+        match mode {
+          GlobalMVMode::IDENTITY => { /* Nothing to do */ }
+          GlobalMVMode::TRANSLATION => {
+            let mv_x = 0;
+            let mv_x_ref = 0;
+            let mv_y = 0;
+            let mv_y_ref = 0;
+            let bits = 12 - 6 + 3 - !fi.allow_high_precision_mv as u8;
+            let bits_diff = 12 - 3 + fi.allow_high_precision_mv as u8;
+            BCodeWriter::write_s_refsubexpfin(
+              self,
+              (1 << bits) + 1,
+              3,
+              mv_x_ref >> bits_diff,
+              mv_x >> bits_diff
+            )?;
+            BCodeWriter::write_s_refsubexpfin(
+              self,
+              (1 << bits) + 1,
+              3,
+              mv_y_ref >> bits_diff,
+              mv_y >> bits_diff
+            )?;
+          }
+          GlobalMVMode::ROTZOOM => unimplemented!(),
+          GlobalMVMode::AFFINE => unimplemented!()
+        };
       }
+    }
 
-      if fi.large_scale_tile {
-          unimplemented!();
+    if seq.film_grain_params_present && fi.show_frame {
+      unimplemented!();
+    }
+
+    if fi.large_scale_tile {
+      unimplemented!();
+    }
+    self.write_bit(true)?; // trailing bit
+    self.byte_align()?;
+
+    Ok(())
+  }
+  // End of OBU Headers
+
+  fn write_frame_size(&mut self, fi: &FrameInvariants) -> io::Result<()> {
+    // width_bits and height_bits will have to be moved to the sequence header OBU
+    // when we add support for it.
+    let width_bits = 32 - (fi.width as u32).leading_zeros();
+    let height_bits = 32 - (fi.height as u32).leading_zeros();
+    assert!(width_bits <= 16);
+    assert!(height_bits <= 16);
+    self.write(4, width_bits - 1)?;
+    self.write(4, height_bits - 1)?;
+    self.write(width_bits, (fi.width - 1) as u16)?;
+    self.write(height_bits, (fi.height - 1) as u16)?;
+    Ok(())
+  }
+
+  fn write_deblock_filter_a(
+    &mut self, fi: &FrameInvariants, fs: &FrameState
+  ) -> io::Result<()> {
+    if fi.delta_q_present {
+      if !fi.allow_intrabc {
+        self.write_bit(fs.deblock.block_deltas_enabled)?;
       }
-      self.write_bit(true)?; // trailing bit
-      self.byte_align()?;
-
-      Ok(())
+      if fs.deblock.block_deltas_enabled {
+        self.write(2, fs.deblock.block_delta_shift)?;
+        self.write_bit(fs.deblock.block_delta_multi)?;
+      }
     }
-    // End of OBU Headers
+    Ok(())
+  }
 
-    fn write_frame_size(&mut self, fi: &FrameInvariants) -> io::Result<()> {
-        // width_bits and height_bits will have to be moved to the sequence header OBU
-        // when we add support for it.
-        let width_bits = 32 - (fi.width as u32).leading_zeros();
-        let height_bits = 32 - (fi.height as u32).leading_zeros();
-        assert!(width_bits <= 16);
-        assert!(height_bits <= 16);
-        self.write(4, width_bits - 1)?;
-        self.write(4, height_bits - 1)?;
-        self.write(width_bits, (fi.width - 1) as u16)?;
-        self.write(height_bits, (fi.height - 1) as u16)?;
-        Ok(())
+  fn write_deblock_filter_b(
+    &mut self, fi: &FrameInvariants, fs: &FrameState
+  ) -> io::Result<()> {
+    assert!(fs.deblock.levels[0] < 64);
+    self.write(6, fs.deblock.levels[0])?; // loop deblocking filter level 0
+    assert!(fs.deblock.levels[1] < 64);
+    self.write(6, fs.deblock.levels[1])?; // loop deblocking filter level 1
+    if PLANES > 1 && (fs.deblock.levels[0] > 0 || fs.deblock.levels[1] > 0) {
+      assert!(fs.deblock.levels[2] < 64);
+      self.write(6, fs.deblock.levels[2])?; // loop deblocking filter level 2
+      assert!(fs.deblock.levels[3] < 64);
+      self.write(6, fs.deblock.levels[3])?; // loop deblocking filter level 3
     }
-
-    fn write_deblock_filter_a(&mut self, fi: &FrameInvariants, fs: &FrameState) -> io::Result<()> {
-        if fi.delta_q_present {
-            if !fi.allow_intrabc {
-                self.write_bit(fs.deblock.block_deltas_enabled)?;
-            }
-            if fs.deblock.block_deltas_enabled {
-                self.write(2,fs.deblock.block_delta_shift)?;
-                self.write_bit(fs.deblock.block_delta_multi)?;
-            }
+    self.write(3, fs.deblock.sharpness)?; // deblocking filter sharpness
+    self.write_bit(fs.deblock.deltas_enabled)?; // loop deblocking filter deltas enabled
+    if fs.deblock.deltas_enabled {
+      self.write_bit(fs.deblock.delta_updates_enabled)?; // deltas updates enabled
+      if fs.deblock.delta_updates_enabled {
+        // conditionally write ref delta updates
+        let prev_ref_deltas = if fi.primary_ref_frame == PRIMARY_REF_NONE {
+          [1, 0, 0, 0, 0, -1, -1, -1]
+        } else {
+          fi.rec_buffer.deblock[fi.ref_frames[fi.primary_ref_frame as usize]]
+            .ref_deltas
+        };
+        for i in 0..REF_FRAMES {
+          let update = fs.deblock.ref_deltas[i] != prev_ref_deltas[i];
+          self.write_bit(update)?;
+          if update {
+            self.write_signed(7, fs.deblock.ref_deltas[i])?;
+          }
         }
-        Ok(())
+        // conditionally write mode delta updates
+        let prev_mode_deltas = if fi.primary_ref_frame == PRIMARY_REF_NONE {
+          [0, 0]
+        } else {
+          fi.rec_buffer.deblock[fi.ref_frames[fi.primary_ref_frame as usize]]
+            .mode_deltas
+        };
+        for i in 0..2 {
+          let update = fs.deblock.mode_deltas[i] != prev_mode_deltas[i];
+          self.write_bit(update)?;
+          if update {
+            self.write_signed(7, fs.deblock.mode_deltas[i])?;
+          }
+        }
+      }
     }
+    Ok(())
+  }
 
-    fn write_deblock_filter_b(&mut self, fi: &FrameInvariants, fs: &FrameState) -> io::Result<()> {
-        assert!(fs.deblock.levels[0] < 64);
-        self.write(6, fs.deblock.levels[0])?; // loop deblocking filter level 0
-        assert!(fs.deblock.levels[1] < 64);
-        self.write(6, fs.deblock.levels[1])?; // loop deblocking filter level 1
-        if PLANES > 1 && (fs.deblock.levels[0] > 0 || fs.deblock.levels[1] > 0) {
-            assert!(fs.deblock.levels[2] < 64);
-            self.write(6, fs.deblock.levels[2])?; // loop deblocking filter level 2
-            assert!(fs.deblock.levels[3] < 64);
-            self.write(6, fs.deblock.levels[3])?; // loop deblocking filter level 3
-        }
-        self.write(3,fs.deblock.sharpness)?; // deblocking filter sharpness
-        self.write_bit(fs.deblock.deltas_enabled)?; // loop deblocking filter deltas enabled
-        if fs.deblock.deltas_enabled {
-            self.write_bit(fs.deblock.delta_updates_enabled)?; // deltas updates enabled
-            if fs.deblock.delta_updates_enabled {
-                // conditionally write ref delta updates
-                let prev_ref_deltas = if fi.primary_ref_frame == PRIMARY_REF_NONE {
-                    [1, 0, 0, 0, 0, -1, -1, -1]
-                } else {
-                    fi.rec_buffer.deblock[fi.ref_frames[fi.primary_ref_frame as usize]].ref_deltas
-                };
-                for i in 0..REF_FRAMES {
-                    let update = fs.deblock.ref_deltas[i] != prev_ref_deltas[i];
-                    self.write_bit(update)?;
-                    if update {
-                        self.write_signed(7,fs.deblock.ref_deltas[i])?;
-                    }
-                }
-                // conditionally write mode delta updates
-                let prev_mode_deltas = if fi.primary_ref_frame == PRIMARY_REF_NONE {
-                    [0, 0]
-                } else {
-                    fi.rec_buffer.deblock[fi.ref_frames[fi.primary_ref_frame as usize]].mode_deltas
-                };
-                for i in 0..2 {
-                    let update = fs.deblock.mode_deltas[i] != prev_mode_deltas[i];
-                    self.write_bit(update)?;
-                    if update {
-                        self.write_signed(7,fs.deblock.mode_deltas[i])?;
-                    }
-                }
-            }
-        }
-        Ok(())
+  fn write_frame_cdef(
+    &mut self, seq: &Sequence, fi: &FrameInvariants
+  ) -> io::Result<()> {
+    if seq.enable_cdef {
+      assert!(fi.cdef_damping >= 3);
+      assert!(fi.cdef_damping <= 6);
+      self.write(2, fi.cdef_damping - 3)?;
+      assert!(fi.cdef_bits < 4);
+      self.write(2, fi.cdef_bits)?; // cdef bits
+      for i in 0..(1 << fi.cdef_bits) {
+        assert!(fi.cdef_y_strengths[i] < 64);
+        assert!(fi.cdef_uv_strengths[i] < 64);
+        self.write(6, fi.cdef_y_strengths[i])?; // cdef y strength
+        self.write(6, fi.cdef_uv_strengths[i])?; // cdef uv strength
+      }
     }
-
-    fn write_frame_cdef(&mut self, seq: &Sequence, fi: &FrameInvariants) -> io::Result<()> {
-        if seq.enable_cdef {
-            assert!(fi.cdef_damping >= 3);
-            assert!(fi.cdef_damping <= 6);
-            self.write(2, fi.cdef_damping - 3)?;
-            assert!(fi.cdef_bits < 4);
-            self.write(2,fi.cdef_bits)?; // cdef bits
-            for i in 0..(1<<fi.cdef_bits) {
-                assert!(fi.cdef_y_strengths[i]<64);
-                assert!(fi.cdef_uv_strengths[i]<64);
-                self.write(6,fi.cdef_y_strengths[i])?; // cdef y strength
-                self.write(6,fi.cdef_uv_strengths[i])?; // cdef uv strength
-            }
-        }
-        Ok(())
-    }
+    Ok(())
+  }
 }
 
 #[allow(non_camel_case_types)]
