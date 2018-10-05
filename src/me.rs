@@ -83,7 +83,7 @@ pub fn motion_estimation(
       let mut tmp_plane = Plane::new(blk_w, blk_h, 0, 0, 0, 0);
 
       let mut steps = vec![8, 4];
-      if (pmv.col - best_mv.col).abs() <= 16 * 8 && (pmv.row - best_mv.row).abs() <= 16 * 8 {
+      if best_mv.col.abs() <= 16 * 8 && best_mv.row.abs() <= 16 * 8 {
         steps.push(2);
 		    if fi.allow_high_precision_mv {
 		      steps.push(1);
