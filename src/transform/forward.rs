@@ -165,6 +165,87 @@ fn av1_fdct4_new(
   output[3] = step[3];
 }
 
+use std::ops::*;
+
+fn tx_mul(a: i32, mul: (i32, i32)) -> i32 {
+  ((a * mul.0) + (1 << mul.1 >> 1)) >> mul.1
+}
+
+pub trait RotateKernel {
+  const ADD: fn(i32, i32) -> i32;
+  const SHIFT: fn(i32) -> i32;
+
+  fn kernel(p0: i32, p1: i32, v: i32, m: (i32, i32, i32)) -> (i32, i32) {
+    let t = Self::ADD(p1, v);
+    let (a, b, c) = (p0 * m.0, p1 * m.1, t * m.2);
+    let out0 = b + c; // neg -> b - c
+    let shifted = Self::SHIFT(c);
+    let out1 = Self::ADD(a, -shifted);
+    (out0, out1)
+
+    //p1 + v,    a - c add
+    //p1 - v,    a + c sub
+    //-p1 + p0, -a + c neg
+
+    // let t = p1 + v
+    // let (u, p0, t) = (p1 * m.0, p0 * m.1, t * m.2); // let (u, p0, t) = (p0 * m.0, p1 * m1, t * m2)
+    // let out0 = p0 -
+  }
+}
+
+fn copy_fn(a: i32) -> i32 {
+  a
+}
+
+fn rshift1(a: i32) -> i32 {
+  (a + if a < 0 {1} else {0}) >> 1
+}
+
+pub struct RotateAdd;
+
+impl RotateKernel for RotateAdd {
+  const ADD: fn(i32, i32) -> i32 = Add::add;
+  const SHIFT: fn(i32) -> i32 = copy_fn;
+}
+
+/*
+fn rotate_kernel(p0: i32, p1: i32, v: i32, m0: i32, m1: i32, m2: i32) -> (i32, i32)
+if ((type) == ADD)
+  t = p1 + v;
+else
+  t = p1 - v;
+rot3(p0, p1, t, m0, m1, m2);
+
+fn av1_fdct4_daala_tx(
+  input: &[i32], output: &mut [i32], cos_bit: usize, _stage_range: &[i8]
+) {
+  let mut step = [0i32; 4];
+  let cospi = cospi_arr(cos_bit);
+
+  // stage 1
+  output[0] = input[0] + input[3];
+  output[1] = input[1] + input[2];
+  output[2] = input[1] - input[2];
+  output[3] = input[0] - input[3];
+
+  // stage 2
+  [
+    output[0] + output[1],
+    output[1] - output[0],
+    ,
+  ];
+  step[0] = half_btf(cospi[32], output[0], cospi[32], output[1], cos_bit);
+  step[1] = half_btf(-cospi[32], output[1], cospi[32], output[0], cos_bit);
+  step[2] = half_btf(cospi[48], output[2], cospi[16], output[3], cos_bit);
+  step[3] = half_btf(cospi[48], output[3], -cospi[16], output[2], cos_bit);
+
+  // stage 3
+  output[0] = step[0];
+  output[1] = step[2];
+  output[2] = step[1];
+  output[3] = step[3];
+}*/
+
 fn av1_fdct8_new(
   input: &[i32], output: &mut [i32], cos_bit: usize, _stage_range: &[i8]
 ) {
