@@ -318,7 +318,10 @@ mod test {
   use super::*;
   use rand::random;
 
+use rand::{ChaChaRng, Rng, SeedableRng};
+
   fn test_roundtrip(tx_size: TxSize, tx_type: TxType, tolerance: i16) {
+let mut ra = ChaChaRng::from_seed([0; 32]);
     let mut src_storage = [0u16; 64 * 64];
     let src = &mut src_storage[..tx_size.area()];
     let mut dst_storage = [0u16; 64 * 64];
@@ -328,13 +331,22 @@ mod test {
     let mut freq_storage = [0i32; 64 * 64];
     let freq = &mut freq_storage[..tx_size.area()];
     for ((r, s), d) in res.iter_mut().zip(src.iter_mut()).zip(dst.iter_mut()) {
-      *s = random::<u8>() as u16;
-      *d = random::<u8>() as u16;
+      *s = ra.gen::<u8>() as u16;
+      *d = ra.gen::<u8>() as u16;
+      //*s = random::<u8>() as u16;
+      //*d = random::<u8>() as u16;
       *r = (*s as i16) - (*d as i16);
     }
     forward_transform(res, freq, tx_size.width(), tx_size, tx_type, 8);
+    /*for d in freq.iter() {
+      eprintln!("{}", *d);
+    }
+    eprintln!();*/
     inverse_transform_add(freq, dst, tx_size.width(), tx_size, tx_type, 8);
 
+    /*for (s, d) in src.iter().zip(dst.iter()) {
+      eprintln!("{} {}", *s, *d);
+    }*/
     for (s, d) in src.iter().zip(dst) {
       assert!(i16::abs((*s as i16) - (*d as i16)) <= tolerance);
     }
