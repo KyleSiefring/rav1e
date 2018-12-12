@@ -140,6 +140,162 @@ fn av1_gen_fwd_stage_range(
 
 type TxfmFunc = Fn(&[i32], &mut [i32], usize, &[i8]);
 
+use std::ops::*;
+
+fn tx_mul(a: i32, mul: (i32, i32)) -> i32 {
+  ((a * mul.0) + (1 << mul.1 >> 1)) >> mul.1
+}
+
+trait RotateKernelPi4 {
+  const ADD: fn(i32, i32) -> i32;
+  const SUB: fn(i32, i32) -> i32;
+
+  fn kernel(p0: i32, p1: i32, m: ((i32, i32), (i32, i32))) -> (i32, i32) {
+    let t = Self::ADD(p1, p0);
+    let (a, out0) = (tx_mul(p0, m.0), tx_mul(t, m.1));
+    let out1 = Self::SUB(a, out0);
+    (out0, out1)
+  }
+}
+
+pub struct RotatePi4Add;
+pub struct RotatePi4Sub;
+
+impl RotateKernelPi4 for RotatePi4Add {
+  const ADD: fn(i32, i32) -> i32 = Add::add;
+  const SUB: fn(i32, i32) -> i32 = Sub::sub;
+}
+
+impl RotateKernelPi4 for RotatePi4Sub {
+  const ADD: fn(i32, i32) -> i32 = Sub::sub;
+  const SUB: fn(i32, i32) -> i32 = Add::add;
+}
+
+trait RotateKernel {
+  const ADD: fn(i32, i32) -> i32;
+  const SUB: fn(i32, i32) -> i32;
+  const SHIFT: fn(i32) -> i32;
+
+  fn half_kernel(p0: (i32, i32), p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))) -> (i32, i32) {
+    let t = Self::ADD(p1, p0.0);
+    let (a, b, c) = (tx_mul(p0.1, m.0), tx_mul(p1, m.1), tx_mul(t, m.2));
+    let out0 = b + c; // neg -> b - c
+    let shifted = Self::SHIFT(c);
+    let out1 = Self::SUB(a, shifted);
+    (out0, out1)
+    //p1 + v,    a - c add
+    //p1 - v,    a + c sub
+    //-p1 + p0, -a + c neg
+  }
+
+  fn kernel(p0: i32, p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))) -> (i32, i32) {
+    Self::half_kernel((p0, p0), p1, m)
+
+    // let t = p1 + v
+    // let (u, p0, t) = (p1 * m.0, p0 * m.1, t * m.2); // let (u, p0, t) = (p0 * m.0, p1 * m1, t * m2)
+    // let out0 = p0 -
+  }
+}
+
+trait RotateKernelNeg {
+  const ADD: fn(i32, i32) -> i32;
+  fn kernel(p0: i32, p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))) -> (i32, i32) {
+    let t = Self::ADD(p0, p1);
+    let (a, b, c) = (tx_mul(p0, m.0), tx_mul(p1, m.1), tx_mul(t, m.2));
+    let out0 = b - c;
+    let out1 = c - a;
+    (out0, out1)
+    //NEG
+    // m.1*p1 - m.2*(p0-p1) = p1*(Sin - Cos) - Cos * (p0-p1) = -Cos*p0 + Sin*p1
+    // m.2*(p0-p1) - m.0*p0 = Cos * (p0-p1) - p0*(Sin + Cos) = -Cos*p1 - Sin*p0
+  }
+}
+
+fn copy_fn(a: i32) -> i32 {
+  a
+}
+
+fn rshift1(a: i32) -> i32 {
+  (a + if a < 0 {1} else {0}) >> 1
+}
+
+fn add_avg(a: i32, b: i32) -> i32 {
+  (a + b) >> 1
+}
+
+fn sub_avg(a: i32, b: i32) -> i32 {
+  (a - b) >> 1
+}
+
+pub struct RotateAdd;
+pub struct RotateAddAvg;
+pub struct RotateSub;
+pub struct RotateSubAvg;
+
+impl RotateKernel for RotateAdd {
+  const ADD: fn(i32, i32) -> i32 = Add::add;
+  const SUB: fn(i32, i32) -> i32 = Sub::sub;
+  const SHIFT: fn(i32) -> i32 = copy_fn;
+}
+
+impl RotateKernel for RotateAddAvg {
+  const ADD: fn(i32, i32) -> i32 = add_avg;
+  const SUB: fn(i32, i32) -> i32 = Sub::sub;
+  const SHIFT: fn(i32) -> i32 = copy_fn;
+}
+
+impl RotateKernel for RotateSub {
+  const ADD: fn(i32, i32) -> i32 = Sub::sub;
+  const SUB: fn(i32, i32) -> i32 = Add::add;
+  const SHIFT: fn(i32) -> i32 = copy_fn;
+}
+
+impl RotateKernel for RotateSubAvg {
+  const ADD: fn(i32, i32) -> i32 = sub_avg;
+  const SUB: fn(i32, i32) -> i32 = Add::add;
+  const SHIFT: fn(i32) -> i32 = copy_fn;
+}
+
+fn butterfly_neg(p0: i32, p1: i32) -> (i32, (i32, i32)) {
+  let p1 = p0 - p1;
+  let p1h = rshift1(p1);
+  let p0h = p0 - p1h;
+  (p0h, (p1h, p1))
+}
+
+fn butterfly_add(p0: i32, p1: i32) -> ((i32, i32), i32) {
+  let p0 = p0 + p1;
+  let p0h = rshift1(p0);
+  let p1h = p1 - p0h;
+  ((p0h, p0), p1h)
+}
+
+fn butterfly_neg_asym(p0h: i32, p1: (i32, i32)) -> (i32, i32) {
+  let p0 = p0h + p1.0;
+  let p1 = p0 - p1.1;
+  (p0, p1)
+}
+
+fn daala_fdct2_asym(p0h: i32, p1: (i32, i32)) -> (i32, i32) {
+  butterfly_neg_asym(p0h, p1)
+}
+
+fn daala_fdst2_asym(p0: (i32, i32), p1h: (i32)) -> (i32, i32) {
+  RotateAdd::half_kernel(p0, p1h, ((473, 9), (3135, 12), (4433, 13)))
+}
+
+fn daala_fdct4(input: &[i32], output: &mut [i32]) {
+  let (q0h, q3) = butterfly_neg(input[0], input[3]);
+  let (q1, q2h) = butterfly_add(input[1], input[2]);
+
+  let (q0, q1) = daala_fdct2_asym(q0h, q1);
+  let (q3, q2) = daala_fdst2_asym(q3, q2h);
+  output[0] = q0;
+  output[1] = q2;
+  output[2] = q1;
+  output[3] = q3;
+}
+
 fn av1_fdct4_new(
   input: &[i32], output: &mut [i32], cos_bit: usize, _stage_range: &[i8]
 ) {
@@ -164,87 +320,6 @@ fn av1_fdct4_new(
   output[2] = step[1];
   output[3] = step[3];
 }
-
-use std::ops::*;
-
-fn tx_mul(a: i32, mul: (i32, i32)) -> i32 {
-  ((a * mul.0) + (1 << mul.1 >> 1)) >> mul.1
-}
-
-pub trait RotateKernel {
-  const ADD: fn(i32, i32) -> i32;
-  const SHIFT: fn(i32) -> i32;
-
-  fn kernel(p0: i32, p1: i32, v: i32, m: (i32, i32, i32)) -> (i32, i32) {
-    let t = Self::ADD(p1, v);
-    let (a, b, c) = (p0 * m.0, p1 * m.1, t * m.2);
-    let out0 = b + c; // neg -> b - c
-    let shifted = Self::SHIFT(c);
-    let out1 = Self::ADD(a, -shifted);
-    (out0, out1)
-
-    //p1 + v,    a - c add
-    //p1 - v,    a + c sub
-    //-p1 + p0, -a + c neg
-
-    // let t = p1 + v
-    // let (u, p0, t) = (p1 * m.0, p0 * m.1, t * m.2); // let (u, p0, t) = (p0 * m.0, p1 * m1, t * m2)
-    // let out0 = p0 -
-  }
-}
-
-fn copy_fn(a: i32) -> i32 {
-  a
-}
-
-fn rshift1(a: i32) -> i32 {
-  (a + if a < 0 {1} else {0}) >> 1
-}
-
-pub struct RotateAdd;
-
-impl RotateKernel for RotateAdd {
-  const ADD: fn(i32, i32) -> i32 = Add::add;
-  const SHIFT: fn(i32) -> i32 = copy_fn;
-}
-
-/*
-fn rotate_kernel(p0: i32, p1: i32, v: i32, m0: i32, m1: i32, m2: i32) -> (i32, i32)
-if ((type) == ADD)
-  t = p1 + v;
-else
-  t = p1 - v;
-rot3(p0, p1, t, m0, m1, m2);
-
-fn av1_fdct4_daala_tx(
-  input: &[i32], output: &mut [i32], cos_bit: usize, _stage_range: &[i8]
-) {
-  let mut step = [0i32; 4];
-  let cospi = cospi_arr(cos_bit);
-
-  // stage 1
-  output[0] = input[0] + input[3];
-  output[1] = input[1] + input[2];
-  output[2] = input[1] - input[2];
-  output[3] = input[0] - input[3];
-
-  // stage 2
-  [
-    output[0] + output[1],
-    output[1] - output[0],
-    ,
-  ];
-  step[0] = half_btf(cospi[32], output[0], cospi[32], output[1], cos_bit);
-  step[1] = half_btf(-cospi[32], output[1], cospi[32], output[0], cos_bit);
-  step[2] = half_btf(cospi[48], output[2], cospi[16], output[3], cos_bit);
-  step[3] = half_btf(cospi[48], output[3], -cospi[16], output[2], cos_bit);
-
-  // stage 3
-  output[0] = step[0];
-  output[1] = step[2];
-  output[2] = step[1];
-  output[3] = step[3];
-}*/
 
 fn av1_fdct8_new(
   input: &[i32], output: &mut [i32], cos_bit: usize, _stage_range: &[i8]
@@ -2076,6 +2151,86 @@ trait FwdTxfm2D: Dim {
       }
     }
   }
+
+  fn fwd_txfm2d_daala(
+    input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
+    bd: usize
+  ) {
+    let buf = &mut [0i32; 64 * 64][..Self::W * Self::H];
+    let cfg = Txfm2DFlipCfg::fwd(tx_type, TxSize::by_dims(Self::W, Self::H));
+
+    // Note when assigning txfm_size_col, we use the txfm_size from the
+    // row configuration and vice versa. This is intentionally done to
+    // accurately perform rectangular transforms. When the transform is
+    // rectangular, the number of columns will be the same as the
+    // txfm_size stored in the row cfg struct. It will make no difference
+    // for square transforms.
+    let txfm_size_col = TxSize::width(cfg.tx_size);
+    let txfm_size_row = TxSize::height(cfg.tx_size);
+    // Take the shift from the larger dimension in the rectangular case.
+    assert!(cfg.stage_num_col <= MAX_TXFM_STAGE_NUM);
+    assert!(cfg.stage_num_row <= MAX_TXFM_STAGE_NUM);
+    let rect_type = get_rect_tx_log_ratio(txfm_size_col, txfm_size_row);
+
+    let txfm_func_col = daala_fdct4;
+    let txfm_func_row = daala_fdct4;
+
+    // Columns
+    for c in 0..txfm_size_col {
+      if cfg.ud_flip {
+        // flip upside down
+        for r in 0..txfm_size_row {
+          output[r] = (input[(txfm_size_row - r - 1) * stride + c]).into();
+        }
+      } else {
+        for r in 0..txfm_size_row {
+          output[r] = (input[r * stride + c]).into();
+        }
+      }
+      av1_round_shift_array(output, txfm_size_row, -cfg.shift[0]-1);
+      txfm_func_col(
+        &output[..txfm_size_row].to_vec(),
+        &mut output[txfm_size_row..]
+      );
+      av1_round_shift_array(
+        &mut output[txfm_size_row..],
+        txfm_size_row,
+        -cfg.shift[1]
+      );
+      if cfg.lr_flip {
+        for r in 0..txfm_size_row {
+          // flip from left to right
+          buf[r * txfm_size_col + (txfm_size_col - c - 1)] =
+            output[txfm_size_row + r];
+        }
+      } else {
+        for r in 0..txfm_size_row {
+          buf[r * txfm_size_col + c] = output[txfm_size_row + r];
+        }
+      }
+    }
+
+    // Rows
+    for r in 0..txfm_size_row {
+      txfm_func_row(
+        &buf[r * txfm_size_col..],
+        &mut output[r * txfm_size_col..]
+      );
+      av1_round_shift_array(
+        &mut output[r * txfm_size_col..],
+        txfm_size_col,
+        -cfg.shift[2]
+      );
+      if rect_type.abs() == 1 {
+        // Multiply everything by Sqrt2 if the transform is rectangular and the
+        // size difference is a factor of 2.
+        for c in 0..txfm_size_col {
+          output[r * txfm_size_col + c] =
+            round_shift(output[r * txfm_size_col + c] * SQRT2, SQRT2_BITS);
+        }
+      }
+    }
+  }
 }
 
 macro_rules! impl_fwd_txs {
@@ -2099,7 +2254,9 @@ pub fn fht4x4(
   bit_depth: usize
 ) {
   // SIMD code may assert for transform types beyond TxType::IDTX.
-  if tx_type < TxType::IDTX {
+  if tx_type == TxType::DCT_DCT {
+    Block4x4::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  } else if tx_type < TxType::IDTX {
     Block4x4::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
   } else {
     Block4x4::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
