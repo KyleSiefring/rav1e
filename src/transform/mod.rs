@@ -320,8 +320,10 @@ mod test {
 
 use rand::{ChaChaRng, Rng, SeedableRng};
 
-  fn test_roundtrip(tx_size: TxSize, tx_type: TxType, tolerance: i16) {
-let mut ra = ChaChaRng::from_seed([0; 32]);
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
+
+  fn test_roundtrip(tx_size: TxSize, tx_type: TxType, tolerance: i16, ra: &mut ChaChaRng, hasher: &mut Hasher) {
     let mut src_storage = [0u16; 64 * 64];
     let src = &mut src_storage[..tx_size.area()];
     let mut dst_storage = [0u16; 64 * 64];
@@ -338,10 +340,9 @@ let mut ra = ChaChaRng::from_seed([0; 32]);
       *r = (*s as i16) - (*d as i16);
     }
     forward_transform(res, freq, tx_size.width(), tx_size, tx_type, 8);
-    /*for d in freq.iter() {
-      eprintln!("{}", *d);
+    for d in freq.iter() {
+      hasher.write_i32(*d);
     }
-    eprintln!();*/
     inverse_transform_add(freq, dst, tx_size.width(), tx_size, tx_type, 8);
 
     /*for (s, d) in src.iter().zip(dst.iter()) {
@@ -405,7 +406,12 @@ let mut ra = ChaChaRng::from_seed([0; 32]);
     ];
     for &(tx_size, tx_type, tolerance) in combinations.iter() {
       println!("Testing combination {:?}, {:?}", tx_size, tx_type);
-      test_roundtrip(tx_size, tx_type, tolerance);
+let mut ra = ChaChaRng::from_seed([0; 32]);
+let mut hasher = DefaultHasher::new();
+      for _i in 0..1 {
+        test_roundtrip(tx_size, tx_type, tolerance, &mut ra, &mut hasher);
+      }
+      //println!("{}", hasher.finish());
     }
   }
 }
