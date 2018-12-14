@@ -342,12 +342,14 @@ use std::hash::Hasher;
     forward_transform(res, freq, tx_size.width(), tx_size, tx_type, 8);
     for d in freq.iter() {
       hasher.write_i32(*d);
+      eprintln!("{}", *d);
     }
+    eprintln!();
     inverse_transform_add(freq, dst, tx_size.width(), tx_size, tx_type, 8);
 
-    /*for (s, d) in src.iter().zip(dst.iter()) {
+    for (s, d) in src.iter().zip(dst.iter()) {
       eprintln!("{} {}", *s, *d);
-    }*/
+    }
     for (s, d) in src.iter().zip(dst) {
       assert!(i16::abs((*s as i16) - (*d as i16)) <= tolerance);
     }
@@ -358,7 +360,7 @@ use std::hash::Hasher;
     use partition::TxSize::*;
     use partition::TxType::*;
     let combinations = [
-      (TX_4X4, DCT_DCT, 0),
+      /*(TX_4X4, DCT_DCT, 0),
       (TX_4X4, ADST_DCT, 0),
       (TX_4X4, DCT_ADST, 0),
       (TX_4X4, ADST_ADST, 0),
@@ -366,7 +368,7 @@ use std::hash::Hasher;
       (TX_4X4, V_DCT, 0),
       (TX_4X4, H_DCT, 0),
       (TX_4X4, V_ADST, 0),
-      (TX_4X4, H_ADST, 0),
+      (TX_4X4, H_ADST, 0),*/
       (TX_8X8, DCT_DCT, 1),
       (TX_8X8, ADST_DCT, 1),
       (TX_8X8, DCT_ADST, 1),
@@ -412,6 +414,7 @@ let mut hasher = DefaultHasher::new();
         test_roundtrip(tx_size, tx_type, tolerance, &mut ra, &mut hasher);
       }
       //println!("{}", hasher.finish());
+      //assert!(false);
     }
   }
 }
