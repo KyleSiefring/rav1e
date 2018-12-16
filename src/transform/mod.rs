@@ -360,7 +360,7 @@ use std::hash::Hasher;
     use partition::TxSize::*;
     use partition::TxType::*;
     let combinations = [
-      /*(TX_4X4, DCT_DCT, 0),
+      (TX_4X4, DCT_DCT, 0),
       (TX_4X4, ADST_DCT, 0),
       (TX_4X4, DCT_ADST, 0),
       (TX_4X4, ADST_ADST, 0),
@@ -368,7 +368,11 @@ use std::hash::Hasher;
       (TX_4X4, V_DCT, 0),
       (TX_4X4, H_DCT, 0),
       (TX_4X4, V_ADST, 0),
-      (TX_4X4, H_ADST, 0),*/
+      (TX_4X4, H_ADST, 0),
+
+      (TX_4X8, DCT_DCT, 0),
+      (TX_8X4, DCT_DCT, 0),
+
       (TX_8X8, DCT_DCT, 1),
       (TX_8X8, ADST_DCT, 1),
       (TX_8X8, DCT_ADST, 1),
