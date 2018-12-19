@@ -19,21 +19,21 @@ type TxfmShift = [i8; 3];
 
 const FWD_SHIFT_4X4: TxfmShift = [3, 0, 0];//
 const FWD_SHIFT_8X8: TxfmShift = [4, -1, 0];//
-const FWD_SHIFT_16X16: TxfmShift = [2, -2, 0];
-const FWD_SHIFT_32X32: TxfmShift = [2, -4, 0];
+const FWD_SHIFT_16X16: TxfmShift = [5, -2, 0];//
+const FWD_SHIFT_32X32: TxfmShift = [6, -4, 0];//
 const FWD_SHIFT_64X64: TxfmShift = [0, -2, -2];
 const FWD_SHIFT_4X8: TxfmShift = [4, -1, 0];//
 const FWD_SHIFT_8X4: TxfmShift = [4, -1, 0];//
-const FWD_SHIFT_8X16: TxfmShift = [2, -2, 0];
-const FWD_SHIFT_16X8: TxfmShift = [2, -2, 0];
-const FWD_SHIFT_16X32: TxfmShift = [2, -4, 0];
-const FWD_SHIFT_32X16: TxfmShift = [2, -4, 0];
+const FWD_SHIFT_8X16: TxfmShift = [5, -2, 0];//
+const FWD_SHIFT_16X8: TxfmShift = [5, -2, 0];//
+const FWD_SHIFT_16X32: TxfmShift = [6, -4, 0];//
+const FWD_SHIFT_32X16: TxfmShift = [6, -4, 0];//
 const FWD_SHIFT_32X64: TxfmShift = [0, -2, -2];
 const FWD_SHIFT_64X32: TxfmShift = [2, -4, -2];
-const FWD_SHIFT_4X16: TxfmShift = [2, -1, 0];
-const FWD_SHIFT_16X4: TxfmShift = [2, -1, 0];
-const FWD_SHIFT_8X32: TxfmShift = [2, -2, 0];
-const FWD_SHIFT_32X8: TxfmShift = [2, -2, 0];
+const FWD_SHIFT_4X16: TxfmShift = [4, -1, 0];//
+const FWD_SHIFT_16X4: TxfmShift = [4, -1, 0];//
+const FWD_SHIFT_8X32: TxfmShift = [5, -2, 0];//
+const FWD_SHIFT_32X8: TxfmShift = [5, -2, 0];//
 const FWD_SHIFT_16X64: TxfmShift = [0, -2, 0];
 const FWD_SHIFT_64X16: TxfmShift = [2, -4, 0];
 
@@ -150,7 +150,7 @@ fn copy_fn(a: i32) -> i32 {
 }
 
 fn rshift1(a: i32) -> i32 {
-  (a + if a < 0 {1} else {0}) >> 1
+  (a + if a < 0 { 1 } else { 0 }) >> 1
 }
 
 fn add_avg(a: i32, b: i32) -> i32 {
@@ -203,7 +203,9 @@ trait RotateKernel {
   const SUB: fn(i32, i32) -> i32;
   const SHIFT: fn(i32) -> i32;
 
-  fn half_kernel(p0: (i32, i32), p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))) -> (i32, i32) {
+  fn half_kernel(
+    p0: (i32, i32), p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))
+  ) -> (i32, i32) {
     let t = Self::ADD(p1, p0.0);
     let (a, b, c) = (tx_mul(p0.1, m.0), tx_mul(p1, m.1), tx_mul(t, m.2));
     let out0 = b + c; // neg -> b - c
@@ -215,7 +217,9 @@ trait RotateKernel {
     //-p1 + p0, -a + c neg
   }
 
-  fn kernel(p0: i32, p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))) -> (i32, i32) {
+  fn kernel(
+    p0: i32, p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))
+  ) -> (i32, i32) {
     Self::half_kernel((p0, p0), p1, m)
 
     // let t = p1 + v
@@ -226,7 +230,9 @@ trait RotateKernel {
 
 trait RotateKernelNeg {
   const ADD: fn(i32, i32) -> i32;
-  fn kernel(p0: i32, p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))) -> (i32, i32) {
+  fn kernel(
+    p0: i32, p1: i32, m: ((i32, i32), (i32, i32), (i32, i32))
+  ) -> (i32, i32) {
     let t = Self::ADD(p0, p1);
     let (a, b, c) = (tx_mul(p0, m.0), tx_mul(p1, m.1), tx_mul(t, m.2));
     let out0 = b - c;
@@ -244,6 +250,7 @@ struct RotateAddShift;
 struct RotateSub;
 struct RotateSubAvg;
 struct RotateSubShift;
+struct RotateNeg;
 struct RotateNegAvg;
 
 impl RotateKernel for RotateAdd {
@@ -280,6 +287,10 @@ impl RotateKernel for RotateSubShift {
   const ADD: fn(i32, i32) -> i32 = Sub::sub;
   const SUB: fn(i32, i32) -> i32 = Add::add;
   const SHIFT: fn(i32) -> i32 = rshift1;
+}
+
+impl RotateKernelNeg for RotateNeg {
+  const ADD: fn(i32, i32) -> i32 = Sub::sub;
 }
 
 impl RotateKernelNeg for RotateNegAvg {
@@ -325,6 +336,18 @@ fn butterfly_neg_asym(p0h: i32, p1: (i32, i32)) -> (i32, i32) {
   (p0, p1)
 }
 
+macro_rules! store_coeffs {
+  ( $arr:expr, $( $x:expr ),* ) => {
+      {
+      let mut i: i32 = -1;
+      $(
+        i += 1;
+        $arr[i as usize] = $x;
+      )*
+    }
+  };
+}
+
 fn daala_fdct_ii_2_asym(p0h: i32, p1: (i32, i32)) -> (i32, i32) {
   butterfly_neg_asym(p0h, p1)
 }
@@ -343,10 +366,7 @@ fn daala_fdct_ii_4(q0: i32, q1: i32, q2: i32, q3: i32, output: &mut [i32]) {
   let (q0, q1) = daala_fdct_ii_2_asym(q0h, q1);
   let (q3, q2) = daala_fdst_iv_2_asym(q3, q2h);
 
-  output[0] = q0;
-  output[1] = q1;
-  output[2] = q2;
-  output[3] = q3;
+  store_coeffs!(output, q0, q1, q2, q3);
 }
 
 fn daala_fdct4(input: &[i32], output: &mut [i32]) {
@@ -411,39 +431,38 @@ fn daala_fdct_ii_4_asym(
   let (q0, q1) = daala_fdct_ii_2(q0, q1);
   let (q3, q2) = daala_fdst_iv_2(q3, q2);
 
-  output[0] = q0;
-  output[1] = q1;
-  output[2] = q2;
-  output[3] = q3;
+  store_coeffs!(output, q0, q1, q2, q3);
 }
 
 fn daala_fdst_iv_4_asym(
   q0: (i32, i32), q1h: i32, q2: (i32, i32), q3h: i32, output: &mut [i32]
 ) {
+  // Stage 0
   //  9633/16384 = (Sin[7*Pi/16] + Cos[7*Pi/16])/2 = 0.5879378012096793
   //  12873/8192 = (Sin[7*Pi/16] - Cos[7*Pi/16])*2 = 1.5713899167742045
   // 12785/32768 = Cos[7*Pi/16]*2                  = 0.3901806440322565
   let (q0, q3) = RotateAddShift::half_kernel(q0, q3h, ((9633, 14), (12873, 13), (12785, 15)));
-
   // 11363/16384 = (Sin[5*Pi/16] + Cos[5*Pi/16])/2 = 0.6935199226610738
   // 18081/32768 = (Sin[5*Pi/16] - Cos[5*Pi/16])*2 = 0.5517987585658861
   //  4551/4096 = Cos[5*Pi/16]*2                  = 1.1111404660392044
   let (q2, q1) = RotateSubShift::half_kernel(q2, q1h, ((11363, 14), (18081, 15), (4551, 12)));
 
+  // Stage 1
   let (q2, q3) = butterfly_sub_asym((rshift1(q2), q2), q3);
   let (q0, q1) = butterfly_sub_asym((rshift1(q0), q0), q1);
 
+  // Stage 2
   // 11585/8192 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
   // 11585/8192 = 2*Cos[Pi/4]           = 1.4142135623730951
   let (q2, q1) = RotatePi4AddAvg::kernel(q2, q1, ((11585, 13), (11585, 13)));
 
-  output[0] = q3;
-  output[1] = q2;
-  output[2] = q1;
-  output[3] = q0;
+  store_coeffs!(output, q0, q1, q2, q3);
 }
 
-fn daala_fdct_ii_8(r0: i32, r1: i32, r2: i32, r3: i32, r4: i32, r5: i32, r6: i32, r7: i32, output: &mut [i32]) {
+fn daala_fdct_ii_8(
+  r0: i32, r1: i32, r2: i32, r3: i32, r4: i32, r5: i32, r6: i32, r7: i32,
+  output: &mut [i32]
+) {
   let (r0h, r7) = butterfly_neg(r0, r7);
   let (r1, r6h) = butterfly_add(r1, r6);
   let (r2h, r5) = butterfly_neg(r2, r5);
@@ -451,25 +470,50 @@ fn daala_fdct_ii_8(r0: i32, r1: i32, r2: i32, r3: i32, r4: i32, r5: i32, r6: i32
 
   daala_fdct_ii_4_asym(r0h, r1, r2h, r3, &mut output[0..4]);
   daala_fdst_iv_4_asym(r7, r6h, r5, r4h, &mut output[4..8]);
+  output[4..8].reverse();
 }
 
-fn daala_fdst_iv_8(r0: i32, r1: i32, r2: i32, r3: i32, r4: i32, r5: i32, r6: i32, r7: i32, output: &mut [i32]) {
+fn daala_fdct8(input: &[i32], output: &mut [i32]) {
+  let mut temp_out: [i32; 8] = [0; 8];
+  daala_fdct_ii_8(
+    input[0],
+    input[1],
+    input[2],
+    input[3],
+    input[4],
+    input[5],
+    input[6],
+    input[7],
+    &mut temp_out
+  );
+
+  output[0] = temp_out[0];
+  output[1] = temp_out[4];
+  output[2] = temp_out[2];
+  output[3] = temp_out[6];
+  output[4] = temp_out[1];
+  output[5] = temp_out[5];
+  output[6] = temp_out[3];
+  output[7] = temp_out[7];
+}
+
+fn daala_fdst_iv_8(
+  r0: i32, r1: i32, r2: i32, r3: i32, r4: i32, r5: i32, r6: i32, r7: i32,
+  output: &mut [i32]
+) {
   // Stage 0
   // 17911/16384 = Sin[15*Pi/32] + Cos[15*Pi/32] = 1.0932018670017576
   // 14699/16384 = Sin[15*Pi/32] - Cos[15*Pi/32] = 0.8971675863426363
   //    803/8192 = Cos[15*Pi/32]                 = 0.0980171403295606
   let (r0, r7) = RotateAdd::kernel(r0, r7, ((17911, 14), (14699, 14), (803, 13)));
-
   // 20435/16384 = Sin[13*Pi/32] + Cos[13*Pi/32] = 1.24722501298667123
   // 21845/32768 = Sin[13*Pi/32] - Cos[13*Pi/32] = 0.66665565847774650
   //   1189/4096 = Cos[13*Pi/32]                 = 0.29028467725446233
   let (r6, r1) = RotateSub::kernel(r6, r1, ((20435, 14), (21845, 15), (1189, 12)));
-
   // 22173/16384 = Sin[11*Pi/32] + Cos[11*Pi/32] = 1.3533180011743526
   //   3363/8192 = Sin[11*Pi/32] - Cos[11*Pi/32] = 0.4105245275223574
   // 15447/32768 = Cos[11*Pi/32]                 = 0.47139673682599764
   let (r2, r5) = RotateAdd::kernel(r2, r5, ((22173, 14), (3363, 13), (15447, 15)));
-
   // 23059/16384 = Sin[9*Pi/32] + Cos[9*Pi/32] = 1.4074037375263826
   //  2271/16384 = Sin[9*Pi/32] - Cos[9*Pi/32] = 0.1386171691990915
   //   5197/8192 = Cos[9*Pi/32]                = 0.6343932841636455
@@ -492,43 +536,30 @@ fn daala_fdst_iv_8(r0: i32, r1: i32, r2: i32, r3: i32, r4: i32, r5: i32, r6: i32
   // 8867/16384 = Sin[3*Pi/8] - Cos[3*Pi/8] = 0.5411961001461969
   //  3135/4096 = 2*Cos[3*Pi/8]             = 0.7653668647301796
   let (r3, r4) = RotateSubAvg::kernel(r3, r4, ((10703, 13), (8867, 14), (3135, 12)));
-
   // 10703/8192 = Sin[3*Pi/8] + Cos[3*Pi/8] = 1.3065629648763766
   // 8867/16384 = Sin[3*Pi/8] - Cos[3*Pi/8] = 0.5411961001461969
   //  3135/4096 = 2*Cos[3*Pi/8]             = 0.7653668647301796
   let (r2, r5) = RotateNegAvg::kernel(r2, r5, ((10703, 13), (8867, 14), (3135, 12)));
-
   // 11585/8192 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
   // 11585/8192 = 2*Cos[Pi/4]           = 1.4142135623730951
   let (r1, r6) = RotatePi4SubAvg::kernel(r1, r6, ((11585, 13), (11585, 13)));
 
-  output[0] = r0;
-  output[1] = r1;
-  output[2] = r2;
-  output[3] = r3;
-  output[4] = r4;
-  output[5] = r5;
-  output[6] = r6;
-  output[7] = r7;
-}
-
-fn daala_fdct8(input: &[i32], output: &mut [i32]) {
-  let mut temp_out: [i32; 8] = [0; 8];
-  daala_fdct_ii_8(input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], &mut temp_out);
-
-  output[0] = temp_out[0];
-  output[1] = temp_out[4];
-  output[2] = temp_out[2];
-  output[3] = temp_out[6];
-  output[4] = temp_out[1];
-  output[5] = temp_out[5];
-  output[6] = temp_out[3];
-  output[7] = temp_out[7];
+  store_coeffs!(output, r0, r1, r2, r3, r4, r5, r6, r7);
 }
 
 fn daala_fdst8(input: &[i32], output: &mut [i32]) {
   let mut temp_out: [i32; 8] = [0; 8];
-  daala_fdst_iv_8(input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], &mut temp_out);
+  daala_fdst_iv_8(
+    input[0],
+    input[1],
+    input[2],
+    input[3],
+    input[4],
+    input[5],
+    input[6],
+    input[7],
+    &mut temp_out
+  );
 
   output[0] = temp_out[0];
   output[1] = temp_out[4];
@@ -538,6 +569,528 @@ fn daala_fdst8(input: &[i32], output: &mut [i32]) {
   output[5] = temp_out[5];
   output[6] = temp_out[3];
   output[7] = temp_out[7];
+}
+
+fn daala_fdst_iv_4(q0: i32, q1: i32, q2: i32, q3: i32, output: &mut [i32]) {
+  // Stage 0
+  // 13623/16384 = (Sin[7*Pi/16] + Cos[7*Pi/16])/Sqrt[2] = 0.831469612302545
+  //   4551/4096 = (Sin[7*Pi/16] - Cos[7*Pi/16])*Sqrt[2] = 1.111140466039204
+  //  9041/32768 = Cos[7*Pi/16]*Sqrt[2]                  = 0.275899379282943
+  let (q0, q3) = RotateAddShift::kernel(q0, q3, ((13623, 14), (4551, 12), (565, 11)));
+  // 16069/16384 = (Sin[5*Pi/16] + Cos[5*Pi/16])/Sqrt[2] = 0.9807852804032304
+  // 12785/32768 = (Sin[5*Pi/16] - Cos[5*Pi/16])*Sqrt[2] = 0.3901806440322566
+  //   1609/2048 = Cos[5*Pi/16]*Sqrt[2]                  = 0.7856949583871021
+  let (q2, q1) = RotateSubShift::kernel(q2, q1, ((16069, 14), (12785, 15), (1609, 11)));
+
+  // Stage 1
+  let (q2, q3) = butterfly_sub_asym((rshift1(q2), q2), q3);
+  let (q0, q1) = butterfly_sub_asym((rshift1(q0), q0), q1);
+
+  // Stage 2
+  // 11585/8192 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
+  // 11585/8192 = 2*Cos[Pi/4]           = 1.4142135623730951
+  let (q2, q1) = RotatePi4AddAvg::kernel(q2, q1, ((11585, 13), (11585, 13)));
+
+  store_coeffs!(output, q0, q1, q2, q3);
+}
+
+fn daala_fdct_ii_8_asym(r0h: i32, r1: (i32, i32), r2h: i32, r3: (i32, i32), r4h: i32, r5: (i32, i32), r6h: i32, r7: (i32, i32), output: &mut [i32]) {
+  let (r0, r7) = butterfly_neg_asym(r0h, r7);
+  let (r1, r6) = butterfly_sub_asym(r1, r6h);
+  let (r2, r5) = butterfly_neg_asym(r2h, r5);
+  let (r3, r4) = butterfly_sub_asym(r3, r4h);
+
+  daala_fdct_ii_4(r0, r1, r2, r3, &mut output[0..4]);
+  daala_fdst_iv_4(r7, r6, r5, r4, &mut output[4..8]);
+  output[4..8].reverse();
+}
+
+fn daala_fdst_iv_8_asym(r0: (i32, i32), r1h: i32, r2: (i32, i32), r3h: i32, r4: (i32, i32), r5h: i32, r6: (i32, i32), r7h: i32, output: &mut [i32]) {
+  // Stage 0
+  // 12665/16384 = (Sin[15*Pi/32] + Cos[15*Pi/32])/Sqrt[2] = 0.77301045336274
+  //   5197/4096 = (Sin[15*Pi/32] - Cos[15*Pi/32])*Sqrt[2] = 1.26878656832729
+  //  2271/16384 = Cos[15*Pi/32]*Sqrt[2]                   = 0.13861716919909
+  let (r0, r7) = RotateAdd::half_kernel(r0, r7h, ((12665, 14), (5197, 12), (2271, 14)));
+  // 14449/16384 = Sin[13*Pi/32] + Cos[13*Pi/32])/Sqrt[2] = 0.881921264348355
+  // 30893/32768 = Sin[13*Pi/32] - Cos[13*Pi/32])*Sqrt[2] = 0.942793473651995
+  //   3363/8192 = Cos[13*Pi/32]*Sqrt[2]                  = 0.410524527522357
+  let (r6, r1) = RotateSub::half_kernel(r6, r1h, ((14449, 14), (30893, 15), (3363, 13)));
+  // 15679/16384 = Sin[11*Pi/32] + Cos[11*Pi/32])/Sqrt[2] = 0.956940335732209
+  //   1189/2048 = Sin[11*Pi/32] - Cos[11*Pi/32])*Sqrt[2] = 0.580569354508925
+  //   5461/8192 = Cos[11*Pi/32]*Sqrt[2]                  = 0.666655658477747
+  let (r2, r5) = RotateAdd::half_kernel(r2, r5h, ((15679, 14), (1189, 11), (5461, 13)));
+  // 16305/16384 = (Sin[9*Pi/32] + Cos[9*Pi/32])/Sqrt[2] = 0.9951847266721969
+  //    803/4096 = (Sin[9*Pi/32] - Cos[9*Pi/32])*Sqrt[2] = 0.1960342806591213
+  // 14699/16384 = Cos[9*Pi/32]*Sqrt[2]                  = 0.8971675863426364
+  let (r4, r3) = RotateSub::half_kernel(r4, r3h, ((16305, 14), (803, 12), (14699, 14)));
+
+  // Stage 1
+  let (r0, r3h) = butterfly_add(r0, r3);
+  let (r2, r1h) = butterfly_sub(r2, r1);
+  let (r5, r6h) = butterfly_add(r5, r6);
+  let (r7, r4h) = butterfly_sub(r7, r4);
+
+  // Stage 2
+  let (r7, r6) = butterfly_add_asym(r7, r6h);
+  let (r5, r3) = butterfly_add_asym(r5, r3h);
+  let (r2, r4) = butterfly_add_asym(r2, r4h);
+  let (r0, r1) = butterfly_sub_asym(r0, r1h);
+
+  // Stage 3
+  // 10703/8192 = Sin[3*Pi/8] + Cos[3*Pi/8] = 1.3065629648763766
+  // 8867/16384 = Sin[3*Pi/8] - Cos[3*Pi/8] = 0.5411961001461969
+  //  3135/4096 = 2*Cos[3*Pi/8]             = 0.7653668647301796
+  let (r3, r4) = RotateSubAvg::kernel(r3, r4, ((669, 9), (8867, 14), (3135, 12)));
+  // 10703/8192 = Sin[3*Pi/8] + Cos[3*Pi/8] = 1.3065629648763766
+  // 8867/16384 = Sin[3*Pi/8] - Cos[3*Pi/8] = 0.5411961001461969
+  //  3135/4096 = 2*Cos[3*Pi/8]             = 0.7653668647301796
+  let (r2, r5) = RotateNegAvg::kernel(r2, r5, ((669, 9), (8867, 14), (3135, 12)));
+  // 11585/8192 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
+  // 11585/8192 = 2*Cos[Pi/4]           = 1.4142135623730951
+  let (r1, r6) = RotatePi4SubAvg::kernel(r1, r6, ((5793, 12), (11585, 13)));
+
+  store_coeffs!(output, r0, r1, r2, r3, r4, r5, r6, r7);
+}
+
+fn daala_fdct_ii_16(
+  s0: i32, s1: i32, s2: i32, s3: i32, s4: i32, s5: i32, s6: i32, s7: i32,
+  s8: i32, s9: i32, sa: i32, sb: i32, sc: i32, sd: i32, se: i32, sf: i32,
+  output: &mut [i32]
+) {
+  let (s0h, sf) = butterfly_neg(s0, sf);
+  let (s1, seh) = butterfly_add(s1, se);
+  let (s2h, sd) = butterfly_neg(s2, sd);
+  let (s3, sch) = butterfly_add(s3, sc);
+  let (s4h, sb) = butterfly_neg(s4, sb);
+  let (s5, sah) = butterfly_add(s5, sa);
+  let (s6h, s9) = butterfly_neg(s6, s9);
+  let (s7, s8h) = butterfly_add(s7, s8);
+
+  daala_fdct_ii_8_asym(s0h, s1, s2h, s3, s4h, s5, s6h, s7, &mut output[0..8]);
+  daala_fdst_iv_8_asym(sf, seh, sd, sch, sb, sah, s9, s8h, &mut output[8..16]);
+  output[8..16].reverse();
+}
+
+fn daala_fdct16(input: &[i32], output: &mut [i32]) {
+  let mut temp_out: [i32; 16] = [0; 16];
+  daala_fdct_ii_16(
+    input[0],
+    input[1],
+    input[2],
+    input[3],
+    input[4],
+    input[5],
+    input[6],
+    input[7],
+    input[8],
+    input[9],
+    input[10],
+    input[11],
+    input[12],
+    input[13],
+    input[14],
+    input[15],
+    &mut temp_out
+  );
+
+  output[0] = temp_out[0];
+  output[1] = temp_out[8];
+  output[2] = temp_out[4];
+  output[3] = temp_out[12];
+  output[4] = temp_out[2];
+  output[5] = temp_out[10];
+  output[6] = temp_out[6];
+  output[7] = temp_out[14];
+  output[8] = temp_out[1];
+  output[9] = temp_out[9];
+  output[10] = temp_out[5];
+  output[11] = temp_out[13];
+  output[12] = temp_out[3];
+  output[13] = temp_out[11];
+  output[14] = temp_out[7];
+  output[15] = temp_out[15];
+}
+
+fn daala_fdst_iv_16(
+  s0: i32, s1: i32, s2: i32, s3: i32, s4: i32, s5: i32, s6: i32, s7: i32,
+  s8: i32, s9: i32, sa: i32, sb: i32, sc: i32, sd: i32, se: i32, sf: i32,
+  output: &mut [i32]
+) {
+  // Stage 0
+  // 24279/32768 = (Sin[31*Pi/64] + Cos[31*Pi/64])/Sqrt[2] = 0.74095112535496
+  //  11003/8192 = (Sin[31*Pi/64] - Cos[31*Pi/64])*Sqrt[2] = 1.34311790969404
+  //  1137/16384 = Cos[31*Pi/64]*Sqrt[2]                   = 0.06939217050794
+  let (s0, sf) = RotateAddShift::kernel(s0, sf, ((24279, 15), (11003, 13), (1137, 14)));
+  // 1645/2048 = (Sin[29*Pi/64] + Cos[29*Pi/64])/Sqrt[2] = 0.8032075314806449
+  //   305/256 = (Sin[29*Pi/64] - Cos[29*Pi/64])*Sqrt[2] = 1.1913986089848667
+  //  425/2048 = Cos[29*Pi/64]*Sqrt[2]                   = 0.2075082269882116
+  let (se, s1) = RotateSubShift::kernel(se, s1, ((1645, 11), (305, 8), (425, 11)));
+  // 14053/32768 = (Sin[27*Pi/64] + Cos[27*Pi/64])/Sqrt[2] = 0.85772861000027
+  //   8423/8192 = (Sin[27*Pi/64] - Cos[27*Pi/64])*Sqrt[2] = 1.02820548838644
+  //   2815/8192 = Cos[27*Pi/64]*Sqrt[2]                   = 0.34362586580705
+  let (s2, sd) = RotateAddShift::kernel(s2, sd, ((14053, 14), (8423, 13), (2815, 13)));
+  // 14811/16384 = (Sin[25*Pi/64] + Cos[25*Pi/64])/Sqrt[2] = 0.90398929312344
+  //   7005/8192 = (Sin[25*Pi/64] - Cos[25*Pi/64])*Sqrt[2] = 0.85511018686056
+  //   3903/8192 = Cos[25*Pi/64]*Sqrt[2]                   = 0.47643419969316
+  let (sc, s3) = RotateSubShift::kernel(sc, s3, ((14811, 14), (7005, 13), (3903, 13)));
+  // 30853/32768 = (Sin[23*Pi/64] + Cos[23*Pi/64])/Sqrt[2] = 0.94154406518302
+  // 11039/16384 = (Sin[23*Pi/64] - Cos[23*Pi/64])*Sqrt[2] = 0.67377970678444
+  //  9907/16384 = Cos[23*Pi/64]*Sqrt[2]                   = 0.60465421179080
+  let (s4, sb) = RotateAddShift::kernel(s4, sb, ((30853, 15), (11039, 14), (9907, 14)));
+  // 15893/16384 = (Sin[21*Pi/64] + Cos[21*Pi/64])/Sqrt[2] = 0.97003125319454
+  //   3981/8192 = (Sin[21*Pi/64] - Cos[21*Pi/64])*Sqrt[2] = 0.89716758634264
+  //   1489/2048 = Cos[21*Pi/64]*Sqrt[2]                   = 0.72705107329128
+  let (sa, s5) = RotateSubShift::kernel(sa, s5, ((15893, 14), (3981, 13), (1489, 11)));
+  // 32413/32768 = (Sin[19*Pi/64] + Cos[19*Pi/64])/Sqrt[2] = 0.98917650996478
+  //    601/2048 = (Sin[19*Pi/64] - Cos[19*Pi/64])*Sqrt[2] = 0.29346094891072
+  // 13803/16384 = Cos[19*Pi/64]*Sqrt[2]                   = 0.84244603550942
+  let (s6, s9) = RotateAddShift::kernel(s6, s9, ((32413, 15), (601, 11), (13803, 14)));
+  // 32729/32768 = (Sin[17*Pi/64] + Cos[17*Pi/64])/Sqrt[2] = 0.99879545620517
+  //    201/2048 = (Sin[17*Pi/64] - Cos[17*Pi/64])*Sqrt[2] = 0.09813534865484
+  //   1945/2048 = Cos[17*Pi/64]*Sqrt[2]                   = 0.94972778187775
+  let (s8, s7) = RotateSubShift::kernel(s8, s7, ((32729, 15), (201, 11), (1945, 11)));
+
+  // Stage 1
+  let (s0, s7) = butterfly_sub_asym((rshift1(s0), s0), s7);
+  let (s8, sf) = butterfly_sub_asym((rshift1(s8), s8), sf);
+  let (s4, s3) = butterfly_add_asym((rshift1(s4), s4), s3);
+  let (sc, sb) = butterfly_add_asym((rshift1(sc), sc), sb);
+  let (s2, s5) = butterfly_sub_asym((rshift1(s2), s2), s5);
+  let (sa, sd) = butterfly_sub_asym((rshift1(sa), sa), sd);
+  let (s6, s1) = butterfly_add_asym((rshift1(s6), s6), s1);
+  let (se, s9) = butterfly_add_asym((rshift1(se), se), s9);
+
+  // Stage 2
+  let ((_s8h, s8), s4h) = butterfly_add(s8, s4);
+  let ((_s7h, s7), sbh) = butterfly_add(s7, sb);
+  let ((_sah, sa), s6h) = butterfly_sub(sa, s6);
+  let ((_s5h, s5), s9h) = butterfly_sub(s5, s9);
+  let (s0, s3h) = butterfly_add(s0, s3);
+  let (sd, seh) = butterfly_add(sd, se);
+  let (s2, s1h) = butterfly_sub(s2, s1);
+  let (sf, sch) = butterfly_sub(sf, sc);
+
+  // Stage 3
+  //     301/256 = Sin[7*Pi/16] + Cos[7*Pi/16] = 1.1758756024193586
+  //   1609/2048 = Sin[7*Pi/16] - Cos[7*Pi/16] = 0.7856949583871022
+  // 12785/32768 = 2*Cos[7*Pi/16]              = 0.3901806440322565
+  let (s8, s7) = RotateAddAvg::kernel(s8, s7, ((301, 8), (1609, 11), (12785, 15)));
+  // 11363/8192 = Sin[5*Pi/16] + Cos[5*Pi/16] = 1.3870398453221475
+  // 9041/32768 = Sin[5*Pi/16] - Cos[5*Pi/16] = 0.2758993792829431
+  //  4551/8192 = Cos[5*Pi/16]                = 0.5555702330196022
+  let (s9, s6) = RotateAdd::kernel(s9h, s6h, ((11363, 13), (9041, 15), (4551, 13)));
+  //  5681/4096 = Sin[5*Pi/16] + Cos[5*Pi/16] = 1.3870398453221475
+  // 9041/32768 = Sin[5*Pi/16] - Cos[5*Pi/16] = 0.2758993792829431
+  //  4551/4096 = 2*Cos[5*Pi/16]              = 1.1111404660392044
+  let (s5, sa) = RotateNegAvg::kernel(s5, sa, ((5681, 12), (9041, 15), (4551, 12)));
+  //   9633/8192 = Sin[7*Pi/16] + Cos[7*Pi/16] = 1.1758756024193586
+  // 12873/16384 = Sin[7*Pi/16] - Cos[7*Pi/16] = 0.7856949583871022
+  //  6393/32768 = Cos[7*Pi/16]                = 0.1950903220161283
+  let (s4, sb) = RotateNeg::kernel(s4h, sbh, ((9633, 13), (12873, 14), (6393, 15)));
+
+  // Stage 4
+  let (s2, sc) = butterfly_add_asym(s2, sch);
+  let (s0, s1) = butterfly_sub_asym(s0, s1h);
+  let (sf, se) = butterfly_add_asym(sf, seh);
+  let (sd, s3) = butterfly_add_asym(sd, s3h);
+  let (s7, s6) = butterfly_add_asym((rshift1(s7), s7), s6);
+  let (s8, s9) = butterfly_sub_asym((rshift1(s8), s8), s9);
+  let (sa, sb) = butterfly_sub_asym((rshift1(sa), sa), sb);
+  let (s5, s4) = butterfly_add_asym((rshift1(s5), s5), s4);
+
+  // Stage 5
+  //    669/512 = Sin[3*Pi/8] + Cos[3*Pi/8] = 1.3065629648763766
+  // 8867/16384 = Sin[3*Pi/8] - Cos[3*Pi/8] = 0.5411961001461969
+  //  3135/4096 = 2*Cos[7*Pi/8]             = 0.7653668647301796
+  let (sc, s3) = RotateAddAvg::kernel(sc, s3, ((669, 9), (8867, 14), (3135, 12)));
+  //    669/512 = Sin[3*Pi/8] + Cos[3*Pi/8] = 1.3870398453221475
+  // 8867/16384 = Sin[3*Pi/8] - Cos[3*Pi/8] = 0.5411961001461969
+  //  3135/4096 = 2*Cos[3*Pi/8]             = 0.7653668647301796
+  let (s2, sd) = RotateNegAvg::kernel(s2, sd, ((669, 9), (8867, 14), (3135, 12)));
+  //  5793/4096 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
+  // 11585/8192 = 2*Cos[Pi/4]           = 1.4142135623730951
+  let (sa, s5) = RotatePi4AddAvg::kernel(sa, s5, ((5793, 12), (11585, 13)));
+  //  5793/4096 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
+  // 11585/8192 = 2*Cos[Pi/4]           = 1.4142135623730951
+  let (s6, s9) = RotatePi4AddAvg::kernel(s6, s9, ((5793, 12), (11585, 13)));
+  //  5793/4096 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
+  // 11585/8192 = 2*Cos[Pi/4]           = 1.4142135623730951
+  let (se, s1) = RotatePi4AddAvg::kernel(se, s1, ((5793, 12), (11585, 13)));
+
+  store_coeffs!(
+    output, s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, sa, sb, sc, sd, se, sf
+  );
+}
+
+fn daala_fdst16(input: &[i32], output: &mut [i32]) {
+  let mut temp_out: [i32; 16] = [0; 16];
+  daala_fdst_iv_16(
+    input[0],
+    input[1],
+    input[2],
+    input[3],
+    input[4],
+    input[5],
+    input[6],
+    input[7],
+    input[8],
+    input[9],
+    input[10],
+    input[11],
+    input[12],
+    input[13],
+    input[14],
+    input[15],
+    &mut temp_out
+  );
+
+  output[0] = temp_out[0];
+  output[1] = temp_out[8];
+  output[2] = temp_out[4];
+  output[3] = temp_out[12];
+  output[4] = temp_out[2];
+  output[5] = temp_out[10];
+  output[6] = temp_out[6];
+  output[7] = temp_out[14];
+  output[8] = temp_out[1];
+  output[9] = temp_out[9];
+  output[10] = temp_out[5];
+  output[11] = temp_out[13];
+  output[12] = temp_out[3];
+  output[13] = temp_out[11];
+  output[14] = temp_out[7];
+  output[15] = temp_out[15];
+}
+
+fn daala_fdct_ii_16_asym(
+  s0h: i32, s1: (i32, i32), s2h: i32, s3: (i32, i32), s4h: i32, s5: (i32, i32), s6h: i32, s7: (i32, i32),
+  s8h: i32, s9: (i32, i32), sah: i32, sb: (i32, i32), sch: i32, sd: (i32, i32), seh: i32, sf: (i32, i32),
+  output: &mut [i32]
+) {
+  let (s0, sf) = butterfly_neg_asym(s0h, sf);
+  let (s1, se) = butterfly_sub_asym(s1, seh);
+  let (s2, sd) = butterfly_neg_asym(s2h, sd);
+  let (s3, sc) = butterfly_sub_asym(s3, sch);
+  let (s4, sb) = butterfly_neg_asym(s4h, sb);
+  let (s5, sa) = butterfly_sub_asym(s5, sah);
+  let (s6, s9) = butterfly_neg_asym(s6h, s9);
+  let (s7, s8) = butterfly_sub_asym(s7, s8h);
+
+  daala_fdct_ii_8(s0, s1, s2, s3, s4, s5, s6, s7, &mut output[0..8]);
+  daala_fdst_iv_8(sf, se, sd, sc, sb, sa, s9, s8, &mut output[8..16]);
+  output[8..16].reverse();
+}
+
+fn daala_fdst_iv_16_asym(
+  s0: (i32, i32), s1h: i32, s2: (i32, i32), s3h: i32, s4: (i32, i32), s5h: i32, s6: (i32, i32), s7h: i32,
+  s8: (i32, i32), s9h: i32, sa: (i32, i32), sbh: i32, sc: (i32, i32), sdh: i32, se: (i32, i32), sfh: i32,
+  output: &mut [i32]
+) {
+  // Stage 0
+  //   1073/2048 = (Sin[31*Pi/64] + Cos[31*Pi/64])/2 = 0.5239315652662953
+  // 62241/32768 = (Sin[31*Pi/64] - Cos[31*Pi/64])*2 = 1.8994555637555088
+  //   201/16384 = Cos[31*Pi/64]*2                   = 0.0981353486548360
+  let (s0, sf) = RotateAddShift::half_kernel(s0, sfh, ((1073, 11), (62241, 15), (201, 11)));
+  // 18611/32768 = (Sin[29*Pi/64] + Cos[29*Pi/64])/2 = 0.5679534922100714
+  // 55211/32768 = (Sin[29*Pi/64] - Cos[29*Pi/64])*2 = 1.6848920710188384
+  //    601/2048 = Cos[29*Pi/64]*2                   = 0.2934609489107235
+  let (se, s1) = RotateSubShift::half_kernel(se, s1h, ((18611, 15), (55211, 15), (601, 11)));
+  //  9937/16384 = (Sin[27*Pi/64] + Cos[27*Pi/64])/2 = 0.6065057165489039
+  //   1489/1024 = (Sin[27*Pi/64] - Cos[27*Pi/64])*2 = 1.4541021465825602
+  //   3981/8192 = Cos[27*Pi/64]*2                   = 0.4859603598065277
+  let (s2, sd) = RotateAddShift::half_kernel(s2, sdh, ((9937, 14), (1489, 10), (3981, 13)));
+  // 10473/16384 = (Sin[25*Pi/64] + Cos[25*Pi/64])/2 = 0.6392169592876205
+  // 39627/32768 = (Sin[25*Pi/64] - Cos[25*Pi/64])*2 = 1.2093084235816014
+  // 11039/16384 = Cos[25*Pi/64]*2                   = 0.6737797067844401
+  let (sc, s3) = RotateSubShift::half_kernel(sc, s3h, ((10473, 14), (39627, 15), (11039, 14)));
+  // 2727/4096 = (Sin[23*Pi/64] + Cos[23*Pi/64])/2 = 0.6657721932768628
+  // 3903/4096 = (Sin[23*Pi/64] - Cos[23*Pi/64])*2 = 0.9528683993863225
+  // 7005/8192 = Cos[23*Pi/64]*2                   = 0.8551101868605642
+  let (s4, sb) = RotateAddShift::half_kernel(s4, sbh, ((2727, 12), (3903, 12), (7005, 13)));
+  // 5619/8192 = (Sin[21*Pi/64] + Cos[21*Pi/64])/2 = 0.6859156770967569
+  // 2815/4096 = (Sin[21*Pi/64] - Cos[21*Pi/64])*2 = 0.6872517316141069
+  // 8423/8192 = Cos[21*Pi/64]*2                   = 1.0282054883864433
+  let (sa, s5) = RotateSubShift::half_kernel(sa, s5h, ((5619, 13), (2815, 12), (8423, 13)));
+  //   2865/4096 = (Sin[19*Pi/64] + Cos[19*Pi/64])/2 = 0.6994534179865391
+  // 13588/32768 = (Sin[19*Pi/64] - Cos[19*Pi/64])*2 = 0.4150164539764232
+  //     305/256 = Cos[19*Pi/64]*2                   = 1.1913986089848667
+  let (s6, s9) = RotateAddShift::half_kernel(s6, s9h, ((2865, 12), (13599, 15), (305, 8)));
+  // 23143/32768 = (Sin[17*Pi/64] + Cos[17*Pi/64])/2 = 0.7062550401009887
+  //   1137/8192 = (Sin[17*Pi/64] - Cos[17*Pi/64])*2 = 0.1387843410158816
+  //  11003/8192 = Cos[17*Pi/64]*2                   = 1.3431179096940367
+  let (s8, s7) = RotateSubShift::half_kernel(s8, s7h, ((23143, 15), (1137, 13), (11003, 13)));
+
+  // Stage 1
+  let (s0, s7) = butterfly_sub_asym((rshift1(s0), s0), s7);
+  let (s8, sf) = butterfly_sub_asym((rshift1(s8), s8), sf);
+  let (s4, s3) = butterfly_add_asym((rshift1(s4), s4), s3);
+  let (sc, sb) = butterfly_add_asym((rshift1(sc), sc), sb);
+  let (s2, s5) = butterfly_sub_asym((rshift1(s2), s2), s5);
+  let (sa, sd) = butterfly_sub_asym((rshift1(sa), sa), sd);
+  let (s6, s1) = butterfly_add_asym((rshift1(s6), s6), s1);
+  let (se, s9) = butterfly_add_asym((rshift1(se), se), s9);
+
+  // Stage 2
+  let ((_s8h, s8), s4h) = butterfly_add(s8, s4);
+  let ((_s7h, s7), sbh) = butterfly_add(s7, sb);
+  let ((_sah, sa), s6h) = butterfly_sub(sa, s6);
+  let ((_s5h, s5), s9h) = butterfly_sub(s5, s9);
+  let (s0, s3h) = butterfly_add(s0, s3);
+  let (sd, seh) = butterfly_add(sd, se);
+  let (s2, s1h) = butterfly_sub(s2, s1);
+  let (sf, sch) = butterfly_sub(sf, sc);
+
+  // Stage 3
+  //   9633/8192 = Sin[7*Pi/16] + Cos[7*Pi/16] = 1.1758756024193586
+  // 12873/16384 = Sin[7*Pi/16] - Cos[7*Pi/16] = 0.7856949583871022
+  //  6393/32768 = Cos[7*Pi/16]                = 0.1950903220161283
+  let (s8, s7) = RotateAdd::kernel(s8, s7, ((9633, 13), (12873, 14), (6393, 15)));
+  // 22725/16384 = Sin[5*Pi/16] + Cos[5*Pi/16] = 1.3870398453221475
+  //  9041/32768 = Sin[5*Pi/16] - Cos[5*Pi/16] = 0.2758993792829431
+  //   4551/8192 = Cos[5*Pi/16]                = 0.5555702330196022
+  let (s9, s6) = RotateAdd::kernel(s9h, s6h, ((22725, 14), (9041, 15), (4551, 13)));
+  //  11363/8192 = Sin[5*Pi/16] + Cos[5*Pi/16] = 1.3870398453221475
+  //  9041/32768 = Sin[5*Pi/16] - Cos[5*Pi/16] = 0.2758993792829431
+  //   4551/8192 = Cos[5*Pi/16]                = 0.5555702330196022
+  let (s5, sa) = RotateNeg::kernel(s5, sa, ((11363, 13), (9041, 15), (4551, 13)));
+  //  9633/32768 = Sin[7*Pi/16] + Cos[7*Pi/16] = 1.1758756024193586
+  // 12873/16384 = Sin[7*Pi/16] - Cos[7*Pi/16] = 0.7856949583871022
+  //  6393/32768 = Cos[7*Pi/16]                = 0.1950903220161283
+  let (s4, sb) = RotateNeg::kernel(s4h, sbh, ((9633, 13), (12873, 14), (6393, 15)));
+
+  // Stage 4
+  let (s2, sc) = butterfly_add_asym(s2, sch);
+  let (s0, s1) = butterfly_sub_asym(s0, s1h);
+  let (sf, se) = butterfly_add_asym(sf, seh);
+  let (sd, s3) = butterfly_add_asym(sd, s3h);
+  let (s7, s6) = butterfly_add_asym((rshift1(s7), s7), s6);
+  let (s8, s9) = butterfly_sub_asym((rshift1(s8), s8), s9);
+  let (sa, sb) = butterfly_sub_asym((rshift1(sa), sa), sb);
+  let (s5, s4) = butterfly_add_asym((rshift1(s5), s5), s4);
+
+  // Stage 5
+  // 10703/8192 = Sin[3*Pi/8] + Cos[3*Pi/8] = 1.3065629648763766
+  // 8867/16384 = Sin[3*Pi/8] - Cos[3*Pi/8] = 0.5411961001461969
+  //  3135/8192 = Cos[3*Pi/8]               = 0.3826834323650898
+  let (sc, s3) = RotateAdd::kernel(sc, s3, ((10703, 13), (8867, 14), (3135, 13)));
+  // 10703/8192 = Sin[3*Pi/8] + Cos[3*Pi/8] = 1.3870398453221475
+  // 8867/16384 = Sin[3*Pi/8] - Cos[3*Pi/8] = 0.5411961001461969
+  //  3135/8192 = Cos[3*Pi/8]               = 0.3826834323650898
+  let (s2, sd) = RotateNeg::kernel(s2, sd, ((10703, 13), (8867, 14), (3135, 13)));
+  // 11585/8192 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
+  //  5793/8192 = Cos[Pi/4]             = 0.7071067811865475
+  let (sa, s5) = RotatePi4Add::kernel(sa, s5, ((11585, 13), (5793, 13)));
+  // 11585/8192 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
+  //  5793/8192 = Cos[Pi/4]             = 0.7071067811865475
+  let (s6, s9) = RotatePi4Add::kernel(s6, s9, ((11585, 13), (5793, 13)));
+  // 11585/8192 = Sin[Pi/4] + Cos[Pi/4] = 1.4142135623730951
+  //  5793/8192 = Cos[Pi/4]             = 0.7071067811865475
+  let (se, s1) = RotatePi4Add::kernel(se, s1, ((11585, 13), (5793, 13)));
+
+  store_coeffs!(
+    output, s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, sa, sb, sc, sd, se, sf
+  );
+}
+
+fn daala_fdct_ii_32(
+  t0: i32, t1: i32, t2: i32, t3: i32, t4: i32, t5: i32, t6: i32, t7: i32,
+  t8: i32, t9: i32, ta: i32, tb: i32, tc: i32, td: i32, te: i32, tf: i32,
+  tg: i32, th: i32, ti: i32, tj: i32, tk: i32, tl: i32, tm: i32, tn: i32,
+  to: i32, tp: i32, tq: i32, tr: i32, ts: i32, tt: i32, tu: i32, tv: i32,
+  output: &mut [i32]
+) {
+  let (t0h, tv) = butterfly_neg(t0, tv);
+  let (t1, tuh) = butterfly_add(t1, tu);
+  let (t2h, tt) = butterfly_neg(t2, tt);
+  let (t3, tsh) = butterfly_add(t3, ts);
+  let (t4h, tr) = butterfly_neg(t4, tr);
+  let (t5, tqh) = butterfly_add(t5, tq);
+  let (t6h, tp) = butterfly_neg(t6, tp);
+  let (t7, toh) = butterfly_add(t7, to);
+  let (t8h, tn) = butterfly_neg(t8, tn);
+  let (t9, tmh) = butterfly_add(t9, tm);
+  let (tah, tl) = butterfly_neg(ta, tl);
+  let (tb, tkh) = butterfly_add(tb, tk);
+  let (tch, tj) = butterfly_neg(tc, tj);
+  let (td, tih) = butterfly_add(td, ti);
+  let (teh, th) = butterfly_neg(te, th);
+  let (tf, tgh) = butterfly_add(tf, tg);
+
+  daala_fdct_ii_16_asym(t0h, t1, t2h, t3, t4h, t5, t6h, t7, t8h, t9, tah, tb, tch, td, teh, tf, &mut output[0..16]);
+  daala_fdst_iv_16_asym(tv, tuh, tt, tsh, tr, tqh, tp, toh, tn, tmh, tl, tkh, tj, tih, th, tgh, &mut output[16..32]);
+  output[16..32].reverse();
+}
+
+fn daala_fdct32(input: &[i32], output: &mut [i32]) {
+  let mut temp_out: [i32; 32] = [0; 32];
+  daala_fdct_ii_32(
+    input[0],
+    input[1],
+    input[2],
+    input[3],
+    input[4],
+    input[5],
+    input[6],
+    input[7],
+    input[8],
+    input[9],
+    input[10],
+    input[11],
+    input[12],
+    input[13],
+    input[14],
+    input[15],
+    input[16],
+    input[17],
+    input[18],
+    input[19],
+    input[20],
+    input[21],
+    input[22],
+    input[23],
+    input[24],
+    input[25],
+    input[26],
+    input[27],
+    input[28],
+    input[29],
+    input[30],
+    input[31],
+    &mut temp_out
+  );
+
+  output[0] = temp_out[0];
+  output[1] = temp_out[16];
+  output[2] = temp_out[8];
+  output[3] = temp_out[24];
+  output[4] = temp_out[4];
+  output[5] = temp_out[20];
+  output[6] = temp_out[12];
+  output[7] = temp_out[28];
+  output[8] = temp_out[2];
+  output[9] = temp_out[18];
+  output[10] = temp_out[10];
+  output[11] = temp_out[26];
+  output[12] = temp_out[6];
+  output[13] = temp_out[22];
+  output[14] = temp_out[14];
+  output[15] = temp_out[30];
+  output[16] = temp_out[1];
+  output[17] = temp_out[17];
+  output[18] = temp_out[9];
+  output[19] = temp_out[25];
+  output[20] = temp_out[5];
+  output[21] = temp_out[21];
+  output[22] = temp_out[13];
+  output[23] = temp_out[29];
+  output[24] = temp_out[3];
+  output[25] = temp_out[19];
+  output[26] = temp_out[11];
+  output[27] = temp_out[27];
+  output[28] = temp_out[7];
+  output[29] = temp_out[23];
+  output[30] = temp_out[15];
+  output[31] = temp_out[31];
 }
 
 fn av1_fdct4_new(
@@ -2171,7 +2724,7 @@ fn daala_fidentity16(
   input: &[i32], output: &mut [i32]
 ) {
   for i in 0..16 {
-    output[i] = round_shift(input[i] * 2 * SQRT2, SQRT2_BITS);
+    output[i] = input[i];
   }
 }
 
@@ -2179,7 +2732,7 @@ fn daala_fidentity32(
   input: &[i32], output: &mut [i32]
 ) {
   for i in 0..32 {
-    output[i] = input[i] * 4;
+    output[i] = input[i];
   }
 }
 
@@ -2243,8 +2796,11 @@ impl TxfmType {
     match self {
       TxfmType::DCT4 => &daala_fdct4,
       TxfmType::DCT8 => &daala_fdct8,
+      TxfmType::DCT16 => &daala_fdct16,
+      TxfmType::DCT32 => &daala_fdct32,
       TxfmType::ADST4 => &daala_fdst_vii_4,
       TxfmType::ADST8 => &daala_fdst8,
+      TxfmType::ADST16 => &daala_fdst16,
       TxfmType::Identity4 => &daala_fidentity4,
       TxfmType::Identity8 => &daala_fidentity8,
       TxfmType::Identity16 => &daala_fidentity16,
@@ -2557,24 +3113,14 @@ pub fn fht16x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-  // SIMD code may assert for transform types beyond TxType::IDTX.
-  if tx_type < TxType::IDTX {
-    Block16x16::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-  } else {
-    Block16x16::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-  }
+  Block16x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht32x32(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-  // SIMD code may assert for transform types that aren't TxType::DCT_DCT.
-  if tx_type == TxType::DCT_DCT {
-    Block32x32::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-  } else {
-    Block32x32::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-  }
+  Block32x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht64x64(
@@ -2611,48 +3157,30 @@ pub fn fht8x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-  // SIMD code may assert for transform types beyond TxType::IDTX.
-  if tx_type < TxType::IDTX {
-    Block8x16::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-  } else {
-    Block8x16::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-  }
+  Block8x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht16x8(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-  // SIMD code may assert for transform types beyond TxType::IDTX.
-  if tx_type < TxType::IDTX {
-    Block16x8::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-  } else {
-    Block16x8::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-  }
+  Block16x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht16x32(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-    assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
-    if tx_type == TxType::DCT_DCT {
-      Block16x32::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-    } else {
-      Block16x32::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-    }
+  assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
+  Block16x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht32x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-    assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
-    if tx_type == TxType::DCT_DCT {
-      Block32x16::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-    } else {
-      Block32x16::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-    }
+  assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
+  Block32x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht32x64(
@@ -2691,47 +3219,30 @@ pub fn fht4x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-  // SIMD code may assert for transform types beyond TxType::IDTX.
-  if tx_type < TxType::IDTX {
-    Block4x16::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-  } else {
-    Block4x16::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-  }
+  Block4x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht16x4(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-  // SIMD code may assert for transform types beyond TxType::IDTX.
-  if tx_type < TxType::IDTX {
-    Block16x4::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-  } else {
-    Block16x4::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-  }
+  Block16x4::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht8x32(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
-    assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
-    if tx_type == TxType::DCT_DCT {
-      Block8x32::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-    } else {
-      Block8x32::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-    }
+  assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
+  Block8x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
+
 pub fn fht32x8(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) {
   assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
-  if tx_type == TxType::DCT_DCT {
-    Block32x8::fwd_txfm2d(input, output, stride, tx_type, bit_depth);
-  } else {
-    Block32x8::fwd_txfm2d_rs(input, output, stride, tx_type, bit_depth);
-  }
+  Block32x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
 }
 
 pub fn fht16x64(

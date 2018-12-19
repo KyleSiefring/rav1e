@@ -340,14 +340,14 @@ use std::hash::Hasher;
       *r = (*s as i16) - (*d as i16);
     }
     forward_transform(res, freq, tx_size.width(), tx_size, tx_type, 8);
-    for d in freq.iter() {
+    /*for d in freq.iter() {
       hasher.write_i32(*d);
       eprintln!("{}", *d);
     }
-    eprintln!();
+    eprintln!();*/
     inverse_transform_add(freq, dst, tx_size.width(), tx_size, tx_type, 8);
 
-    for (s, d) in src.iter().zip(dst.iter()) {
+    for (s, d) in src.iter().zip(dst.iter()).take(10) {
       eprintln!("{} {}", *s, *d);
     }
     for (s, d) in src.iter().zip(dst) {
@@ -382,6 +382,12 @@ use std::hash::Hasher;
       (TX_8X8, H_DCT, 0),
       (TX_8X8, V_ADST, 0),
       (TX_8X8, H_ADST, 0),
+
+      (TX_4X16, DCT_DCT, 1),
+      (TX_16X4, DCT_DCT, 1),
+      (TX_8X16, DCT_DCT, 1),
+      (TX_16X8, DCT_DCT, 1),
+
       (TX_16X16, DCT_DCT, 1),
       (TX_16X16, ADST_DCT, 1),
       (TX_16X16, DCT_ADST, 1),
@@ -391,6 +397,12 @@ use std::hash::Hasher;
       (TX_16X16, H_DCT, 1),
       (TX_16X16, V_ADST, 1),
       (TX_16X16, H_ADST, 1),
+
+      (TX_8X32, DCT_DCT, 2),
+      (TX_32X8, DCT_DCT, 2),
+      (TX_16X32, DCT_DCT, 2),
+      (TX_32X16, DCT_DCT, 2),
+
       (TX_32X32, DCT_DCT, 2),
       //(TX_32X32, ADST_DCT, 0),
       //(TX_32X32, DCT_ADST, 0),
