@@ -28,14 +28,14 @@ const FWD_SHIFT_8X16: TxfmShift = [4, -1, 0];//
 const FWD_SHIFT_16X8: TxfmShift = [4, -1, 0];//
 const FWD_SHIFT_16X32: TxfmShift = [4, -2, 0];//
 const FWD_SHIFT_32X16: TxfmShift = [4, -2, 0];//
-const FWD_SHIFT_32X64: TxfmShift = [0, -2, -2];
-const FWD_SHIFT_64X32: TxfmShift = [2, -4, -2];
+const FWD_SHIFT_32X64: TxfmShift = [4, -1, -2];
+const FWD_SHIFT_64X32: TxfmShift = [4, -1, -2];
 const FWD_SHIFT_4X16: TxfmShift = [4, -1, 0];//
 const FWD_SHIFT_16X4: TxfmShift = [4, -1, 0];//
 const FWD_SHIFT_8X32: TxfmShift = [4, -1, 0];//
 const FWD_SHIFT_32X8: TxfmShift = [4, -1, 0];//
-const FWD_SHIFT_16X64: TxfmShift = [0, -2, 0];
-const FWD_SHIFT_64X16: TxfmShift = [2, -4, 0];
+const FWD_SHIFT_16X64: TxfmShift = [4, -2, 0];
+const FWD_SHIFT_64X16: TxfmShift = [4, -2, 0];
 
 const FWD_TXFM_SHIFT_LS: [TxfmShift; TxSize::TX_SIZES_ALL] = [
   FWD_SHIFT_4X4,
@@ -3538,7 +3538,7 @@ pub fn fht32x64(
   assert!(tx_type == TxType::DCT_DCT);
   let mut tmp = [0 as i32; 2048];
 
-  Block32x64::fwd_txfm2d(input, &mut tmp, stride, tx_type, bit_depth);
+  Block32x64::fwd_txfm2d_daala(input, &mut tmp, stride, tx_type, bit_depth);
 
   for (row_out, row_in) in output.chunks_mut(32).
     zip(tmp.chunks(32)).take(64) {
@@ -3553,7 +3553,7 @@ pub fn fht64x32(
   assert!(tx_type == TxType::DCT_DCT);
   let mut tmp = [0 as i32; 2048];
 
-  Block64x32::fwd_txfm2d(input, &mut tmp, stride, tx_type, bit_depth);
+  Block64x32::fwd_txfm2d_daala(input, &mut tmp, stride, tx_type, bit_depth);
 
   for i in 0..2 {
     for (row_out, row_in) in output[1024*i..].chunks_mut(32).
@@ -3600,7 +3600,7 @@ pub fn fht16x64(
   assert!(tx_type == TxType::DCT_DCT);
   let mut tmp = [0 as i32; 1024];
 
-  Block16x64::fwd_txfm2d(input, &mut tmp, stride, tx_type, bit_depth);
+  Block16x64::fwd_txfm2d_daala(input, &mut tmp, stride, tx_type, bit_depth);
 
   for (row_out, row_in) in output.chunks_mut(16).
     zip(tmp.chunks(16)).take(64) {
@@ -3615,7 +3615,7 @@ pub fn fht64x16(
   assert!(tx_type == TxType::DCT_DCT);
   let mut tmp = [0 as i32; 1024];
 
-  Block64x16::fwd_txfm2d(input, &mut tmp, stride, tx_type, bit_depth);
+  Block64x16::fwd_txfm2d_daala(input, &mut tmp, stride, tx_type, bit_depth);
 
   for i in 0..2 {
     for (row_out, row_in) in output[512*i..].chunks_mut(32).

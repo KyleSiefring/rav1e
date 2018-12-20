@@ -412,7 +412,7 @@ use std::hash::Hasher;
       (TX_32X32, H_DCT, 1),*/
       //(TX_32X32, V_ADST, 0),
       //(TX_32X32, H_ADST, 0),
-      (TX_64X64, DCT_DCT, 0),
+      (TX_64X16, DCT_DCT, 0),
       //(TX_64X64, ADST_DCT, 0),
       //(TX_64X64, DCT_ADST, 0),
       //(TX_64X64, ADST_ADST, 0),
