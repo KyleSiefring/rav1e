@@ -777,7 +777,7 @@ pub enum MvSubpelPrecision {
 
 pub const SUBPEL_FILTER_SIZE: usize = 8;
 
-const SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
+pub static SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
   [
     [0, 0, 0, 128, 0, 0, 0, 0],
     [0, 2, -6, 126, 8, -2, 0, 0],
@@ -897,6 +897,13 @@ pub enum MvJointType {
   MV_JOINT_HNZVZ = 1,  /* Vert zero, hor nonzero */
   MV_JOINT_HZVNZ = 2,  /* Hor zero, vert nonzero */
   MV_JOINT_HNZVNZ = 3  /* Both components nonzero */
+}
+
+extern {
+  fn rav1e_put_8tap_regular_avx2(
+    dst: *mut u8, dst_stride: libc::ptrdiff_t, src: *const u8,
+    src_stride: libc::ptrdiff_t, w: i32, h: i32, mx: i32, my: i32
+  );
 }
 
 impl PredictionMode {
@@ -1174,6 +1181,53 @@ impl PredictionMode {
 
     let stride = dst.plane.cfg.stride;
     let slice = dst.as_mut_slice();
+
+    if !is_compound && bit_depth == 8 {
+      match fi.rec_buffer.frames[fi.ref_frames[ref_frames[0] - LAST_FRAME] as usize] {
+        Some(ref rec) => {
+          let rec_cfg = &rec.frame.planes[p].cfg;
+          let shift_row = 3 + rec_cfg.ydec;
+          let shift_col = 3 + rec_cfg.xdec;
+          let row_offset = mvs[0].row as i32 >> shift_row;
+          let col_offset = mvs[0].col as i32 >> shift_col;
+          let row_frac =
+            (mvs[0].row as i32 - (row_offset << shift_row)) << (4 - shift_row);
+          let col_frac =
+            (mvs[0].col as i32 - (col_offset << shift_col)) << (4 - shift_col);
+
+          let qo = PlaneOffset {
+            x: po.x + col_offset as isize - 3,
+            y: po.y + row_offset as isize - 3
+          };
+          let ps = rec.frame.planes[p].slice(&qo);
+          let s = ps.as_slice_clamped();
+          let ref_stride = rec_cfg.stride;
+
+          //let mut dst8: [u8; 128*128] = [0; 128*128]; // TODO: Align dst
+          let mut dst8: AlignedArray<[u8; 128 * 128], Align32> = AlignedArray([0; 128 * 128]);
+          let mut src8: [u8; (128+7)*(128+7)] = [0; (128+7)*(128+7)];
+
+          for r in 0..height + 7 {
+            for c in 0..width + 7 {
+              src8[r * (width + 7) + c] = s[r * ref_stride + c] as u8;
+            }
+          }
+          unsafe {
+            rav1e_put_8tap_regular_avx2(
+              dst8.array.as_mut_ptr(), width as isize,
+              src8[(width + 7) * 3 + 3..].as_ptr(), (width + 7) as isize,
+              width as i32, height as i32, col_frac, row_frac);
+          }
+          for r in 0..height {
+            for c in 0..width {
+              slice[r * stride + c] = dst8.array[r * width + c] as u16;
+            }
+          }
+        }
+        None => ()
+      }
+      return;
+    }
 
     for i in 0..(1 + is_compound as usize) {
       match fi.rec_buffer.frames[fi.ref_frames[ref_frames[i] - LAST_FRAME] as usize] {
