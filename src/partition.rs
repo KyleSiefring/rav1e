@@ -779,9 +779,12 @@ pub enum MvSubpelPrecision {
 
 pub const SUBPEL_FILTER_SIZE: usize = 8;
 
-pub static SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
+#[repr(C, align(256))]
+struct Aligned([[[i8; SUBPEL_FILTER_SIZE]; 16]; 6]);
+
+pub static rav1e_mc_subpel_filters: &[[[i8; SUBPEL_FILTER_SIZE]; 16]; 6] = &Aligned([
   [
-    [0, 0, 0, 128, 0, 0, 0, 0],
+    /*[0, 0, 0, 128, 0, 0, 0, 0],
     [0, 2, -6, 126, 8, -2, 0, 0],
     [0, 2, -10, 122, 18, -4, 0, 0],
     [0, 2, -12, 116, 28, -8, 2, 0],
@@ -796,7 +799,24 @@ pub static SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
     [0, 2, -10, 38, 110, -14, 2, 0],
     [0, 2, -8, 28, 116, -12, 2, 0],
     [0, 0, -4, 18, 122, -10, 2, 0],
-    [0, 0, -2, 8, 126, -6, 2, 0]
+    [0, 0, -2, 8, 126, -6, 2, 0]*/
+        [0, 0, 0, 64, 0, 0, 0, 0],
+        [   0,   1,  -3,  63,   4,  -1,   0,   0 ],
+        [   0,   1,  -5,  61,   9,  -2,   0,   0 ],
+        [   0,   1,  -6,  58,  14,  -4,   1,   0 ],
+        [   0,   1,  -7,  55,  19,  -5,   1,   0 ],
+        [   0,   1,  -7,  51,  24,  -6,   1,   0 ],
+        [   0,   1,  -8,  47,  29,  -6,   1,   0 ],
+        [   0,   1,  -7,  42,  33,  -6,   1,   0 ],
+        [   0,   1,  -7,  38,  38,  -7,   1,   0 ],
+        [   0,   1,  -6,  33,  42,  -7,   1,   0 ],
+        [   0,   1,  -6,  29,  47,  -8,   1,   0 ],
+        [   0,   1,  -6,  24,  51,  -7,   1,   0 ],
+        [   0,   1,  -5,  19,  55,  -7,   1,   0 ],
+        [   0,   1,  -4,  14,  58,  -6,   1,   0 ],
+        [   0,   0,  -2,   9,  61,  -5,   1,   0 ],
+        [   0,   0,  -1,   4,  63,  -3,   1,   0 ]
+
   ],
   [
     [0, 0, 0, 128, 0, 0, 0, 0],
@@ -853,7 +873,7 @@ pub static SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
     [0, 0, 0, 8, 120, 0, 0, 0]
   ],
   [
-    [0, 0, 0, 128, 0, 0, 0, 0],
+    /*[0, 0, 0, 128, 0, 0, 0, 0],
     [0, 0, -4, 126, 8, -2, 0, 0],
     [0, 0, -8, 122, 18, -4, 0, 0],
     [0, 0, -10, 116, 28, -6, 0, 0],
@@ -868,7 +888,23 @@ pub static SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
     [0, 0, -8, 38, 110, -12, 0, 0],
     [0, 0, -6, 28, 116, -10, 0, 0],
     [0, 0, -4, 18, 122, -8, 0, 0],
-    [0, 0, -2, 8, 126, -4, 0, 0]
+    [0, 0, -2, 8, 126, -4, 0, 0]*/
+[0, 0, 0, 64, 0, 0, 0, 0],
+        [   0,   0,  -2,  63,   4,  -1,   0,   0 ],
+        [   0,   0,  -4,  61,   9,  -2,   0,   0 ],
+        [   0,   0,  -5,  58,  14,  -3,   0,   0 ],
+        [   0,   0,  -6,  55,  19,  -4,   0,   0 ],
+        [   0,   0,  -6,  51,  24,  -5,   0,   0 ],
+        [   0,   0,  -7,  47,  29,  -5,   0,   0 ],
+        [   0,   0,  -6,  42,  33,  -5,   0,   0 ],
+        [   0,   0,  -6,  38,  38,  -6,   0,   0 ],
+        [   0,   0,  -5,  33,  42,  -6,   0,   0 ],
+        [   0,   0,  -5,  29,  47,  -7,   0,   0 ],
+        [   0,   0,  -5,  24,  51,  -6,   0,   0 ],
+        [   0,   0,  -4,  19,  55,  -6,   0,   0 ],
+        [   0,   0,  -3,  14,  58,  -5,   0,   0 ],
+        [   0,   0,  -2,   9,  61,  -4,   0,   0 ],
+        [   0,   0,  -1,   4,  63,  -2,   0,   0 ]
   ],
   [
     [0, 0, 0, 128, 0, 0, 0, 0],
@@ -888,7 +924,9 @@ pub static SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
     [0, 0, 4, 36, 62, 26, 0, 0],
     [0, 0, 2, 34, 62, 30, 0, 0]
   ]
-];
+]).0;
+
+static SUBPEL_FILTERS: &[[[i8; SUBPEL_FILTER_SIZE]; 16]; 6] = rav1e_mc_subpel_filters;
 
 /* Symbols for coding which components are zero jointly */
 pub const MV_JOINTS: usize = 4;
@@ -1184,7 +1222,7 @@ impl PredictionMode {
     let stride = dst.plane.cfg.stride;
     let slice = dst.as_mut_slice();
 
-    if !is_compound && bit_depth == 8 {
+    /*if !is_compound && bit_depth == 8 {
       match fi.rec_buffer.frames[fi.ref_frames[ref_frames[0] - LAST_FRAME] as usize] {
         Some(ref rec) => {
           let rec_cfg = &rec.frame.planes[p].cfg;
@@ -1228,7 +1266,7 @@ impl PredictionMode {
         None => ()
       }
       return;
-    }
+    }*/
 
     for i in 0..(1 + is_compound as usize) {
       match fi.rec_buffer.frames[fi.ref_frames[ref_frames[i] - LAST_FRAME] as usize] {
@@ -1249,8 +1287,8 @@ impl PredictionMode {
           let x_filter_idx = if width <= 4 { 4 } else { 0 };
           let shifts = {
             let shift_offset = if bit_depth == 12 { 2 } else { 0 };
-            let inter_round0 = 3 + shift_offset;
-            let inter_round1 = if is_compound { 7 } else { 11 } - shift_offset;
+            let inter_round0 = 2 + shift_offset;
+            let inter_round1 = if is_compound { 6 } else { 10 } - shift_offset;
             (inter_round0, inter_round1, 14 - inter_round0 - inter_round1)
           };
           let round_shift =
@@ -1294,10 +1332,10 @@ impl PredictionMode {
                   let mut sum: i32 = 0;
                   for k in 0..8 {
                     sum += s[(r + k) * ref_stride + c] as i32
-                      * SUBPEL_FILTERS[y_filter_idx][row_frac as usize][k];
+                      * SUBPEL_FILTERS[y_filter_idx][row_frac as usize][k] as i32;
                   }
                   let output_index = r * stride + c;
-                  let mut val = round_shift(sum, shifts.0 + shifts.1 - 7);
+                  let mut val = round_shift(sum, shifts.0 + shifts.1 - 6);
                   if is_compound && i == 1 {
                     val = val + slice[output_index] as i32 - 32768;
                     val = round_shift(val, shifts.2 + 1);
@@ -1323,10 +1361,10 @@ impl PredictionMode {
                   let mut sum: i32 = 0;
                   for k in 0..8 {
                     sum += s[r * ref_stride + (c + k)] as i32
-                      * SUBPEL_FILTERS[x_filter_idx][col_frac as usize][k];
+                      * SUBPEL_FILTERS[x_filter_idx][col_frac as usize][k] as i32;
                   }
                   let output_index = r * stride + c;
-                  let mut val = round_shift(round_shift(sum, shifts.0) << 7, shifts.1);
+                  let mut val = round_shift(round_shift(sum, shifts.0) << 6, shifts.1);
                   if is_compound && i == 1 {
                     val = val + slice[output_index] as i32 - 32768;
                     val = round_shift(val, shifts.2 + 1);
@@ -1355,7 +1393,7 @@ impl PredictionMode {
                     let mut sum: i32 = 0;
                     for k in 0..8 {
                       sum += s[r * ref_stride + (c + k)] as i32 * SUBPEL_FILTERS
-                        [x_filter_idx][col_frac as usize][k];
+                        [x_filter_idx][col_frac as usize][k] as i32;
                     }
                     let val = round_shift(sum, shifts.0);
                     intermediate[8 * r + (c - cg)] = val as i16;
@@ -1367,7 +1405,7 @@ impl PredictionMode {
                     let mut sum: i32 = 0;
                     for k in 0..8 {
                       sum += intermediate[8 * (r + k) + c - cg] as i32
-                        * SUBPEL_FILTERS[y_filter_idx][row_frac as usize][k];
+                        * SUBPEL_FILTERS[y_filter_idx][row_frac as usize][k] as i32;
                     }
                     let output_index = r * stride + c;
                     let mut val = round_shift(sum, shifts.1);
