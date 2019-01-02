@@ -10,6 +10,8 @@
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 
+use std::mem;
+
 use self::BlockSize::*;
 use self::TxSize::*;
 use context::*;
@@ -1203,9 +1205,8 @@ impl PredictionMode {
           let s = ps.as_slice_clamped();
           let ref_stride = rec_cfg.stride;
 
-          //let mut dst8: [u8; 128*128] = [0; 128*128]; // TODO: Align dst
-          let mut dst8: AlignedArray<[u8; 128 * 128], Align32> = AlignedArray([0; 128 * 128]);
-          let mut src8: [u8; (128+7)*(128+7)] = [0; (128+7)*(128+7)];
+          let mut dst8: AlignedArray<[u8; 128 * 128], Align32> = UninitializedAlignedArray();
+          let mut src8: [u8; (128+7)*(128+7)] = unsafe { mem::uninitialized() };
 
           for r in 0..height + 7 {
             for c in 0..width + 7 {
