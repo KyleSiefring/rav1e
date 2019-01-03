@@ -906,6 +906,25 @@ extern {
     dst: *mut u8, dst_stride: libc::ptrdiff_t, src: *const u8,
     src_stride: libc::ptrdiff_t, w: i32, h: i32, mx: i32, my: i32
   );
+
+  fn rav1e_prep_8tap_regular_avx2(
+    tmp: *mut i16, src: *const u8, src_stride: libc::ptrdiff_t, w: i32, h: i32,
+    mx: i32, my: i32
+  );
+
+  fn rav1e_avg_avx2(
+    dst: *mut u8, dst_stride: libc::ptrdiff_t, tmp1: *const i16,
+    tmp2: *const i16, w: i32, h: i32
+  );
+}
+
+
+use num_traits::*;
+fn convert_from_slice<NEW: 'static + Copy, OLD: AsPrimitive<NEW>>(dst: &mut [NEW], src: &[OLD])
+{
+  for (a, b) in dst.iter_mut().zip(src.iter()) {
+    *a = (*b).as_();
+  }
 }
 
 impl PredictionMode {
@@ -1184,50 +1203,98 @@ impl PredictionMode {
     let stride = dst.plane.cfg.stride;
     let slice = dst.as_mut_slice();
 
-    if !is_compound && bit_depth == 8 {
-      match fi.rec_buffer.frames[fi.ref_frames[ref_frames[0] - LAST_FRAME] as usize] {
-        Some(ref rec) => {
-          let rec_cfg = &rec.frame.planes[p].cfg;
-          let shift_row = 3 + rec_cfg.ydec;
-          let shift_col = 3 + rec_cfg.xdec;
-          let row_offset = mvs[0].row as i32 >> shift_row;
-          let col_offset = mvs[0].col as i32 >> shift_col;
-          let row_frac =
-            (mvs[0].row as i32 - (row_offset << shift_row)) << (4 - shift_row);
-          let col_frac =
-            (mvs[0].col as i32 - (col_offset << shift_col)) << (4 - shift_col);
+    if bit_depth == 8 {
+      if !is_compound {
+        match fi.rec_buffer.frames[fi.ref_frames[ref_frames[0] - LAST_FRAME] as usize] {
+          Some(ref rec) => {
+            let rec_cfg = &rec.frame.planes[p].cfg;
+            let shift_row = 3 + rec_cfg.ydec;
+            let shift_col = 3 + rec_cfg.xdec;
+            let row_offset = mvs[0].row as i32 >> shift_row;
+            let col_offset = mvs[0].col as i32 >> shift_col;
+            let row_frac =
+              (mvs[0].row as i32 - (row_offset << shift_row)) << (4 - shift_row);
+            let col_frac =
+              (mvs[0].col as i32 - (col_offset << shift_col)) << (4 - shift_col);
 
-          let qo = PlaneOffset {
-            x: po.x + col_offset as isize - 3,
-            y: po.y + row_offset as isize - 3
-          };
-          let ps = rec.frame.planes[p].slice(&qo);
-          let s = ps.as_slice_clamped();
-          let ref_stride = rec_cfg.stride;
+            let qo = PlaneOffset {
+              x: po.x + col_offset as isize - 3,
+              y: po.y + row_offset as isize - 3
+            };
+            let ps = rec.frame.planes[p].slice(&qo);
+            let s = ps.as_slice_clamped();
+            let ref_stride = rec_cfg.stride;
 
-          let mut dst8: AlignedArray<[u8; 128 * 128], Align32> = UninitializedAlignedArray();
-          let mut src8: [u8; (128+7)*(128+7)] = unsafe { mem::uninitialized() };
+            let mut dst8: AlignedArray<[u8; 128 * 128], Align32> = UninitializedAlignedArray();
+            let mut src8: [u8; (128+7)*(128+7)] = unsafe { mem::uninitialized() };
 
-          for r in 0..height + 7 {
-            for c in 0..width + 7 {
-              src8[r * (width + 7) + c] = s[r * ref_stride + c] as u8;
+            for r in 0..height + 7 {
+              convert_from_slice(&mut  src8[r * (width + 7)..r * (width + 7) + width + 7], &s[r * ref_stride..r * ref_stride + width + 7]);
+            }
+            unsafe {
+              rav1e_put_8tap_regular_avx2(
+                dst8.array.as_mut_ptr(), width as isize,
+                src8[(width + 7) * 3 + 3..].as_ptr(), (width + 7) as isize,
+                width as i32, height as i32, col_frac, row_frac);
+            }
+            for r in 0..height {
+              convert_from_slice(&mut slice[r * stride..r * stride + width], &dst8.array[r * width..r * width + width]);
             }
           }
-          unsafe {
-            rav1e_put_8tap_regular_avx2(
-              dst8.array.as_mut_ptr(), width as isize,
-              src8[(width + 7) * 3 + 3..].as_ptr(), (width + 7) as isize,
-              width as i32, height as i32, col_frac, row_frac);
-          }
-          for r in 0..height {
-            for c in 0..width {
-              slice[r * stride + c] = dst8.array[r * width + c] as u16;
+          None => ()
+        }
+        return;
+      }
+      else {
+        let mut tmp: [AlignedArray<[i16; 128 * 128], Align32>; 2] = [UninitializedAlignedArray(), UninitializedAlignedArray()];
+        for i in 0..(1 + is_compound as usize) {
+          match fi.rec_buffer.frames[fi.ref_frames[ref_frames[i] - LAST_FRAME] as usize] {
+            Some(ref rec) => {
+              let rec_cfg = &rec.frame.planes[p].cfg;
+              let shift_row = 3 + rec_cfg.ydec;
+              let shift_col = 3 + rec_cfg.xdec;
+              let row_offset = mvs[0].row as i32 >> shift_row;
+              let col_offset = mvs[0].col as i32 >> shift_col;
+              let row_frac =
+                (mvs[0].row as i32 - (row_offset << shift_row)) << (4 - shift_row);
+              let col_frac =
+                (mvs[0].col as i32 - (col_offset << shift_col)) << (4 - shift_col);
+
+              let qo = PlaneOffset {
+                x: po.x + col_offset as isize - 3,
+                y: po.y + row_offset as isize - 3
+              };
+              let ps = rec.frame.planes[p].slice(&qo);
+              let s = ps.as_slice_clamped();
+              let ref_stride = rec_cfg.stride;
+
+              let mut src8: [u8; (128+7)*(128+7)] = unsafe { mem::uninitialized() };
+              for r in 0..height + 7 {
+                convert_from_slice(&mut src8[r * (width + 7)..r * (width + 7) + width + 7], &s[r * ref_stride..r * ref_stride + width + 7]);
+              }
+              unsafe {
+                rav1e_prep_8tap_regular_avx2(
+                  tmp[i].array.as_mut_ptr(),
+                  src8[(width + 7) * 3 + 3..].as_ptr(), (width + 7) as isize,
+                  width as i32, height as i32, col_frac, row_frac
+                );
+              }
             }
+            None => ()
           }
         }
-        None => ()
+        let mut dst8: AlignedArray<[u8; 128 * 128], Align32> = UninitializedAlignedArray();
+        unsafe {
+          rav1e_avg_avx2(
+            dst8.array.as_mut_ptr(), width as isize, tmp[0].array.as_ptr(),
+            tmp[1].array.as_ptr(), width as i32, height as i32
+          );
+        }
+        for r in 0..height {
+          convert_from_slice(&mut slice[r * stride..r * stride + width], &dst8.array[r * width..r * width + width]);
+        }
+        return;
       }
-      return;
     }
 
     for i in 0..(1 + is_compound as usize) {
