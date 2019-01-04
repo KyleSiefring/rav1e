@@ -1253,12 +1253,12 @@ impl PredictionMode {
               let rec_cfg = &rec.frame.planes[p].cfg;
               let shift_row = 3 + rec_cfg.ydec;
               let shift_col = 3 + rec_cfg.xdec;
-              let row_offset = mvs[0].row as i32 >> shift_row;
-              let col_offset = mvs[0].col as i32 >> shift_col;
+              let row_offset = mvs[i].row as i32 >> shift_row;
+              let col_offset = mvs[i].col as i32 >> shift_col;
               let row_frac =
-                (mvs[0].row as i32 - (row_offset << shift_row)) << (4 - shift_row);
+                (mvs[i].row as i32 - (row_offset << shift_row)) << (4 - shift_row);
               let col_frac =
-                (mvs[0].col as i32 - (col_offset << shift_col)) << (4 - shift_col);
+                (mvs[i].col as i32 - (col_offset << shift_col)) << (4 - shift_col);
 
               let qo = PlaneOffset {
                 x: po.x + col_offset as isize - 3,
