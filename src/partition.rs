@@ -1229,7 +1229,7 @@ impl PredictionMode {
             let mut src8: [u8; (128+7)*(128+7)] = unsafe { mem::uninitialized() };
 
             for r in 0..height + 7 {
-              convert_from_slice(&mut  src8[r * (width + 7)..r * (width + 7) + width + 7], &s[r * ref_stride..r * ref_stride + width + 7]);
+              convert_from_slice(&mut src8[r * (width + 7)..r * (width + 7) + width + 7], &s[r * ref_stride..r * ref_stride + width + 7]);
             }
             unsafe {
               rav1e_put_8tap_regular_avx2(
