@@ -779,7 +779,7 @@ pub enum MvSubpelPrecision {
 
 pub const SUBPEL_FILTER_SIZE: usize = 8;
 
-pub static SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
+const SUBPEL_FILTERS: [[[i32; SUBPEL_FILTER_SIZE]; 16]; 6] = [
   [
     [0, 0, 0, 128, 0, 0, 0, 0],
     [0, 2, -6, 126, 8, -2, 0, 0],
@@ -918,7 +918,6 @@ extern {
   );
 }
 
-
 use num_traits::*;
 fn convert_from_slice<NEW: 'static + Copy, OLD: AsPrimitive<NEW>>(dst: &mut [NEW], src: &[OLD])
 {
@@ -926,6 +925,8 @@ fn convert_from_slice<NEW: 'static + Copy, OLD: AsPrimitive<NEW>>(dst: &mut [NEW
     *a = (*b).as_();
   }
 }
+
+use mc::*;
 
 impl PredictionMode {
   pub fn predict_intra<'a>(
@@ -1192,7 +1193,7 @@ impl PredictionMode {
   }
 
   pub fn predict_inter<'a>(
-    self, fi: &FrameInvariants, p: usize, po: &PlaneOffset,
+    self, fi: &'a FrameInvariants, p: usize, po: &PlaneOffset,
     dst: &'a mut PlaneMutSlice<'a>, width: usize, height: usize,
     ref_frames: [usize; 2], mvs: [MotionVector; 2], bit_depth: usize
   ) {
@@ -1200,24 +1201,35 @@ impl PredictionMode {
 
     let is_compound = ref_frames[1] > INTRA_FRAME && ref_frames[1] != NONE_FRAME;
 
-    let stride = dst.plane.cfg.stride;
-    let slice = dst.as_mut_slice();
-
     if bit_depth == 8 {
       if !is_compound {
         match fi.rec_buffer.frames[fi.ref_frames[ref_frames[0] - LAST_FRAME] as usize] {
           Some(ref rec) => {
+/*
+pub fn put_8tap_rs<'a>(
+  dst: &'a mut PlaneMutSlice<'a>, src: PlaneSlice<'a>, width: usize,
+  height: usize, col_frac: i32, row_frac: i32, bit_depth: usize
+) {
+            put_8tap_rs(dst, rec.frame.planes[p].slice(&qo), width, height, col_frac, row_frac, bit_depth);
+*/
             let rec_cfg = &rec.frame.planes[p].cfg;
             let shift_row = 3 + rec_cfg.ydec;
             let shift_col = 3 + rec_cfg.xdec;
-            let row_offset = mvs[0].row as i32 >> shift_row;
-            let col_offset = mvs[0].col as i32 >> shift_col;
+            let mv = mvs[0];
+            let row_offset = mv.row as i32 >> shift_row;
+            let col_offset = mv.col as i32 >> shift_col;
             let row_frac =
-              (mvs[0].row as i32 - (row_offset << shift_row)) << (4 - shift_row);
+              (mv.row as i32 - (row_offset << shift_row)) << (4 - shift_row);
             let col_frac =
-              (mvs[0].col as i32 - (col_offset << shift_col)) << (4 - shift_col);
+              (mv.col as i32 - (col_offset << shift_col)) << (4 - shift_col);
 
             let qo = PlaneOffset {
+              x: po.x + col_offset as isize,
+              y: po.y + row_offset as isize
+            };
+            put_8tap_rs(dst, rec.frame.planes[p].slice(&qo), width, height, col_frac, row_frac, bit_depth);
+
+            /*let qo = PlaneOffset {
               x: po.x + col_offset as isize - 3,
               y: po.y + row_offset as isize - 3
             };
@@ -1239,7 +1251,7 @@ impl PredictionMode {
             }
             for r in 0..height {
               convert_from_slice(&mut slice[r * stride..r * stride + width], &dst8.array[r * width..r * width + width]);
-            }
+            }*/
           }
           None => ()
         }
@@ -1253,14 +1265,20 @@ impl PredictionMode {
               let rec_cfg = &rec.frame.planes[p].cfg;
               let shift_row = 3 + rec_cfg.ydec;
               let shift_col = 3 + rec_cfg.xdec;
-              let row_offset = mvs[i].row as i32 >> shift_row;
-              let col_offset = mvs[i].col as i32 >> shift_col;
+              let mv = mvs[i];
+              let row_offset = mv.row as i32 >> shift_row;
+              let col_offset = mv.col as i32 >> shift_col;
               let row_frac =
-                (mvs[i].row as i32 - (row_offset << shift_row)) << (4 - shift_row);
+                (mv.row as i32 - (row_offset << shift_row)) << (4 - shift_row);
               let col_frac =
-                (mvs[i].col as i32 - (col_offset << shift_col)) << (4 - shift_col);
+                (mv.col as i32 - (col_offset << shift_col)) << (4 - shift_col);
 
               let qo = PlaneOffset {
+                x: po.x + col_offset as isize,
+                y: po.y + row_offset as isize
+              };
+              prep_8tap_rs(&mut tmp[i].array, rec.frame.planes[p].slice(&qo), width, height, col_frac, row_frac, bit_depth);
+            /*let qo = PlaneOffset {
                 x: po.x + col_offset as isize - 3,
                 y: po.y + row_offset as isize - 3
               };
@@ -1278,11 +1296,19 @@ impl PredictionMode {
                   src8[(width + 7) * 3 + 3..].as_ptr(), (width + 7) as isize,
                   width as i32, height as i32, col_frac, row_frac
                 );
-              }
+              }*/
             }
             None => ()
           }
         }
+/*pub fn mc_avg_rs<'a>(
+  dst: &'a mut PlaneMutSlice<'a>, tmp1: &[i16], tmp2: &[i16],
+  width: usize, height: usize, bit_depth: usize
+) {*/
+        mc_avg_rs(dst, &tmp[0].array, &tmp[1].array, width, height, bit_depth);
+        /*
+        let stride = dst.plane.cfg.stride;
+        let slice = dst.as_mut_slice();
         let mut dst8: AlignedArray<[u8; 128 * 128], Align32> = UninitializedAlignedArray();
         unsafe {
           rav1e_avg_avx2(
@@ -1292,11 +1318,12 @@ impl PredictionMode {
         }
         for r in 0..height {
           convert_from_slice(&mut slice[r * stride..r * stride + width], &dst8.array[r * width..r * width + width]);
-        }
+        }*/
         return;
       }
     }
-
+    let stride = dst.plane.cfg.stride;
+    let slice = dst.as_mut_slice();
     for i in 0..(1 + is_compound as usize) {
       match fi.rec_buffer.frames[fi.ref_frames[ref_frames[i] - LAST_FRAME] as usize] {
         Some(ref rec) => {
@@ -1459,6 +1486,7 @@ impl PredictionMode {
       }
     }
   }
+
 }
 
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
