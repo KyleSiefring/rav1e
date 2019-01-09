@@ -1193,7 +1193,7 @@ impl PredictionMode {
   }
 
   pub fn predict_inter<'a>(
-    self, fi: &'a FrameInvariants, p: usize, po: &PlaneOffset,
+    self, fi: &FrameInvariants, p: usize, po: &PlaneOffset,
     dst: &'a mut PlaneMutSlice<'a>, width: usize, height: usize,
     ref_frames: [usize; 2], mvs: [MotionVector; 2], bit_depth: usize
   ) {
@@ -1224,10 +1224,10 @@ pub fn put_8tap_rs<'a>(
               (mv.col as i32 - (col_offset << shift_col)) << (4 - shift_col);
 
             let qo = PlaneOffset {
-              x: po.x + col_offset as isize,
-              y: po.y + row_offset as isize
+              x: po.x + col_offset as isize - 3,
+              y: po.y + row_offset as isize - 3
             };
-            put_8tap_rs(dst, rec.frame.planes[p].slice(&qo), width, height, col_frac, row_frac, bit_depth);
+            put_8tap_rs(dst, rec.frame.planes[p].slice(&qo).clamp().subslice(3, 3), width, height, col_frac, row_frac, bit_depth);
 
             /*let qo = PlaneOffset {
               x: po.x + col_offset as isize - 3,
@@ -1274,10 +1274,10 @@ pub fn put_8tap_rs<'a>(
                 (mv.col as i32 - (col_offset << shift_col)) << (4 - shift_col);
 
               let qo = PlaneOffset {
-                x: po.x + col_offset as isize,
-                y: po.y + row_offset as isize
+                x: po.x + col_offset as isize - 3,
+                y: po.y + row_offset as isize - 3
               };
-              prep_8tap_rs(&mut tmp[i].array, rec.frame.planes[p].slice(&qo), width, height, col_frac, row_frac, bit_depth);
+              prep_8tap_rs(&mut tmp[i].array, rec.frame.planes[p].slice(&qo).clamp().subslice(3, 3), width, height, col_frac, row_frac, bit_depth);
             /*let qo = PlaneOffset {
                 x: po.x + col_offset as isize - 3,
                 y: po.y + row_offset as isize - 3

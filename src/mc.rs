@@ -7,8 +7,8 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
-use plane::*;
 use num_traits::*;
+use plane::*;
 
 pub const SUBPEL_FILTER_SIZE: usize = 8;
 
@@ -127,12 +127,18 @@ fn round_shift(val: i32, shift: i32) -> i32 {
   (val + (1 << (shift - 1))) >> shift
 }
 
-fn run_filter<T: AsPrimitive<i32>>(src: &[T], stride: usize, filter: [i32; 8]) -> i32 {
-  filter.iter().zip(src.iter().step_by(stride)).map(|(f, s)| f * s.as_()).sum::<i32>()
+fn run_filter<T: AsPrimitive<i32>>(
+  src: &[T], stride: usize, filter: [i32; 8]
+) -> i32 {
+  filter
+    .iter()
+    .zip(src.iter().step_by(stride))
+    .map(|(f, s)| f * s.as_())
+    .sum::<i32>()
 }
 
 pub fn put_8tap_rs<'a>(
-  dst: &'a mut PlaneMutSlice<'a>, src: PlaneSlice<'a>, width: usize,
+  dst: &'a mut PlaneMutSlice<'a>, src: PlaneSlice, width: usize,
   height: usize, col_frac: i32, row_frac: i32, bit_depth: usize
 ) {
   let dst_stride = dst.plane.cfg.stride;
@@ -146,33 +152,43 @@ pub fn put_8tap_rs<'a>(
   let intermediate_bits = 4 - if bit_depth == 12 { 2 } else { 0 };
   match (col_frac, row_frac) {
     (0, 0) => {
-      let ps = src;
-      let s = ps.as_slice_clamped();
+      let src_slice = src.as_slice();
       for r in 0..height {
         for c in 0..width {
-          dst_slice[r * dst_stride + c] = s[r * ref_stride + c];
+          dst_slice[r * dst_stride + c] = src_slice[r * ref_stride + c];
         }
       }
     }
     (0, _) => {
       let ps = src.go_up(3);
-      let s = ps.as_slice_clamped();
+      let src_slice = ps.as_slice();
       for r in 0..height {
         for c in 0..width {
-          let sum = run_filter(&s[r * ref_stride + c..], ref_stride, y_filter);
-          let val = round_shift(sum, 7);
-          dst_slice[r * dst_stride + c] = val.max(0).min(max_sample_val) as u16;
+          dst_slice[r * dst_stride + c] = round_shift(
+            run_filter(&src_slice[r * ref_stride + c..], ref_stride, y_filter),
+            7
+          )
+          .max(0)
+          .min(max_sample_val)
+            as u16;
         }
       }
     }
     (_, 0) => {
       let ps = src.go_left(3);
-      let s = ps.as_slice_clamped();
+      let src_slice = ps.as_slice();
       for r in 0..height {
         for c in 0..width {
-          let sum = run_filter(&s[r * ref_stride + c..], 1, x_filter);
-          let val = round_shift(round_shift(sum, 7 - intermediate_bits), intermediate_bits);
-          dst_slice[r * dst_stride + c] = val.max(0).min(max_sample_val) as u16;
+          dst_slice[r * dst_stride + c] = round_shift(
+            round_shift(
+              run_filter(&src_slice[r * ref_stride + c..], 1, x_filter),
+              7 - intermediate_bits
+            ),
+            intermediate_bits
+          )
+          .max(0)
+          .min(max_sample_val)
+            as u16;
         }
       }
     }
@@ -181,21 +197,26 @@ pub fn put_8tap_rs<'a>(
 
       let ps = src.go_left(3);
       let ps = ps.go_up(3);
-      let s = ps.as_slice_clamped();
+      let src_slice = ps.as_slice();
       for cg in (0..width).step_by(8) {
         for r in 0..height + 7 {
           for c in cg..(cg + 8).min(width) {
-            let sum = run_filter(&s[r * ref_stride + c..], 1, x_filter);
-            let val = round_shift(sum, 7 - intermediate_bits);
-            intermediate[8 * r + (c - cg)] = val as i16;
+            intermediate[8 * r + (c - cg)] = round_shift(
+              run_filter(&src_slice[r * ref_stride + c..], 1, x_filter),
+              7 - intermediate_bits
+            ) as i16;
           }
         }
 
         for r in 0..height {
           for c in cg..(cg + 8).min(width) {
-            let sum = run_filter(&intermediate[8 * r + c - cg..], 8, y_filter);
-            let val = round_shift(sum, 7 + intermediate_bits);
-            dst_slice[r * dst_stride + c] = val.max(0).min(max_sample_val) as u16;
+            dst_slice[r * dst_stride + c] = round_shift(
+              run_filter(&intermediate[8 * r + c - cg..], 8, y_filter),
+              7 + intermediate_bits
+            )
+            .max(0)
+            .min(max_sample_val)
+              as u16;
           }
         }
       }
@@ -204,8 +225,8 @@ pub fn put_8tap_rs<'a>(
 }
 
 pub fn prep_8tap_rs<'a>(
-  tmp: &mut [i16], src: PlaneSlice<'a>, width: usize, height: usize, col_frac: i32,
-  row_frac: i32, bit_depth: usize
+  tmp: &mut [i16], src: PlaneSlice, width: usize, height: usize,
+  col_frac: i32, row_frac: i32, bit_depth: usize
 ) {
   let ref_stride = src.plane.cfg.stride;
   let y_filter_idx = if height <= 4 { 4 } else { 0 };
@@ -215,31 +236,35 @@ pub fn prep_8tap_rs<'a>(
   let intermediate_bits = 4 - if bit_depth == 12 { 2 } else { 0 };
   match (col_frac, row_frac) {
     (0, 0) => {
-      let ps = src;
-      let s = ps.as_slice_clamped();
+      let src_slice = src.as_slice();
       for r in 0..height {
         for c in 0..width {
-          tmp[r * width + c] = (s[r * ref_stride + c] << intermediate_bits) as i16;
+          tmp[r * width + c] =
+            (src_slice[r * ref_stride + c] << intermediate_bits) as i16;
         }
       }
     }
     (0, _) => {
       let ps = src.go_up(3);
-      let s = ps.as_slice_clamped();
+      let src_slice = ps.as_slice();
       for r in 0..height {
         for c in 0..width {
-          let sum = run_filter(&s[r * ref_stride + c..], ref_stride, y_filter);
-          tmp[r * width + c] = round_shift(sum, 7 - intermediate_bits) as i16;
+          tmp[r * width + c] = round_shift(
+            run_filter(&src_slice[r * ref_stride + c..], ref_stride, y_filter),
+            7 - intermediate_bits
+          ) as i16;
         }
       }
     }
     (_, 0) => {
       let ps = src.go_left(3);
-      let s = ps.as_slice_clamped();
+      let src_slice = ps.as_slice();
       for r in 0..height {
         for c in 0..width {
-          let sum = run_filter(&s[r * ref_stride + c..], 1, x_filter);
-          tmp[r * width + c] = round_shift(sum, 7 - intermediate_bits) as i16;
+          tmp[r * width + c] = round_shift(
+            run_filter(&src_slice[r * ref_stride + c..], 1, x_filter),
+            7 - intermediate_bits
+          ) as i16;
         }
       }
     }
@@ -248,19 +273,23 @@ pub fn prep_8tap_rs<'a>(
 
       let ps = src.go_left(3);
       let ps = ps.go_up(3);
-      let s = ps.as_slice_clamped();
+      let src_slice = ps.as_slice();
       for cg in (0..width).step_by(8) {
         for r in 0..height + 7 {
           for c in cg..(cg + 8).min(width) {
-            let sum = run_filter(&s[r * ref_stride + c..], 1, x_filter);
-            intermediate[8 * r + (c - cg)] = round_shift(sum, 7 - intermediate_bits) as i16;
+            intermediate[8 * r + (c - cg)] = round_shift(
+              run_filter(&src_slice[r * ref_stride + c..], 1, x_filter),
+              7 - intermediate_bits
+            ) as i16;
           }
         }
 
         for r in 0..height {
           for c in cg..(cg + 8).min(width) {
-            let sum = run_filter(&intermediate[8 * r + c - cg..], 8, y_filter);
-            tmp[r * width + c] = round_shift(sum, 7) as i16;
+            tmp[r * width + c] = round_shift(
+              run_filter(&intermediate[8 * r + c - cg..], 8, y_filter),
+              7
+            ) as i16;
           }
         }
       }
@@ -269,8 +298,8 @@ pub fn prep_8tap_rs<'a>(
 }
 
 pub fn mc_avg_rs<'a>(
-  dst: &'a mut PlaneMutSlice<'a>, tmp1: &[i16], tmp2: &[i16],
-  width: usize, height: usize, bit_depth: usize
+  dst: &'a mut PlaneMutSlice<'a>, tmp1: &[i16], tmp2: &[i16], width: usize,
+  height: usize, bit_depth: usize
 ) {
   let dst_stride = dst.plane.cfg.stride;
   let dst_slice = dst.as_mut_slice();
@@ -278,7 +307,12 @@ pub fn mc_avg_rs<'a>(
   let intermediate_bits = 4 - if bit_depth == 12 { 2 } else { 0 };
   for r in 0..height {
     for c in 0..width {
-      dst_slice[r * dst_stride + c] = round_shift((tmp1[r * width + c] + tmp2[r * width + c]) as i32, intermediate_bits+1).max(0).min(max_sample_val) as u16;
+      dst_slice[r * dst_stride + c] = round_shift(
+        (tmp1[r * width + c] + tmp2[r * width + c]) as i32,
+        intermediate_bits + 1
+      )
+      .max(0)
+      .min(max_sample_val) as u16;
     }
   }
 }
