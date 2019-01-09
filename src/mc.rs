@@ -137,7 +137,7 @@ fn run_filter<T: AsPrimitive<i32>>(
     .sum::<i32>()
 }
 
-pub fn put_8tap_rs<'a>(
+pub fn put_8tap<'a>(
   dst: &'a mut PlaneMutSlice<'a>, src: PlaneSlice, width: usize,
   height: usize, col_frac: i32, row_frac: i32, bit_depth: usize
 ) {
@@ -160,8 +160,7 @@ pub fn put_8tap_rs<'a>(
       }
     }
     (0, _) => {
-      let ps = src.go_up(3);
-      let src_slice = ps.as_slice();
+      let src_slice = src.go_up(3).as_slice();
       for r in 0..height {
         for c in 0..width {
           dst_slice[r * dst_stride + c] = round_shift(
@@ -175,8 +174,7 @@ pub fn put_8tap_rs<'a>(
       }
     }
     (_, 0) => {
-      let ps = src.go_left(3);
-      let src_slice = ps.as_slice();
+      let src_slice = src.go_left(3).as_slice();
       for r in 0..height {
         for c in 0..width {
           dst_slice[r * dst_stride + c] = round_shift(
@@ -195,9 +193,7 @@ pub fn put_8tap_rs<'a>(
     (_, _) => {
       let mut intermediate = [0 as i16; 8 * (128 + 7)];
 
-      let ps = src.go_left(3);
-      let ps = ps.go_up(3);
-      let src_slice = ps.as_slice();
+      let src_slice = src.go_left(3).go_up(3).as_slice();
       for cg in (0..width).step_by(8) {
         for r in 0..height + 7 {
           for c in cg..(cg + 8).min(width) {
@@ -224,7 +220,7 @@ pub fn put_8tap_rs<'a>(
   }
 }
 
-pub fn prep_8tap_rs<'a>(
+pub fn prep_8tap<'a>(
   tmp: &mut [i16], src: PlaneSlice, width: usize, height: usize,
   col_frac: i32, row_frac: i32, bit_depth: usize
 ) {
@@ -245,8 +241,7 @@ pub fn prep_8tap_rs<'a>(
       }
     }
     (0, _) => {
-      let ps = src.go_up(3);
-      let src_slice = ps.as_slice();
+      let src_slice = src.go_up(3).as_slice();
       for r in 0..height {
         for c in 0..width {
           tmp[r * width + c] = round_shift(
@@ -257,8 +252,7 @@ pub fn prep_8tap_rs<'a>(
       }
     }
     (_, 0) => {
-      let ps = src.go_left(3);
-      let src_slice = ps.as_slice();
+      let src_slice = src.go_left(3).as_slice();
       for r in 0..height {
         for c in 0..width {
           tmp[r * width + c] = round_shift(
@@ -271,9 +265,7 @@ pub fn prep_8tap_rs<'a>(
     (_, _) => {
       let mut intermediate = [0 as i16; 8 * (128 + 7)];
 
-      let ps = src.go_left(3);
-      let ps = ps.go_up(3);
-      let src_slice = ps.as_slice();
+      let src_slice = src.go_left(3).go_up(3).as_slice();
       for cg in (0..width).step_by(8) {
         for r in 0..height + 7 {
           for c in cg..(cg + 8).min(width) {
@@ -297,7 +289,7 @@ pub fn prep_8tap_rs<'a>(
   }
 }
 
-pub fn mc_avg_rs<'a>(
+pub fn mc_avg<'a>(
   dst: &'a mut PlaneMutSlice<'a>, tmp1: &[i16], tmp2: &[i16], width: usize,
   height: usize, bit_depth: usize
 ) {
