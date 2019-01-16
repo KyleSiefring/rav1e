@@ -1626,7 +1626,7 @@ pub fn iht16x16_add<T>(
   }
 }
 
-pub fn iht32x32_add<T>(
+/*pub fn iht32x32_add<T>(
   input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) where T: Pixel, i32: AsPrimitive<T> {
@@ -1636,12 +1636,161 @@ pub fn iht32x32_add<T>(
   } else {
     Block32x32::inv_txfm2d_add_rs(input, output, stride, tx_type, bit_depth);
   }
+}*/
+
+extern fn inv_txfm_add_invalid(
+  _dst: *mut u8, _dst_stride: libc::ptrdiff_t, _coeff: *const i16, _eob: i32) {
+  unimplemented!()
 }
 
-pub fn iht64x64_add<T>(
+macro_rules! decl_itx_fn {
+  ($FUNC:ident) => {
+    extern {
+      fn $FUNC(dst: *mut u8, dst_stride: libc::ptrdiff_t, coeff: *const i16, eob: i32);
+    }
+  }
+}
+
+macro_rules! decl_itx64_fn {
+  ($W:expr, $H:expr, $OPT:ident) => {
+    paste::item! {
+      decl_itx_fn!([<rav1e_inv_txfm_add_dct_dct_ $W x $H _ $OPT>]);
+    }
+  }
+}
+
+macro_rules! decl_itx32_fns {
+  ($W:expr, $H:expr, $OPT:ident) => {
+    decl_itx64_fn!($W, $H, $OPT);
+    paste::item! {
+      decl_itx_fn!([<rav1e_inv_txfm_add_identity_identity_ $W x $H _ $OPT>]);
+    }
+  }
+}
+
+macro_rules! impl_iht32_fns {
+  ($(($W:expr, $H:expr, $OPT:ident)),+) => {
+    $(
+      decl_itx32_fns!($W, $H, $OPT);
+      paste::item! {
+        pub fn [<iht $W x $H _add>]<T>(
+          input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
+          bit_depth: usize
+        ) where T: Pixel, i32: AsPrimitive<T>, u8: AsPrimitive<T>, T: AsPrimitive<u8> {
+          let coeff_w = $W.min(32);
+          let coeff_h = $H.min(32);
+          let mut dst8: AlignedArray<[u8; $W * $H]> = UninitializedAlignedArray();
+          let mut coeff16: AlignedArray<[i16; 32 * 32]> = UninitializedAlignedArray();
+          for j in 0..coeff_h {
+            for i in 0..coeff_w {
+              coeff16.array[i * coeff_h + j] = input[j * coeff_w + i] as i16;
+            }
+          }
+          convert_slice_2d(
+            &mut dst8.array,
+            $W,
+            output,
+            stride,
+            $W,
+            $H
+          );
+          let txfm_func = match tx_type {
+            TxType::DCT_DCT => [<rav1e_inv_txfm_add_dct_dct_ $W x $H _ $OPT>],
+            TxType::IDTX => [<rav1e_inv_txfm_add_identity_identity_ $W x $H _ $OPT>],
+            _ => inv_txfm_add_invalid
+          };
+          unsafe {
+            txfm_func(
+              dst8.array.as_mut_ptr(),
+              $W,
+              coeff16.array.as_ptr(),
+              (coeff_w * coeff_h) as i32
+            );
+          }
+          convert_slice_2d(
+            output,
+            stride,
+            &dst8.array,
+            $W,
+            $W,
+            $H
+          );
+        }
+      }
+    )*
+  }
+}
+
+impl_iht32_fns!(
+  (32, 32, avx2),
+  (32, 16, avx2),
+  (16, 32, avx2),
+  (32, 8, avx2),
+  (8, 32, avx2)
+);
+
+macro_rules! impl_iht64_fns {
+  ($(($W:expr, $H:expr, $OPT:ident)),+) => {
+    $(
+      decl_itx64_fn!($W, $H, $OPT);
+      paste::item! {
+        pub fn [<iht $W x $H _add>]<T>(
+          input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
+          bit_depth: usize
+        ) where T: Pixel, i32: AsPrimitive<T>, u8: AsPrimitive<T>, T: AsPrimitive<u8> {
+          assert!(tx_type == TxType::DCT_DCT);
+          let coeff_w = $W.min(32);
+          let coeff_h = $H.min(32);
+          let mut dst8: AlignedArray<[u8; $W * $H]> = UninitializedAlignedArray();
+          let mut coeff16: AlignedArray<[i16; 32 * 32]> = UninitializedAlignedArray();
+          for j in 0..coeff_h {
+            for i in 0..coeff_w {
+              coeff16.array[i * coeff_h + j] = input[j * coeff_w + i] as i16;
+            }
+          }
+          convert_slice_2d(
+            &mut dst8.array,
+            $W,
+            output,
+            stride,
+            $W,
+            $H
+          );
+          unsafe {
+            [<rav1e_inv_txfm_add_dct_dct_ $W x $H _ $OPT>](
+              dst8.array.as_mut_ptr(),
+              $W,
+              coeff16.array.as_ptr(),
+              (coeff_w * coeff_h) as i32
+            );
+          }
+          convert_slice_2d(
+            output,
+            stride,
+            &dst8.array,
+            $W,
+            $W,
+            $H
+          );
+        }
+      }
+    )*
+  }
+}
+
+impl_iht64_fns!(
+  (64, 64, avx2),
+  (64, 32, avx2),
+  (32, 64, avx2),
+  (64, 16, avx2),
+  (16, 64, avx2)
+);
+
+/*pub fn iht64x64_add<T>(
   input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
   bit_depth: usize
-) where T: Pixel, i32: AsPrimitive<T> {
+) where T: Pixel, i32: AsPrimitive<T>, u8: AsPrimitive<T>, T: AsPrimitive<u8> {
+/*
   assert!(tx_type == TxType::DCT_DCT);
   let mut tmp = [0 as i32; 4096];
 
@@ -1650,7 +1799,39 @@ pub fn iht64x64_add<T>(
   }
 
   Block64x64::inv_txfm2d_add(&tmp, output, stride, tx_type, bit_depth);
-}
+*/
+  let mut dst8: AlignedArray<[u8; 64 * 64]> = UninitializedAlignedArray();
+  let mut coeff16: AlignedArray<[i16; 32 * 32]> = UninitializedAlignedArray();
+  for i in 0..32 {
+    for j in 0..32 {
+      coeff16.array[i * 32 + j] = input[j * 32 + i] as i16;
+    }
+  }
+  convert_slice_2d(
+    &mut dst8.array,
+    64,
+    output,
+    stride,
+    64,
+    64
+  );
+  unsafe {
+    rav1e_inv_txfm_add_dct_dct_64x64_avx2(
+      dst8.array.as_mut_ptr(),
+      64,
+      coeff16.array.as_ptr(),
+      32*32
+    );
+  }
+  convert_slice_2d(
+    output,
+    stride,
+    &dst8.array,
+    64,
+    64,
+    64
+  );
+}*/
 
 pub fn iht4x8_add<T>(
   input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
@@ -1698,7 +1879,7 @@ pub fn iht16x8_add<T>(
   }
 }
 
-pub fn iht16x32_add<T>(
+/*pub fn iht16x32_add<T>(
   input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) where T: Pixel, i32: AsPrimitive<T> {
@@ -1712,9 +1893,9 @@ pub fn iht32x16_add<T>(
 ) where T: Pixel, i32: AsPrimitive<T> {
   assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
   Block32x16::inv_txfm2d_add(input, output, stride, tx_type, bit_depth);
-}
+}*/
 
-pub fn iht32x64_add<T>(
+/*pub fn iht32x64_add<T>(
   input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) where T: Pixel, i32: AsPrimitive<T> {
@@ -1740,7 +1921,7 @@ pub fn iht64x32_add<T>(
   }
 
   Block64x32::inv_txfm2d_add(&tmp, output, stride, tx_type, bit_depth);
-}
+}*/
 
 pub fn iht4x16_add<T>(
   input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
@@ -1766,7 +1947,7 @@ pub fn iht16x4_add<T>(
   }
 }
 
-pub fn iht8x32_add<T>(
+/*pub fn iht8x32_add<T>(
   input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) where T: Pixel, i32: AsPrimitive<T> {
@@ -1780,9 +1961,9 @@ pub fn iht32x8_add<T>(
 ) where T: Pixel, i32: AsPrimitive<T> {
   assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
   Block32x8::inv_txfm2d_add(input, output, stride, tx_type, bit_depth);
-}
+}*/
 
-pub fn iht16x64_add<T>(
+/*pub fn iht16x64_add<T>(
   input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
   bit_depth: usize
 ) where T: Pixel, i32: AsPrimitive<T> {
@@ -1808,4 +1989,4 @@ pub fn iht64x16_add<T>(
   }
 
   Block64x16::inv_txfm2d_add(&tmp, output, stride, tx_type, bit_depth);
-}
+}*/
