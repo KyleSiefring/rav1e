@@ -14,6 +14,8 @@ use util::clamp;
 
 use std::cmp;
 
+use self::nasm::*;
+
 static COSPI_INV: [i32; 64] = [
   4096, 4095, 4091, 4085, 4076, 4065, 4052, 4036, 4017, 3996, 3973, 3948,
   3920, 3889, 3857, 3822, 3784, 3745, 3703, 3659, 3612, 3564, 3513, 3461,
@@ -1502,63 +1504,253 @@ static INV_TXFM_FNS: [[fn(&[i32], &mut [i32], usize); 5]; 4] = [
   [av1_iidentity4, av1_iidentity8, av1_iidentity16, av1_iidentity32, |_, _, _| unimplemented!()]
 ];
 
-trait InvTxfm2D: Dim {
-  const INTERMEDIATE_SHIFT: usize;
+mod nasm {
+use super::*;
+use super::native::*;
+use num_traits::*;
+use partition::TxType;
+use util::clamp;
+use util::*;
 
-  fn inv_txfm2d_add<T>(
-    input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
-    bd: usize
-  ) where T: Pixel, i32: AsPrimitive<T> {
-    // For 64 point transforms, rely on the last 32 columns being initialized
-    //   to zero for filling out missing input coeffs.
-    let buffer = &mut [0i32; 64 * 64][..Self::W * Self::H];
-    let rect_type = get_rect_tx_log_ratio(Self::W, Self::H);
-    let tx_types_1d = get_1d_tx_types(tx_type)
-      .expect("TxType not supported by rust txfm code.");
+use std::cmp;
 
-    // perform inv txfm on every row
-    let range = bd + 8;
-    let txfm_fn = INV_TXFM_FNS[tx_types_1d.1 as usize][Self::W.ilog() - 3];
-    for (input_slice, buffer_slice) in
-      // 64 point transforms only signal 32 coeffs. We only take chunks of 32
-      //   and skip over the last 32 transforms here.
-      input.chunks(Self::W.min(32)).take(Self::H.min(32)).zip(buffer.chunks_mut(Self::W))
-    {
-      // For 64 point transforms, rely on the last 32 elements being
-      //   initialized to zero for filling out the missing coeffs.
-      let mut temp_in: [i32; 64] = [0; 64];
-      for (raw, clamped) in input_slice.iter().zip(temp_in.iter_mut()) {
-        let mut val = *raw;
-        if rect_type.abs() == 1 {
-          val = round_shift(*raw * INV_SQRT2, SQRT2_BITS);
+  type InvTxfmFunc =
+    unsafe extern fn(*mut u8, libc::ptrdiff_t, *const i16, i32);
+
+  pub trait InvTxfm2D: super::native::InvTxfm2D {
+    fn match_tx_type(tx_type: TxType) -> InvTxfmFunc;
+
+    fn inv_txfm2d_add<T>(
+      input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
+      bd: usize
+    ) where T: Pixel, i32: AsPrimitive<T>, u8: AsPrimitive<T>, T: AsPrimitive<u8> {
+      let coeff_w = Self::W.min(32);
+      let coeff_h = Self::H.min(32);
+      let mut dst8: AlignedArray<[u8; 64 * 64]> = UninitializedAlignedArray();
+      let mut coeff16: AlignedArray<[i16; 32 * 32]> = UninitializedAlignedArray();
+      for j in 0..coeff_h {
+        for i in 0..coeff_w {
+          coeff16.array[i * coeff_h + j] = input[j * coeff_w + i] as i16;
         }
-        *clamped = clamp_value(val, range);
       }
-      txfm_fn(&temp_in, buffer_slice, range);
+      convert_slice_2d(
+        &mut dst8.array,
+        Self::W,
+        output,
+        stride,
+        Self::W,
+        Self::H
+      );
+      unsafe {
+        Self::match_tx_type(tx_type)(
+          dst8.array.as_mut_ptr(),
+          Self::W as isize,
+          coeff16.array.as_ptr(),
+          (coeff_w * coeff_h) as i32
+        );
+      }
+      convert_slice_2d(
+        output,
+        stride,
+        &dst8.array,
+        Self::W,
+        Self::W,
+        Self::H
+      );
+      //<Self as super::native::InvTxfm2D>::inv_txfm2d_add(input, output, stride, tx_type, bd);
     }
+  }
 
-    // perform inv txfm on every col
-    let range = cmp::max(bd + 6, 16);
-    let txfm_fn = INV_TXFM_FNS[tx_types_1d.0 as usize][Self::H.ilog() - 3];
-    for c in 0..Self::W {
-      let mut temp_in: [i32; 64] = [0; 64];
-      let mut temp_out: [i32; 64] = [0; 64];
-      for (raw, clamped) in
-        buffer[c..].iter().step_by(Self::W).zip(temp_in.iter_mut())
-      {
-        *clamped =
-          clamp_value(round_shift(*raw, Self::INTERMEDIATE_SHIFT), range);
+extern fn inv_txfm_add_invalid(
+  _dst: *mut u8, _dst_stride: libc::ptrdiff_t, _coeff: *const i16, _eob: i32) {
+  unimplemented!()
+}
+
+macro_rules! decl_itx_fns {
+  ([$([$(($ENUM:pat, $TYPE1:ident, $TYPE2:ident)),*]),*], $W:expr, $H:expr, $OPT:ident) => {
+    paste::item! {
+      $(
+        $(
+          extern {
+            // Note: type1 and type2 are flipped
+            fn [<rav1e_inv_txfm_add_ $TYPE2 _$TYPE1 _$W x $H _$OPT>](
+              dst: *mut u8, dst_stride: libc::ptrdiff_t, coeff: *const i16,
+              eob: i32
+            );
+          }
+        )*
+      )*
+      impl InvTxfm2D for [<Block $W x $H>] {
+        fn match_tx_type(tx_type: TxType) -> InvTxfmFunc {
+          match tx_type {
+            $(
+              $(
+                // Note: type1 and type2 are flipped
+                $ENUM => [<rav1e_inv_txfm_add_$TYPE2 _$TYPE1 _$W x $H _$OPT>],
+              )*
+            )*
+            _ => inv_txfm_add_invalid
+          }
+        }
       }
-      txfm_fn(&temp_in, &mut temp_out, range);
-      for (temp, out) in temp_out
-        .iter()
-        .zip(output[c..].iter_mut().step_by(stride).take(Self::H))
+    }
+  };
+  ($TYPES_VALID:tt, [$(($W:expr, $H:expr)),*], $OPT:ident) => {
+    $(
+      decl_itx_fns!($TYPES_VALID, $W, $H, $OPT);
+    )*
+  };
+
+  ($TYPES64:tt, $DIMS64:tt, $TYPES32:tt, $DIMS32:tt, $TYPES16:tt, $DIMS16:tt,
+   $TYPES84:tt, $DIMS84:tt, $OPT:ident) => {
+    decl_itx_fns!([$TYPES64], $DIMS64, $OPT);
+    decl_itx_fns!([$TYPES64, $TYPES32], $DIMS32, $OPT);
+    decl_itx_fns!([$TYPES64, $TYPES32, $TYPES16], $DIMS16, $OPT);
+    decl_itx_fns!(
+      [$TYPES64, $TYPES32, $TYPES16, $TYPES84], $DIMS84, $OPT
+    );
+  };
+}
+
+//decl_itx32_fns!(32, 32, avx2);
+  /*decl_itx_fns_valid!(
+    [[(dct, dct), (identity, identity)]],
+    (32, 32),
+    avx
+  );*/
+  decl_itx_fns!(
+    [(TxType::DCT_DCT, dct, dct)],
+    [(64, 64), (64, 32), (32, 64), (16, 64), (64, 16)],
+    [(TxType::IDTX, identity, identity)],
+    [(32, 32), (32, 16), (16, 32), (32, 8), (8, 32)],
+    [
+      (TxType::DCT_ADST, dct, adst),
+      (TxType::ADST_DCT, adst, dct),
+      (TxType::DCT_FLIPADST, dct, flipadst),
+      (TxType::FLIPADST_DCT, flipadst, dct),
+      (TxType::V_DCT, dct, identity),
+      (TxType::H_DCT, identity, dct),
+      (TxType::ADST_ADST, adst, adst),
+      (TxType::ADST_FLIPADST, adst, flipadst),
+      (TxType::FLIPADST_ADST, flipadst, adst),
+      (TxType::FLIPADST_FLIPADST, flipadst, flipadst)
+    ],
+    [(16, 16)],
+    [
+      (TxType::V_ADST, adst, identity),
+      (TxType::H_ADST, identity, adst),
+      (TxType::V_FLIPADST, flipadst, identity),
+      (TxType::H_FLIPADST, identity, flipadst)
+    ],
+    [(16, 8), (8, 16), (16, 4), (4, 16), (8, 8), (8, 4), (4, 8), (4, 4)],
+    avx2
+  );
+/*
+decl_itx_fn(dav1d_inv_txfm_add_dct_adst_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_dct_flipadst_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_dct_identity_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_adst_dct_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_adst_adst_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_adst_flipadst_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_flipadst_dct_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_flipadst_adst_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_flipadst_flipadst_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_identity_dct_##w##x##h##_##opt)
+
+
+decl_itx_fn(dav1d_inv_txfm_add_adst_identity_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_flipadst_identity_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_identity_adst_##w##x##h##_##opt); \
+decl_itx_fn(dav1d_inv_txfm_add_identity_flipadst_##w##x##h##_##opt)
+*/
+}
+
+mod native {
+use super::*;
+use num_traits::*;
+use partition::TxType;
+use util::clamp;
+
+use std::cmp;
+
+  pub trait InvTxfm2D: Dim {
+    const INTERMEDIATE_SHIFT: usize;
+
+    fn inv_txfm2d_add<T>(
+      input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
+      bd: usize
+    ) where T: Pixel, i32: AsPrimitive<T> {
+      // For 64 point transforms, rely on the last 32 columns being initialized
+      //   to zero for filling out missing input coeffs.
+      let buffer = &mut [0i32; 64 * 64][..Self::W * Self::H];
+      let rect_type = get_rect_tx_log_ratio(Self::W, Self::H);
+      let tx_types_1d = get_1d_tx_types(tx_type)
+        .expect("TxType not supported by rust txfm code.");
+
+      // perform inv txfm on every row
+      let range = bd + 8;
+      let txfm_fn = INV_TXFM_FNS[tx_types_1d.1 as usize][Self::W.ilog() - 3];
+      for (input_slice, buffer_slice) in
+        // 64 point transforms only signal 32 coeffs. We only take chunks of 32
+        //   and skip over the last 32 transforms here.
+        input.chunks(Self::W.min(32)).take(Self::H.min(32)).zip(buffer.chunks_mut(Self::W))
       {
-        *out =
-          clamp((*out).as_() + round_shift(*temp, 4), 0, (1 << bd) - 1).as_();
+        // For 64 point transforms, rely on the last 32 elements being
+        //   initialized to zero for filling out the missing coeffs.
+        let mut temp_in: [i32; 64] = [0; 64];
+        for (raw, clamped) in input_slice.iter().zip(temp_in.iter_mut()) {
+          let mut val = *raw;
+          if rect_type.abs() == 1 {
+            val = round_shift(*raw * INV_SQRT2, SQRT2_BITS);
+          }
+          *clamped = clamp_value(val, range);
+        }
+        txfm_fn(&temp_in, buffer_slice, range);
+      }
+
+      // perform inv txfm on every col
+      let range = cmp::max(bd + 6, 16);
+      let txfm_fn = INV_TXFM_FNS[tx_types_1d.0 as usize][Self::H.ilog() - 3];
+      for c in 0..Self::W {
+        let mut temp_in: [i32; 64] = [0; 64];
+        let mut temp_out: [i32; 64] = [0; 64];
+        for (raw, clamped) in
+          buffer[c..].iter().step_by(Self::W).zip(temp_in.iter_mut())
+        {
+          *clamped =
+            clamp_value(round_shift(*raw, Self::INTERMEDIATE_SHIFT), range);
+        }
+        txfm_fn(&temp_in, &mut temp_out, range);
+        for (temp, out) in temp_out
+          .iter()
+          .zip(output[c..].iter_mut().step_by(stride).take(Self::H))
+        {
+          *out =
+            clamp((*out).as_() + round_shift(*temp, 4), 0, (1 << bd) - 1).as_();
+        }
       }
     }
   }
+  macro_rules! impl_inv_txs {
+    ($(($W:expr, $H:expr)),+ $SH:expr) => {
+      $(
+        paste::item! {
+          impl InvTxfm2D for [<Block $W x $H>] {
+            const INTERMEDIATE_SHIFT: usize = $SH;
+          }
+        }
+      )*
+    }
+  }
+
+  impl_inv_txs! { (4, 4), (4, 8), (8, 4) 0 }
+
+  impl_inv_txs! { (8, 8), (8, 16), (16, 8) 1 }
+  impl_inv_txs! { (4, 16), (16, 4), (16, 32), (32, 16) 1 }
+  impl_inv_txs! { (32, 64), (64, 32) 1 }
+
+  impl_inv_txs! { (16, 16), (16, 64), (64, 16), (64, 64) 2 }
+  impl_inv_txs! { (32, 32), (8, 32), (32, 8) 2 }
 }
 
 /* From AV1 Spec.
@@ -1573,14 +1765,14 @@ macro_rules! impl_inv_txs {
   ($(($W:expr, $H:expr)),+ $SH:expr) => {
     $(
       paste::item! {
-        impl InvTxfm2D for [<Block $W x $H>] {
+        /*impl InvTxfm2D for [<Block $W x $H>] {
           const INTERMEDIATE_SHIFT: usize = $SH;
-        }
+        }*/
 
         pub fn [<iht $W x $H _add>]<T>(
           input: &[i32], output: &mut [T], stride: usize, tx_type: TxType,
           bit_depth: usize
-        ) where T: Pixel, i32: AsPrimitive<T> {
+        ) where T: Pixel, i32: AsPrimitive<T>, u8: AsPrimitive<T>, T: AsPrimitive<u8>{
           [<Block $W x $H>]::inv_txfm2d_add(
             input, output, stride, tx_type, bit_depth
           );
