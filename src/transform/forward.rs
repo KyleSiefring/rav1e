@@ -59,6 +59,7 @@ const FWD_TXFM_SHIFT_LS: [TxfmShifts; TxSize::TX_SIZES_ALL] = [
 ];
 
 type TxfmFunc = dyn Fn(&[i32], &mut [i32]);
+type TxfmFuncI32X8 = dyn Fn(&[I32X8], &mut [I32X8]);
 
 use std::ops::*;
 
@@ -66,9 +67,9 @@ trait TxOperations:
   Copy + Default + Add<Output = Self> + Sub<Output = Self>
 {
   fn tx_mul(self, _: (i32, i32)) -> Self;
+  fn rshift1(self) -> Self;
   fn add_avg(self, b: Self) -> Self;
   fn sub_avg(self, b: Self) -> Self;
-  fn rshift1(self) -> Self;
 
   fn copy_fn(self) -> Self {
     self
@@ -90,6 +91,99 @@ impl TxOperations for i32 {
 
   fn sub_avg(self, b: Self) -> Self {
     (self - b) >> 1
+  }
+}
+
+#[cfg(target_arch = "x86")]
+use std::arch::x86::*;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[derive(Copy, Clone)]
+struct I32X8 {
+  data: [i32; 8]//__m256i
+}
+
+impl I32X8 {
+  #[target_feature(enable = "avx2")]
+  unsafe fn vec(self) -> __m256i {
+    std::mem::transmute(self.data)
+  }
+
+  #[target_feature(enable = "avx2")]
+  unsafe fn new(a: __m256i) -> I32X8 {
+    I32X8 { data: std::mem::transmute(a) }
+  }
+}
+
+impl Default for I32X8 {
+  fn default() -> Self {
+    #[target_feature(enable = "avx2")]
+    unsafe fn get_zero() -> I32X8 {
+      I32X8::new(_mm256_setzero_si256())
+    }
+    unsafe { get_zero() }
+  }
+}
+
+impl Add<Self> for I32X8 {
+  type Output = Self;
+  fn add(self, rhs: Self) -> Self {
+    #[target_feature(enable = "avx2")]
+    unsafe fn do_operation(lhs: I32X8, rhs: I32X8) -> I32X8 {
+      I32X8::new(_mm256_add_epi32(lhs.vec(), rhs.vec()))
+    }
+    unsafe { do_operation(self, rhs) }
+  }
+}
+
+impl Sub<Self> for I32X8 {
+  type Output = Self;
+  fn sub(self, rhs: Self) -> Self {
+    #[target_feature(enable = "avx2")]
+    unsafe fn do_operation(lhs: I32X8, rhs: I32X8) -> I32X8 {
+      I32X8::new(_mm256_sub_epi32(lhs.vec(), rhs.vec()))
+    }
+    unsafe { do_operation(self, rhs) }
+  }
+}
+
+impl TxOperations for I32X8 {
+  fn tx_mul(self, mul: (i32, i32)) -> Self {
+    #[target_feature(enable = "avx2")]
+    unsafe fn do_operation(a: I32X8, mul: (i32, i32)) -> I32X8 {
+      I32X8::new(
+        _mm256_srav_epi32(_mm256_add_epi32(_mm256_mullo_epi32(a.vec(), _mm256_set1_epi32(mul.0)), _mm256_set1_epi32(1 << mul.1 >> 1)), _mm256_set1_epi32(mul.1))
+      )
+    }
+    unsafe { do_operation(self, mul) }
+  }
+
+  fn rshift1(self) -> Self {
+    #[target_feature(enable = "avx2")]
+    unsafe fn do_operation(a: I32X8) -> I32X8 {
+      I32X8::new(
+        _mm256_srai_epi32(_mm256_sub_epi32(a.vec(), _mm256_cmpgt_epi32(_mm256_setzero_si256(), a.vec())), 1)
+      )
+    }
+    unsafe { do_operation(self) }
+  }
+
+  fn add_avg(self, b: Self) -> Self {
+    #[target_feature(enable = "avx2")]
+    unsafe fn do_operation(a: I32X8, b: I32X8) -> I32X8 {
+      I32X8::new(_mm256_srai_epi32(_mm256_add_epi32(a.vec(), b.vec()), 1))
+    }
+    unsafe { do_operation(self, b) }
+  }
+
+  fn sub_avg(self, b: Self) -> Self {
+    #[target_feature(enable = "avx2")]
+    unsafe fn do_operation(a: I32X8, b: I32X8) -> I32X8 {
+      I32X8::new(_mm256_srai_epi32(_mm256_sub_epi32(a.vec(), b.vec()), 1))
+    }
+    unsafe { do_operation(self, b) }
   }
 }
 
@@ -1669,6 +1763,25 @@ impl TxfmType {
       _ => unreachable!()
     }
   }
+
+  fn get_func_i32x8(self) -> &'static TxfmFuncI32X8 {
+    use self::TxfmType::*;
+    match self {
+      DCT4 => &daala_fdct4,
+      DCT8 => &daala_fdct8,
+      DCT16 => &daala_fdct16,
+      DCT32 => &daala_fdct32,
+      DCT64 => &daala_fdct64,
+      ADST4 => &daala_fdst_vii_4,
+      ADST8 => &daala_fdst8,
+      ADST16 => &daala_fdst16,
+      Identity4 => &fidentity4,
+      Identity8 => &fidentity8,
+      Identity16 => &fidentity16,
+      Identity32 => &fidentity32,
+      _ => unreachable!()
+    }
+  }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1732,8 +1845,11 @@ trait FwdTxfm2D: Dim {
     input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
     bd: usize
   ) {
-    let mut tmp: AlignedArray<[i32; 64 * 64]> = UninitializedAlignedArray();
-    let buf = &mut tmp.array[..Self::W * Self::H];
+    //let mut tmp: AlignedArray<[i32; 64 * 64]> = UninitializedAlignedArray();
+    //let buf = &mut tmp.array[..Self::W * Self::H];
+    let mut tmp: AlignedArray<[I32X8; 64 * 64 / 8]> = UninitializedAlignedArray();
+    let buf = &mut tmp.array[..Self::W * (Self::H / 8).max(1)];
+    let temp_out = &mut [I32X8::default(); 128];
     let cfg =
       Txfm2DFlipCfg::fwd(tx_type, TxSize::by_dims(Self::W, Self::H), bd);
 
@@ -1746,11 +1862,12 @@ trait FwdTxfm2D: Dim {
     let txfm_size_col = TxSize::width(cfg.tx_size);
     let txfm_size_row = TxSize::height(cfg.tx_size);
 
-    let txfm_func_col = cfg.txfm_type_col.get_func();
-    let txfm_func_row = cfg.txfm_type_row.get_func();
+    let txfm_func_col = cfg.txfm_type_col.get_func_i32x8();
+    let txfm_func_row = cfg.txfm_type_row.get_func_i32x8();
 
     // Columns
-    for c in 0..txfm_size_col {
+    for cg in (0..txfm_size_col).step_by(8) {
+    /*for c in 0..txfm_size_col {
       if cfg.ud_flip {
         // flip upside down
         for r in 0..txfm_size_row {
@@ -1760,18 +1877,56 @@ trait FwdTxfm2D: Dim {
         for r in 0..txfm_size_row {
           output[r] = (input[r * stride + c]).into();
         }
+      }*/
+      if cfg.ud_flip {
+        // flip upside down
+        for r in 0..txfm_size_row {
+          for c in 0..txfm_size_col.min(8) {
+            temp_out[r].data[c] = (input[(txfm_size_row - r - 1) * stride + c + cg]).into();
+          }
+        }
+      } else {
+        for r in 0..txfm_size_row {
+          for c in 0..txfm_size_col.min(8) {
+            temp_out[r].data[c] = (input[r * stride + c + cg]).into();
+          }
+        }
       }
-      av1_round_shift_array(output, txfm_size_row, -cfg.shift[0]);
-      txfm_func_col(
+      //av1_round_shift_array(output, txfm_size_row, -cfg.shift[0]);
+      for r in 0..txfm_size_row {
+        av1_round_shift_array(
+          &mut temp_out[r].data,
+          txfm_size_col.min(8),
+          -cfg.shift[0]
+        );
+      }
+      /*txfm_func_col(
         &output[..txfm_size_row].to_vec(),
         &mut output[txfm_size_row..]
+      );*/
+      /*for r in 0..txfm_size_row {
+        temp_out[r] = set1(output[r]);
+      }*/
+      txfm_func_col(
+        &temp_out[..txfm_size_row].to_vec(),
+        &mut temp_out[txfm_size_row..]
       );
-      av1_round_shift_array(
+      /*for r in 0..txfm_size_row {
+        output[r + txfm_size_row] = get1(temp_out[r + txfm_size_row]);
+      }*/
+      for r in 0..txfm_size_row {
+        av1_round_shift_array(
+          &mut temp_out[r+txfm_size_row].data,
+          txfm_size_col.min(8),
+          -cfg.shift[1]
+        );
+      }
+      /*av1_round_shift_array(
         &mut output[txfm_size_row..],
         txfm_size_row,
         -cfg.shift[1]
-      );
-      if cfg.lr_flip {
+      );*/
+      /*if cfg.lr_flip {
         for r in 0..txfm_size_row {
           // flip from left to right
           buf[r * txfm_size_col + (txfm_size_col - c - 1)] =
@@ -1781,11 +1936,29 @@ trait FwdTxfm2D: Dim {
         for r in 0..txfm_size_row {
           buf[r * txfm_size_col + c] = output[txfm_size_row + r];
         }
+      }*/
+      if cfg.lr_flip {
+        for rg in (0..txfm_size_row).step_by(8) {
+          for c in 0..txfm_size_col.min(8) {
+            for r in 0..txfm_size_row.min(8) {
+              buf[(rg / 8 * txfm_size_col) + (txfm_size_col - (c + cg) - 1)].data[r] =
+                temp_out[txfm_size_row + r + rg].data[c];
+            }
+          }
+        }
+      } else {
+        for rg in (0..txfm_size_row).step_by(8) {
+          for c in 0..txfm_size_col.min(8) {
+            for r in 0..txfm_size_row.min(8) {
+              buf[(rg / 8 * txfm_size_col) + c + cg].data[r] = temp_out[txfm_size_row + r + rg].data[c];
+            }
+          }
+        }
       }
     }
 
     // Rows
-    for r in 0..txfm_size_row {
+    /*for r in 0..txfm_size_row {
       txfm_func_row(
         &buf[r * txfm_size_col..],
         &mut output[r * txfm_size_col..]
@@ -1795,6 +1968,31 @@ trait FwdTxfm2D: Dim {
         txfm_size_col,
         -cfg.shift[2]
       );
+    }*/
+    // Rows
+    for rg in (0..txfm_size_row).step_by(8) {
+      /*for r in 0..txfm_size_row.min(8) {
+        for c in 0..txfm_size_col {
+          temp_out[c].data[r] = buf[(r + rg) * txfm_size_col + c];
+        }
+      }*/
+      txfm_func_row(
+      //  &temp_out[..txfm_size_col].to_vec(),
+        &buf[rg / 8 * txfm_size_col..],
+        &mut temp_out[..]
+      );
+      for c in 0..txfm_size_col {
+        av1_round_shift_array(
+          &mut temp_out[c].data,
+          txfm_size_col.min(8),
+          -cfg.shift[2]
+        );
+      }
+      for r in 0..txfm_size_row.min(8) {
+        for c in 0..txfm_size_col {
+          output[(r + rg) * txfm_size_col + c] = temp_out[c].data[r];
+        }
+      }
     }
   }
 }
