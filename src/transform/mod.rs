@@ -10,7 +10,11 @@
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 
+#[macro_use]
+mod forward_macro;
+
 pub use self::forward::*;
+pub use self::forward_macro::*;
 pub use self::inverse::*;
 
 use crate::context::MI_SIZE_LOG2;
@@ -23,6 +27,8 @@ use TxSize::*;
 
 mod forward;
 mod inverse;
+
+pub mod forward_data;
 
 pub static RAV1E_TX_TYPES: &[TxType] = &[
   TxType::DCT_DCT,
@@ -522,6 +528,8 @@ mod test {
       (TX_4X4, ADST_DCT, 0),
       (TX_4X4, DCT_ADST, 0),
       (TX_4X4, ADST_ADST, 0),
+      (TX_4X4, FLIPADST_DCT, 0),
+      (TX_4X4, DCT_FLIPADST, 0),
       (TX_4X4, IDTX, 0),
       (TX_4X4, V_DCT, 0),
       (TX_4X4, H_DCT, 0),
@@ -531,6 +539,8 @@ mod test {
       (TX_8X8, ADST_DCT, 1),
       (TX_8X8, DCT_ADST, 1),
       (TX_8X8, ADST_ADST, 1),
+      (TX_8X8, FLIPADST_DCT, 1),
+      (TX_8X8, DCT_FLIPADST, 1),
       (TX_8X8, IDTX, 0),
       (TX_8X8, V_DCT, 0),
       (TX_8X8, H_DCT, 0),
@@ -540,6 +550,8 @@ mod test {
       (TX_16X16, ADST_DCT, 1),
       (TX_16X16, DCT_ADST, 1),
       (TX_16X16, ADST_ADST, 1),
+      (TX_16X16, FLIPADST_DCT, 1),
+      (TX_16X16, DCT_FLIPADST, 1),
       (TX_16X16, IDTX, 0),
       (TX_16X16, V_DCT, 1),
       (TX_16X16, H_DCT, 1),

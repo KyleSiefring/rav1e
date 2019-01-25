@@ -85,6 +85,7 @@ mod predict;
 mod quantize;
 mod rdo;
 mod rdo_tables;
+//#[macro_use]
 mod transform;
 #[macro_use]
 mod util;
