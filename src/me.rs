@@ -220,7 +220,7 @@ mod nasm {
     blk_h: usize,
     bit_depth: usize,
   ) -> u32 {
-    #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
+    /*#[cfg(all(target_arch = "x86_64", feature = "nasm"))]
     {
       if mem::size_of::<T>() == 2 && is_x86_feature_detected!("ssse3") && blk_h >= 4 && blk_w >= 4 {
         return unsafe {
@@ -243,8 +243,19 @@ mod nasm {
           sad_sse2(plane_org, plane_ref, blk_w, blk_h)
         };
       }
-    }
+    }*/
     super::native::get_sad(plane_org, plane_ref, blk_w, blk_h, bit_depth)
+  }
+
+  #[inline(always)]
+  pub fn get_satd<T: Pixel>(
+    plane_org: &PlaneRegion<'_, T>,
+    plane_ref: &PlaneRegion<'_, T>,
+    blk_w: usize,
+    blk_h: usize,
+    bit_depth: usize,
+  ) -> u32 {
+    super::native::get_satd(plane_org, plane_ref, blk_w, blk_h, bit_depth)
   }
 }
 
@@ -260,6 +271,7 @@ mod native {
     blk_h: usize,
     _bit_depth: usize,
   ) -> u32 {
+    /*
     let mut sum = 0 as u32;
 
     for (slice_org, slice_ref) in plane_org.rows_iter().take(blk_h).zip(plane_ref.rows_iter()) {
@@ -269,6 +281,57 @@ mod native {
         .zip(slice_ref)
         .map(|(&a, &b)| (i32::cast_from(a) - i32::cast_from(b)).abs() as u32)
         .sum::<u32>();
+    }
+
+    sum
+    */
+    (0.7 * get_satd(plane_org, plane_ref, blk_w, blk_h, _bit_depth) as f32) as u32
+  }
+
+  fn hadamard4(input: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    let stg1: (i32, i32, i32, i32) =  (input.0 + input.1, input.0 - input.1, input.2 + input.3, input.2 - input.3);
+    (stg1.0 + stg1.2, stg1.1 + stg1.3, stg1.0 - stg1.2, stg1.1 - stg1.3)
+  }
+
+  #[inline(always)]
+  pub fn get_satd<T: Pixel>(
+    plane_org: &PlaneRegion<'_, T>,
+    plane_ref: &PlaneRegion<'_, T>,
+    blk_w: usize,
+    blk_h: usize,
+    _bit_depth: usize,
+  ) -> u32 {
+    const size: usize = 4;
+
+    let mut sum = 0 as u32;
+
+    for chunk_y in (0..blk_h).step_by(size) {
+      for chunk_x in (0..blk_w).step_by(size) {
+        let chunk_area: Area = Area::Rect{x: chunk_x as isize, y: chunk_y as isize, width: size, height: size};
+        let chunk_org = plane_org.subregion(chunk_area);
+        let chunk_ref = plane_ref.subregion(chunk_area);
+        let mut buf: [i32; size * size] = [0; size * size];
+        for (row_diff, (row_org, row_ref)) in buf.chunks_mut(size).zip(chunk_org.rows_iter().zip(chunk_ref.rows_iter())) {
+          for (diff, (a, b)) in row_diff.iter_mut().zip(row_org.iter().zip(row_ref.iter())) {
+            *diff = i32::cast_from(*a) - i32::cast_from(*b);
+          }
+        }
+        for x in 0..size {
+          let (a, b, c, d) = hadamard4((buf[x + 0*size], buf[x + 1*size], buf[x + 2*size], buf[x + 3*size]));
+          buf[x + 0*size] = a;
+          buf[x + 1*size] = b;
+          buf[x + 2*size] = c;
+          buf[x + 3*size] = d;
+        }
+        for y in 0..size {
+          let (a, b, c, d) = hadamard4((buf[0 + y*size], buf[1 + y*size], buf[2 + y*size], buf[3 + y*size]));
+          buf[0 + y*size] = a;
+          buf[1 + y*size] = b;
+          buf[2 + y*size] = c;
+          buf[3 + y*size] = d;
+        }
+        sum += buf.iter().map(|a| a.abs() as u32).sum::<u32>();
+      }
     }
 
     sum
