@@ -290,6 +290,39 @@ mod native {
 
   /*fn hadamard8(input: (i32, i32, i32, i32, i32, i32, i32, i32)) -> (i32, i32, i32, i32, i32, i32, i32, i32) {}*/
 
+  fn hadamard_1d(input: &mut [i32], n: usize, stride0: usize, stride1: usize) {
+    if n == 4 {
+      for i in 0..4 {
+        let mut sub: &mut [i32] = &mut input[i*stride0..];
+        let a = sub[0 * stride1] + sub[1 * stride1];
+        let b = sub[0 * stride1] - sub[1 * stride1];
+        let c = sub[2 * stride1] + sub[3 * stride1];
+        let d = sub[2 * stride1] - sub[3 * stride1];
+        sub[0 * stride1] = a + c;
+        sub[2 * stride1] = a - c;
+        sub[1 * stride1] = b + d;
+        sub[3 * stride1] = b - d;
+      }
+    } else {
+      /*Recursive case for 8x8, 16x16, etc.
+        Subdivide then combine.*/
+      let n2 = n >> 1;
+      hadamard_1d(input, n2, stride0, stride1);
+      hadamard_1d(&mut input[n2*stride0..], n2, stride0, stride1);
+      hadamard_1d(&mut input[n2*stride1..], n2, stride0, stride1);
+      hadamard_1d(&mut input[n2*stride0 + n2*stride1..], n2, stride0, stride1);
+      let mut sub = input;
+      for _i in 0..n {
+        for j in (0..n2*stride1).step_by(stride1) {
+          let temp = sub[j] - sub[j + stride1*n2];
+          sub[j] += sub[j + stride1*n2];
+          sub[j + stride1*n2] = temp;
+        }
+        sub = &mut sub[stride0..];
+      }
+    }
+  }
+
   fn hadamard4(input: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
     let stg1: (i32, i32, i32, i32) =  (input.0 + input.1, input.0 - input.1, input.2 + input.3, input.2 - input.3);
     (stg1.0 + stg1.2, stg1.1 + stg1.3, stg1.0 - stg1.2, stg1.1 - stg1.3)
@@ -303,7 +336,7 @@ mod native {
     blk_h: usize,
     _bit_depth: usize,
   ) -> u32 {
-    const size: usize = 4;
+    let size: usize = blk_w.min(blk_h).min(8);
 
     let mut sum = 0 as u32;
 
@@ -312,13 +345,13 @@ mod native {
         let chunk_area: Area = Area::Rect{x: chunk_x as isize, y: chunk_y as isize, width: size, height: size};
         let chunk_org = plane_org.subregion(chunk_area);
         let chunk_ref = plane_ref.subregion(chunk_area);
-        let mut buf: [i32; size * size] = [0; size * size];
+        let mut buf: &mut [i32] = &mut [0; 8 * 8][..size*size];
         for (row_diff, (row_org, row_ref)) in buf.chunks_mut(size).zip(chunk_org.rows_iter().zip(chunk_ref.rows_iter())) {
           for (diff, (a, b)) in row_diff.iter_mut().zip(row_org.iter().zip(row_ref.iter())) {
             *diff = i32::cast_from(*a) - i32::cast_from(*b);
           }
         }
-        for x in 0..size {
+        /*for x in 0..size {
           let (a, b, c, d) = hadamard4((buf[x + 0*size], buf[x + 1*size], buf[x + 2*size], buf[x + 3*size]));
           buf[x + 0*size] = a;
           buf[x + 1*size] = b;
@@ -331,7 +364,12 @@ mod native {
           buf[1 + y*size] = b;
           buf[2 + y*size] = c;
           buf[3 + y*size] = d;
-        }
+        }*/
+        /*Horizontal transform.*/
+        hadamard_1d(&mut buf, size, size, 1);
+        /*Vertical transform.*/
+        hadamard_1d(&mut buf, size, 1, size);
+
         sum += buf.iter().map(|a| a.abs() as u32).sum::<u32>();
       }
     }
@@ -504,7 +542,7 @@ pub trait MotionEstimation {
           get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo, blk_w, blk_h);
 
         // 0.5 is a fudge factor
-        let lambda = (0.7 * fi.me_lambda * 256.0 * 0.5) as u32;
+        let lambda = (0.6 * fi.me_lambda * 256.0 * 0.5) as u32;
 
         // Full-pixel motion estimation
 
@@ -545,7 +583,7 @@ pub trait MotionEstimation {
       let mut best_mv = MotionVector::default();
 
       // Divide by 4 to account for subsampling, 0.125 is a fudge factor
-      let lambda = (0.7 * fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
+      let lambda = (0.6 * fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
 
       Self::me_ss2(
         fi, ts, pmvs, tile_bo_adj,
@@ -1117,7 +1155,7 @@ pub fn estimate_motion_ss4<T: Pixel>(
     let mut best_mv = MotionVector::default();
 
     // Divide by 16 to account for subsampling, 0.125 is a fudge factor
-    let lambda = (0.7 * fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
+    let lambda = (0.6 * fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
 
     full_search(
       x_lo,
