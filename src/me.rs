@@ -285,8 +285,10 @@ mod native {
 
     sum
     */
-    (0.7 * get_satd(plane_org, plane_ref, blk_w, blk_h, _bit_depth) as f32) as u32
+    get_satd(plane_org, plane_ref, blk_w, blk_h, _bit_depth)
   }
+
+  /*fn hadamard8(input: (i32, i32, i32, i32, i32, i32, i32, i32)) -> (i32, i32, i32, i32, i32, i32, i32, i32) {}*/
 
   fn hadamard4(input: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
     let stg1: (i32, i32, i32, i32) =  (input.0 + input.1, input.0 - input.1, input.2 + input.3, input.2 - input.3);
@@ -502,7 +504,7 @@ pub trait MotionEstimation {
           get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo, blk_w, blk_h);
 
         // 0.5 is a fudge factor
-        let lambda = (fi.me_lambda * 256.0 * 0.5) as u32;
+        let lambda = (0.7 * fi.me_lambda * 256.0 * 0.5) as u32;
 
         // Full-pixel motion estimation
 
@@ -543,7 +545,7 @@ pub trait MotionEstimation {
       let mut best_mv = MotionVector::default();
 
       // Divide by 4 to account for subsampling, 0.125 is a fudge factor
-      let lambda = (fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
+      let lambda = (0.7 * fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
 
       Self::me_ss2(
         fi, ts, pmvs, tile_bo_adj,
@@ -1115,7 +1117,7 @@ pub fn estimate_motion_ss4<T: Pixel>(
     let mut best_mv = MotionVector::default();
 
     // Divide by 16 to account for subsampling, 0.125 is a fudge factor
-    let lambda = (fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
+    let lambda = (0.7 * fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
 
     full_search(
       x_lo,
