@@ -25,6 +25,8 @@ use arrayvec::*;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 
+const SATD_LAMBDA_SCALE: f64 = 0.6;
+
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
 mod nasm {
   use crate::tiling::*;
@@ -338,7 +340,7 @@ mod native {
   ) -> u32 {
     let size: usize = blk_w.min(blk_h).min(8);
 
-    let mut sum = 0 as u32;
+    let mut sum = 0 as u64;
 
     for chunk_y in (0..blk_h).step_by(size) {
       for chunk_x in (0..blk_w).step_by(size) {
@@ -370,11 +372,11 @@ mod native {
         /*Vertical transform.*/
         hadamard_1d(&mut buf, size, 1, size);
 
-        sum += buf.iter().map(|a| a.abs() as u32).sum::<u32>();
+        sum += buf.iter().map(|a| a.abs() as u64).sum::<u64>();
       }
     }
-
-    sum
+    let ln = msb(size as i32) as u64;
+    ((sum + (1 << ln >> 1)) >> ln) as u32
   }
 }
 
@@ -542,7 +544,7 @@ pub trait MotionEstimation {
           get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo, blk_w, blk_h);
 
         // 0.5 is a fudge factor
-        let lambda = (0.6 * fi.me_lambda * 256.0 * 0.5) as u32;
+        let lambda = (SATD_LAMBDA_SCALE * fi.me_lambda * 256.0 * 0.5) as u32;
 
         // Full-pixel motion estimation
 
@@ -583,7 +585,7 @@ pub trait MotionEstimation {
       let mut best_mv = MotionVector::default();
 
       // Divide by 4 to account for subsampling, 0.125 is a fudge factor
-      let lambda = (0.6 * fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
+      let lambda = (SATD_LAMBDA_SCALE * fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
 
       Self::me_ss2(
         fi, ts, pmvs, tile_bo_adj,
@@ -1155,7 +1157,7 @@ pub fn estimate_motion_ss4<T: Pixel>(
     let mut best_mv = MotionVector::default();
 
     // Divide by 16 to account for subsampling, 0.125 is a fudge factor
-    let lambda = (0.6 * fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
+    let lambda = (SATD_LAMBDA_SCALE * fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
 
     full_search(
       x_lo,
