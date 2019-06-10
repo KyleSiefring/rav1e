@@ -537,7 +537,7 @@ pub trait MotionEstimation {
         lowest_cost = get_mv_rd_cost(
           fi, frame_bo.to_luma_plane_offset(),
           &ts.input.planes[0], &rec.frame.planes[0], fi.sequence.bit_depth,
-          pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
+          pmv, lambda, true, mvx_min, mvx_max, mvy_min, mvy_max,
           blk_w, blk_h, best_mv, &mut tmp_plane_opt, ref_frame);
 
         Self::sub_pixel_me(fi, ts, rec, tile_bo, lambda, pmv,
@@ -824,7 +824,7 @@ fn get_best_predictor<T: Pixel>(
   fi: &FrameInvariants<T>,
   po: PlaneOffset, p_org: &Plane<T>, p_ref: &Plane<T>,
   predictors: &[MotionVector],
-  bit_depth: usize, pmv: [MotionVector; 2], lambda: u32,
+  bit_depth: usize, pmv: [MotionVector; 2], lambda: u32, use_satd: bool,
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
   blk_w: usize, blk_h: usize,
   center_mv: &mut MotionVector, center_mv_cost: &mut u64,
@@ -835,7 +835,7 @@ fn get_best_predictor<T: Pixel>(
   for &init_mv in predictors.iter() {
     let cost = get_mv_rd_cost(
       fi, po, p_org, p_ref, bit_depth,
-      pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
+      pmv, lambda, use_satd, mvx_min, mvx_max, mvy_min, mvy_max,
       blk_w, blk_h, init_mv, tmp_plane_opt, ref_frame);
 
     if cost < *center_mv_cost {
@@ -872,7 +872,7 @@ fn diamond_me_search<T: Pixel>(
 
   get_best_predictor(
     fi, po, p_org, p_ref, &predictors,
-    bit_depth, pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
+    bit_depth, pmv, lambda, subpixel, mvx_min, mvx_max, mvy_min, mvy_max,
     blk_w, blk_h, center_mv, center_mv_cost,
     &mut tmp_plane_opt, ref_frame);
 
@@ -889,7 +889,7 @@ fn diamond_me_search<T: Pixel>(
 
         let rd_cost = get_mv_rd_cost(
           fi, po, p_org, p_ref, bit_depth,
-          pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
+          pmv, lambda, subpixel, mvx_min, mvx_max, mvy_min, mvy_max,
           blk_w, blk_h, cand_mv, &mut tmp_plane_opt, ref_frame);
 
         if rd_cost < best_diamond_rd_cost {
@@ -917,7 +917,7 @@ fn diamond_me_search<T: Pixel>(
 fn get_mv_rd_cost<T: Pixel>(
   fi: &FrameInvariants<T>,
   po: PlaneOffset, p_org: &Plane<T>, p_ref: &Plane<T>, bit_depth: usize,
-  pmv: [MotionVector; 2], lambda: u32,
+  pmv: [MotionVector; 2], lambda: u32, use_satd: bool,
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
   blk_w: usize, blk_h: usize,
   cand_mv: MotionVector, tmp_plane_opt: &mut Option<Plane<T>>,
@@ -954,7 +954,7 @@ fn get_mv_rd_cost<T: Pixel>(
     let plane_ref = tmp_plane.as_region();
     compute_mv_rd_cost(
       // TODO: unlabeled booleans are bad and confusing
-      fi, pmv, lambda, true, bit_depth, blk_w, blk_h, cand_mv,
+      fi, pmv, lambda, use_satd, bit_depth, blk_w, blk_h, cand_mv,
       &plane_org, &plane_ref
     )
   } else {
@@ -964,7 +964,7 @@ fn get_mv_rd_cost<T: Pixel>(
       y: po.y + (cand_mv.row / 8) as isize
     });
     compute_mv_rd_cost(
-      fi, pmv, lambda, false, bit_depth, blk_w, blk_h, cand_mv,
+      fi, pmv, lambda, use_satd, bit_depth, blk_w, blk_h, cand_mv,
       &plane_org, &plane_ref
     )
   }
