@@ -8,9 +8,9 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-pub use self::nasm::get_sad;
+pub use self::nasm::*;
 #[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
-pub use self::native::get_sad;
+pub use self::native::*;
 use crate::context::{BlockOffset, BLOCK_TO_PLANE_SHIFT, MI_SIZE};
 use crate::encoder::ReferenceFrame;
 use crate::FrameInvariants;
@@ -222,7 +222,7 @@ mod nasm {
     blk_h: usize,
     bit_depth: usize,
   ) -> u32 {
-    /*#[cfg(all(target_arch = "x86_64", feature = "nasm"))]
+    #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
     {
       if mem::size_of::<T>() == 2 && is_x86_feature_detected!("ssse3") && blk_h >= 4 && blk_w >= 4 {
         return unsafe {
@@ -245,7 +245,7 @@ mod nasm {
           sad_sse2(plane_org, plane_ref, blk_w, blk_h)
         };
       }
-    }*/
+    }
     super::native::get_sad(plane_org, plane_ref, blk_w, blk_h, bit_depth)
   }
 
@@ -273,7 +273,6 @@ mod native {
     blk_h: usize,
     _bit_depth: usize,
   ) -> u32 {
-    /*
     let mut sum = 0 as u32;
 
     for (slice_org, slice_ref) in plane_org.rows_iter().take(blk_h).zip(plane_ref.rows_iter()) {
@@ -286,16 +285,12 @@ mod native {
     }
 
     sum
-    */
-    get_satd(plane_org, plane_ref, blk_w, blk_h, _bit_depth)
   }
-
-  /*fn hadamard8(input: (i32, i32, i32, i32, i32, i32, i32, i32)) -> (i32, i32, i32, i32, i32, i32, i32, i32) {}*/
 
   fn hadamard_1d(input: &mut [i32], n: usize, stride0: usize, stride1: usize) {
     if n == 4 {
       for i in 0..4 {
-        let mut sub: &mut [i32] = &mut input[i*stride0..];
+        let sub: &mut [i32] = &mut input[i * stride0..];
         let a = sub[0 * stride1] + sub[1 * stride1];
         let b = sub[0 * stride1] - sub[1 * stride1];
         let c = sub[2 * stride1] + sub[3 * stride1];
@@ -325,11 +320,6 @@ mod native {
     }
   }
 
-  fn hadamard4(input: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
-    let stg1: (i32, i32, i32, i32) =  (input.0 + input.1, input.0 - input.1, input.2 + input.3, input.2 - input.3);
-    (stg1.0 + stg1.2, stg1.1 + stg1.3, stg1.0 - stg1.2, stg1.1 - stg1.3)
-  }
-
   #[inline(always)]
   pub fn get_satd<T: Pixel>(
     plane_org: &PlaneRegion<'_, T>,
@@ -353,20 +343,6 @@ mod native {
             *diff = i32::cast_from(*a) - i32::cast_from(*b);
           }
         }
-        /*for x in 0..size {
-          let (a, b, c, d) = hadamard4((buf[x + 0*size], buf[x + 1*size], buf[x + 2*size], buf[x + 3*size]));
-          buf[x + 0*size] = a;
-          buf[x + 1*size] = b;
-          buf[x + 2*size] = c;
-          buf[x + 3*size] = d;
-        }
-        for y in 0..size {
-          let (a, b, c, d) = hadamard4((buf[0 + y*size], buf[1 + y*size], buf[2 + y*size], buf[3 + y*size]));
-          buf[0 + y*size] = a;
-          buf[1 + y*size] = b;
-          buf[2 + y*size] = c;
-          buf[3 + y*size] = d;
-        }*/
         /*Horizontal transform.*/
         hadamard_1d(&mut buf, size, size, 1);
         /*Vertical transform.*/
@@ -544,7 +520,7 @@ pub trait MotionEstimation {
           get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo, blk_w, blk_h);
 
         // 0.5 is a fudge factor
-        let lambda = (SATD_LAMBDA_SCALE * fi.me_lambda * 256.0 * 0.5) as u32;
+        let lambda = (fi.me_lambda * 256.0 * 0.5) as u32;
 
         // Full-pixel motion estimation
 
@@ -554,6 +530,15 @@ pub trait MotionEstimation {
         Self::full_pixel_me(fi, ts, rec, tile_bo, lambda, cmv, pmv,
                            mvx_min, mvx_max, mvy_min, mvy_max, blk_w, blk_h,
                            &mut best_mv, &mut lowest_cost, ref_frame);
+
+        // TODO: if use satd
+        let mut tmp_plane_opt = None;
+        let lambda = (SATD_LAMBDA_SCALE * fi.me_lambda * 256.0 * 0.5) as u32;
+        lowest_cost = get_mv_rd_cost(
+          fi, frame_bo.to_luma_plane_offset(),
+          &ts.input.planes[0], &rec.frame.planes[0], fi.sequence.bit_depth,
+          pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
+          blk_w, blk_h, best_mv, &mut tmp_plane_opt, ref_frame);
 
         Self::sub_pixel_me(fi, ts, rec, tile_bo, lambda, pmv,
                            mvx_min, mvx_max, mvy_min, mvy_max, blk_w, blk_h,
@@ -585,7 +570,7 @@ pub trait MotionEstimation {
       let mut best_mv = MotionVector::default();
 
       // Divide by 4 to account for subsampling, 0.125 is a fudge factor
-      let lambda = (SATD_LAMBDA_SCALE * fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
+      let lambda = (fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
 
       Self::me_ss2(
         fi, ts, pmvs, tile_bo_adj,
@@ -968,7 +953,8 @@ fn get_mv_rd_cost<T: Pixel>(
     );
     let plane_ref = tmp_plane.as_region();
     compute_mv_rd_cost(
-      fi, pmv, lambda, bit_depth, blk_w, blk_h, cand_mv,
+      // TODO: unlabeled booleans are bad and confusing
+      fi, pmv, lambda, true, bit_depth, blk_w, blk_h, cand_mv,
       &plane_org, &plane_ref
     )
   } else {
@@ -978,7 +964,7 @@ fn get_mv_rd_cost<T: Pixel>(
       y: po.y + (cand_mv.row / 8) as isize
     });
     compute_mv_rd_cost(
-      fi, pmv, lambda, bit_depth, blk_w, blk_h, cand_mv,
+      fi, pmv, lambda, false, bit_depth, blk_w, blk_h, cand_mv,
       &plane_org, &plane_ref
     )
   }
@@ -986,12 +972,16 @@ fn get_mv_rd_cost<T: Pixel>(
 
 fn compute_mv_rd_cost<T: Pixel>(
   fi: &FrameInvariants<T>,
-  pmv: [MotionVector; 2], lambda: u32,
+  pmv: [MotionVector; 2], lambda: u32, use_satd: bool,
   bit_depth: usize, blk_w: usize, blk_h: usize, cand_mv: MotionVector,
   plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>
 ) -> u64
 {
-  let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
+  let sad = if use_satd {
+    get_satd(&plane_org, &plane_ref, blk_w, blk_h, bit_depth)
+  } else {
+    get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth)
+  };
 
   let rate1 = get_mv_rate(cand_mv, pmv[0], fi.allow_high_precision_mv);
   let rate2 = get_mv_rate(cand_mv, pmv[1], fi.allow_high_precision_mv);
@@ -1157,7 +1147,7 @@ pub fn estimate_motion_ss4<T: Pixel>(
     let mut best_mv = MotionVector::default();
 
     // Divide by 16 to account for subsampling, 0.125 is a fudge factor
-    let lambda = (SATD_LAMBDA_SCALE * fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
+    let lambda = (fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
 
     full_search(
       x_lo,
