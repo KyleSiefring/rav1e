@@ -25,7 +25,7 @@ use arrayvec::*;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 
-const SATD_LAMBDA_SCALE: f64 = 0.5;
+const SATD_LAMBDA_SCALE: f64 = 0.6;
 
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
 mod nasm {
@@ -311,9 +311,9 @@ mod native {
       let mut sub = input;
       for _i in 0..n {
         for j in (0..n2*stride1).step_by(stride1) {
-          let temp = sub[j] - sub[j + stride1*n2];
-          sub[j] += sub[j + stride1*n2];
-          sub[j + stride1*n2] = temp;
+          let temp = sub[j] - sub[j + n2*stride1];
+          sub[j] += sub[j + n2*stride1];
+          sub[j + n2*stride1] = temp;
         }
         sub = &mut sub[stride0..];
       }
@@ -351,8 +351,8 @@ mod native {
         sum += buf.iter().map(|a| a.abs() as u64).sum::<u64>();
       }
     }
-    let ln = msb(size as i32) as u64;
-    ((sum + (1 << ln >> 1)) >> ln) as u32
+    //let ln = msb(size as i32) as u64;
+    sum as u32
   }
 }
 
@@ -1208,6 +1208,71 @@ pub mod test {
     (input_plane, rec_plane)
   }
 
+    // Generate plane data for get_sad_same()
+  fn setup_sad_1<T: Pixel>() -> (Plane<T>, Plane<T>) {
+    let mut input_plane = Plane::new(640, 480, 0, 0, 128 + 8, 128 + 8);
+    let mut rec_plane = input_plane.clone();
+    for (i, row) in input_plane.data.chunks_mut(input_plane.cfg.stride).enumerate() {
+      for (j, pixel) in row.into_iter().enumerate() {
+        *pixel = T::cast_from(0);
+      }
+    }
+
+    for (i, row) in rec_plane.data.chunks_mut(rec_plane.cfg.stride).enumerate() {
+      for (j, pixel) in row.into_iter().enumerate() {
+        *pixel = T::cast_from(1);
+      }
+    }
+
+    (input_plane, rec_plane)
+  }
+
+  // Regression and validation test for SAD computation
+  fn get_sad_satd_same<T: Pixel>() {
+    let blocks: Vec<BlockSize> = vec![
+      BLOCK_4X4,
+      BLOCK_4X8,
+      BLOCK_8X4,
+      BLOCK_8X8,
+      BLOCK_8X16,
+      BLOCK_16X8,
+      BLOCK_16X16,
+      BLOCK_16X32,
+      BLOCK_32X16,
+      BLOCK_32X32,
+      BLOCK_32X64,
+      BLOCK_64X32,
+      BLOCK_64X64,
+      BLOCK_64X128,
+      BLOCK_128X64,
+      BLOCK_128X128,
+      BLOCK_4X16,
+      BLOCK_16X4,
+      BLOCK_8X32,
+      BLOCK_32X8,
+      BLOCK_16X64,
+      BLOCK_64X16,
+    ];
+
+    let bit_depth: usize = 8;
+    let (input_plane, rec_plane) = setup_sad_1::<T>();
+
+    for block in blocks {
+      let bsw = block.width();
+      let bsh = block.height();
+      let area = Area::StartingAt { x: 32, y: 40 };
+
+      let mut input_region = input_plane.region(area);
+      let mut rec_region = rec_plane.region(area);
+
+      assert_eq!(
+        get_satd(&mut input_region, &mut rec_region, bsw, bsh, bit_depth),
+        get_sad(&mut input_region, &mut rec_region, bsw, bsh, bit_depth)
+      );
+    }
+  }
+
+
   // Regression and validation test for SAD computation
   fn get_sad_same_inner<T: Pixel>() {
     let blocks: Vec<(BlockSize, u32)> = vec![
@@ -1257,6 +1322,9 @@ pub mod test {
   fn get_sad_same_u8() {
     get_sad_same_inner::<u8>();
   }
+
+  #[test]
+  fn get_sad_satd_same_u8() { get_sad_satd_same::<u8>(); }
 
   #[test]
   fn get_sad_same_u16() {
