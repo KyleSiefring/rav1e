@@ -25,7 +25,7 @@ use arrayvec::*;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 
-const SATD_LAMBDA_SCALE: f64 = 1.0;
+const SATD_LAMBDA_SCALE: f64 = 2.0;
 
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
 mod nasm {
@@ -351,7 +351,6 @@ mod native {
         sum += buf.iter().map(|a| a.abs() as u64).sum::<u64>();
       }
     }
-    //let ln = msb(size as i32) as u64;
     sum as u32
   }
 }
