@@ -350,7 +350,7 @@ mod native {
       }
     }
     let ln = msb(size as i32) as u64;
-    (((sum as f64 * 1.7) as u64 + (1 << ln >> 1)) >> ln) as u32
+    ((sum + (1 << ln >> 1)) >> ln) as u32
   }
 }
 
