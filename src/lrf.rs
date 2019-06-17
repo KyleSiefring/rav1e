@@ -737,7 +737,7 @@ pub fn sgrproj_solve64x64<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
                         &cdeffed, cdef_w, cdef_h);*/
       sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
                              &integral_image, &sq_integral_image, IIMG_SIZE,
-                             xi as isize, cdef_h, s_r2, bdm8);
+                             xi as isize + 2, cdef_h, s_r2, bdm8);
       let ap0: [&[u32; 64+2]; 3] = [&a_r2[xi%3], &a_r2[(xi+1)%3], &a_r2[(xi+2)%3]];
       let bp0: [&[u32; 64+2]; 3] = [&b_r2[xi%3], &b_r2[(xi+1)%3], &b_r2[(xi+2)%3]];
       sgrproj_box_f_r2(&ap0, &bp0, &mut f_r2, xi, 0, cdef_h as usize, &cdeffed);
