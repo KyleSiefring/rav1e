@@ -176,6 +176,7 @@ fn sgrproj_box_sum_slow<T: Pixel>(a: &mut u32, b: &mut u32,
       sum += c;
     }
   }
+  //print!("{} ", sum);
   let (reta, retb) = sgrproj_sum_finish(ssq, sum, n, one_over_n, s, bdm8);
   *a = reta;
   *b = retb;
@@ -193,6 +194,7 @@ fn sgrproj_box_sum_fastxy_r1<T: Pixel>(a: &mut u32, b: &mut u32, x: isize, y: is
       u32::cast_from(x[2]) * u32::cast_from(x[2]);
     sum += u32::cast_from(x[0]) + u32::cast_from(x[1]) + u32::cast_from(x[2]);
   }
+  //print!("{} ", sum);
   let (reta, retb) = sgrproj_sum_finish(ssq, sum, 9, 455, s, bdm8);
   *a = reta;
   *b = retb;
@@ -212,6 +214,7 @@ fn sgrproj_box_sum_fastxy_r2<T: Pixel>(a: &mut u32, b: &mut u32, x: isize, y: is
     sum += u32::cast_from(x[0]) + u32::cast_from(x[1]) + u32::cast_from(x[2]) +
       u32::cast_from(x[3]) + u32::cast_from(x[4]);
   }
+  //print!("{} ", sum);
   let (reta, retb) = sgrproj_sum_finish(ssq, sum, 25, 164, s, bdm8);
   *a = reta;
   *b = retb;
@@ -245,6 +248,7 @@ fn sgrproj_box_sum_fastx_r1<T: Pixel>(a: &mut u32, b: &mut u32,
       u32::cast_from(x[2]) * u32::cast_from(x[2]);
     sum += u32::cast_from(x[0]) + u32::cast_from(x[1]) + u32::cast_from(x[2]);
   }
+  //print!("{} ", sum);
   let (reta, retb) = sgrproj_sum_finish(ssq, sum, 9, 455, s, bdm8);
   *a = reta;
   *b = retb;
@@ -280,6 +284,7 @@ fn sgrproj_box_sum_fastx_r2<T: Pixel>(a: &mut u32, b: &mut u32,
     sum += u32::cast_from(x[0]) + u32::cast_from(x[1]) + u32::cast_from(x[2]) +
       u32::cast_from(x[3]) + u32::cast_from(x[4]);
   }
+  //print!("{} ", sum);
   let (reta, retb) = sgrproj_sum_finish(ssq, sum, 25, 164, s, bdm8);
   *a = reta;
   *b = retb;
@@ -298,6 +303,7 @@ fn sgrproj_box_ab_r1<T: Pixel>(af: &mut[u32; 64+2],
   // representing stripe_y-1 to stripe_y+stripe_h+1 inclusive
   let boundary0 = 0;
   let boundary3 = stripe_h + 2;
+  //print!("box1: ");
   if backing.x + stripe_x > 0 && stripe_x < backing_w as isize - 1 &&
     cdeffed.x + stripe_x > 0 && stripe_x < cdeffed_w as isize - 1 {
     // Addressing is away from left and right edges of cdeffed storage;
@@ -345,6 +351,7 @@ fn sgrproj_box_ab_r1<T: Pixel>(af: &mut[u32; 64+2],
                            cdeffed, cdeffed_w, cdeffed_h);
     }
   }
+  //println!();
 }
 
 // One oddness about the radius=2 intermediate array computations that
@@ -364,6 +371,7 @@ fn sgrproj_box_ab_r2<T: Pixel>(af: &mut[u32; 64+2],
   // representing stripe_y-1 to stripe_y+stripe_h+1 inclusive
   let boundary0 = 0; // even
   let boundary3 = stripe_h + 2; // don't care if odd
+  //print!("box2: ");
   if backing.x + stripe_x > 1 && stripe_x < backing_w as isize - 2 &&
     cdeffed.x + stripe_x > 1 && stripe_x < cdeffed_w as isize - 2 {
     // Addressing is away from left and right edges of cdeffed storage;
@@ -413,6 +421,25 @@ fn sgrproj_box_ab_r2<T: Pixel>(af: &mut[u32; 64+2],
                            backing, backing_w, backing_h,
                            cdeffed, cdeffed_w, cdeffed_h);
     }
+  }
+  //println!();
+}
+
+fn get_integral_square(iimg: &[u32], stride: usize, xi: usize, yi: usize, size: usize) -> u32 {
+  iimg[yi * stride + xi].wrapping_add(iimg[(yi + size) * stride + xi + size]).
+    wrapping_sub(iimg[(yi + size) * stride + xi]).wrapping_sub(iimg[yi * stride + xi + size])
+}
+
+fn sgrproj_box_ab_r2_iimg(af: &mut[u32; 64+2],
+                               bf: &mut[u32; 64+2], iimg: &[u32], iimg_sq: &[u32], iimg_stride: usize,
+                               stripe_x: isize, stripe_h: usize,
+                               s: u32, bdm8: usize) {
+  for yi in (0..stripe_h + 2).step_by(2) {
+    let sum = get_integral_square(iimg, iimg_stride, stripe_x as usize, yi, 5);
+    let ssq = get_integral_square(iimg_sq, iimg_stride, stripe_x as usize, yi, 5);
+    let (reta, retb) = sgrproj_sum_finish(ssq, sum, 25, 164, s, bdm8);
+    af[yi] = reta;
+    bf[yi] = retb;
   }
 }
 
@@ -550,6 +577,250 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
   }
 }
 
+pub fn sgrproj_solve64x64<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
+                               input: &PlaneSlice<T>,
+                               cdeffed: &PlaneSlice<T>,
+                               cdef_w: usize, cdef_h: usize) -> (i8, i8) {
+  const IIMG_SIZE: usize = 64 + 6 + 2;
+  let mut integral_image: [u32; IIMG_SIZE * IIMG_SIZE] = [0; IIMG_SIZE * IIMG_SIZE];
+  let mut sq_integral_image: [u32; IIMG_SIZE * IIMG_SIZE] = [0; IIMG_SIZE * IIMG_SIZE];
+
+  let bdm8 = fi.sequence.bit_depth - 8;
+
+  let mut a_r2: [[u32; 64+2]; 3] = [[0; 64+2]; 3];
+  let mut b_r2: [[u32; 64+2]; 3] = [[0; 64+2]; 3];
+  let mut f_r2: [u32; 64] = [0; 64];
+  let mut a_r1: [[u32; 64+2]; 3] = [[0; 64+2]; 3];
+  let mut b_r1: [[u32; 64+2]; 3] = [[0; 64+2]; 3];
+  let mut f_r1: [u32; 64] = [0; 64];
+
+  let s_r2: u32 = SGRPROJ_PARAMS_S[set as usize][0];
+  let s_r1: u32 = SGRPROJ_PARAMS_S[set as usize][1];
+
+  let mut h:[[f64; 2]; 2] = [[0.,0.],[0.,0.]];
+  let mut c:[f64; 2] = [0., 0.];
+
+  let max_r = if s_r2 > 0 { 2 } else if s_r1 > 0 { 1 } else { 0 };
+  {
+    {
+      let mut sum: u32 = 0;
+      let mut sq_sum: u32 = 0;
+      let row = &cdeffed[0];
+      for xi in -(max_r as isize + 2)..(cdef_w + max_r + 1) as isize {
+        let xi_integral = (xi + max_r as isize + 2) as usize;
+        let xi_cdef = clamp(xi, 0,cdef_w as isize - 1) as usize;
+        let current = u32::cast_from(row[xi_cdef]);
+        sum = sum.wrapping_add(current);
+        integral_image[xi_integral] = sum;
+        sq_sum = sq_sum.wrapping_add(current * current);
+        sq_integral_image[xi_integral] = sq_sum;
+      }
+    }
+    let mut integral_slice = &mut integral_image[..];
+    let mut sq_integral_slice = &mut sq_integral_image[..];
+    for yi in -(max_r as isize + 1)..(cdef_h + 2) as isize {
+      let row = &cdeffed[clamp(yi, 0, cdef_h as isize - 1) as usize];
+      let mut sum: u32 = 0;
+      let mut sq_sum: u32 = 0;
+      let (integral_row_prev, integral_row_current) = integral_slice.split_at_mut(IIMG_SIZE);
+      let (sq_integral_row_prev, sq_integral_row_current) = sq_integral_slice.split_at_mut(IIMG_SIZE);
+      for xi in -(max_r as isize + 2)..(cdef_w + max_r + 1) as isize {
+        let xi_integral = (xi + max_r as isize + 2) as usize;
+        let xi_cdef = clamp(xi, 0,cdef_w as isize - 1) as usize;
+        let current = u32::cast_from(row[xi_cdef]);
+        let integral_above = integral_row_prev[xi_integral];
+        let sq_integral_above = sq_integral_row_prev[xi_integral];
+        sum = sum.wrapping_add(current);
+        integral_row_current[xi_integral] = sum.wrapping_add(integral_above);
+        sq_sum = sq_sum.wrapping_add(current * current);
+        sq_integral_row_current[xi_integral] = sq_sum.wrapping_add(sq_integral_above);
+      }
+      integral_slice = integral_row_current;
+      sq_integral_slice = sq_integral_row_current;
+    }
+  }
+
+  /* prime the intermediate arrays */
+  if s_r2 > 0 {
+    /*{
+      let xi = 0;
+      print!("iimg: ");
+      for yi in (0..cdef_h + 2).step_by(2) {
+        print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 5) * IIMG_SIZE + xi + 5]).wrapping_sub(integral_image[(yi + 5) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 5]));
+        //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
+      }
+      println!();
+    }*/
+    /*
+    sgrproj_box_ab_r2(&mut a_r2[0], &mut b_r2[0],
+                      -1, 0, cdef_h,
+                      s_r2, bdm8,
+                      &cdeffed, cdef_w, cdef_h,
+                      &cdeffed, cdef_w, cdef_h);
+    */
+    /*{
+      let xi = 1;
+      print!("iimg: ");
+      for yi in (0..cdef_h + 2).step_by(2) {
+        print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 5) * IIMG_SIZE + xi + 5]).wrapping_sub(integral_image[(yi + 5) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 5]));
+        //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
+      }
+      println!();
+    }*/
+    /*
+    sgrproj_box_ab_r2(&mut a_r2[1], &mut b_r2[1],
+                      0, 0, cdef_h,
+                      s_r2, bdm8,
+                      &cdeffed, cdef_w, cdef_h,
+                      &cdeffed, cdef_w, cdef_h);
+    */
+
+    sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
+                           &integral_image, &sq_integral_image, IIMG_SIZE,
+                           0, cdef_h, s_r2, bdm8);
+    sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
+                           &integral_image, &sq_integral_image, IIMG_SIZE,
+                           1, cdef_h, s_r2, bdm8);
+  }
+  if s_r1 > 0 {
+    /*{
+      let r_diff = max_r - 1;
+      let xi = r_diff;
+      print!("iimg: ");
+      for yi in r_diff..cdef_h + r_diff + 2 {
+        print!("{} ", integral_image[yi*IIMG_SIZE+xi].wrapping_add(integral_image[(yi+3)*IIMG_SIZE+xi+3]).wrapping_sub(integral_image[(yi+3)*IIMG_SIZE+xi]).wrapping_sub(integral_image[yi*IIMG_SIZE+xi+3]));
+        //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
+      }
+      println!();
+    }*/
+    sgrproj_box_ab_r1(&mut a_r1[0], &mut b_r1[0],
+                      -1, 0, cdef_h,
+                      s_r1, bdm8,
+                      &cdeffed, cdef_w, cdef_h,
+                      &cdeffed, cdef_w, cdef_h);
+    /*{
+      let r_diff = max_r - 1;
+      let xi = 1 + r_diff;
+      print!("iimg: ");
+      for yi in r_diff..cdef_h + r_diff + 2 {
+        print!("{} ", integral_image[yi*IIMG_SIZE+xi].wrapping_add(integral_image[(yi+3)*IIMG_SIZE+xi+3]).wrapping_sub(integral_image[(yi+3)*IIMG_SIZE+xi]).wrapping_sub(integral_image[yi*IIMG_SIZE+xi+3]));
+        //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
+      }
+      println!();
+    }*/
+    sgrproj_box_ab_r1(&mut a_r1[1], &mut b_r1[1],
+                      0, 0, cdef_h,
+                      s_r1, bdm8,
+                      &cdeffed, cdef_w, cdef_h,
+                      &cdeffed, cdef_w, cdef_h);
+  }
+
+  /* iterate by column */
+  for xi in 0..cdef_w {
+    /* build intermediate array columns */
+    if s_r2 > 0 {
+      /*
+      {
+        let xi = xi + 2;
+        print!("iimg: ");
+        for yi in (0..cdef_h + 2).step_by(2) {
+          print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 5) * IIMG_SIZE + xi + 5]).wrapping_sub(integral_image[(yi + 5) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 5]));
+          //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
+        }
+        println!();
+      }
+      */
+      /*sgrproj_box_ab_r2(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
+                        xi as isize + 1, 0, cdef_h,
+                        s_r2, bdm8,
+                        &cdeffed, cdef_w, cdef_h,
+                        &cdeffed, cdef_w, cdef_h);*/
+      sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
+                             &integral_image, &sq_integral_image, IIMG_SIZE,
+                             xi as isize, cdef_h, s_r2, bdm8);
+      let ap0: [&[u32; 64+2]; 3] = [&a_r2[xi%3], &a_r2[(xi+1)%3], &a_r2[(xi+2)%3]];
+      let bp0: [&[u32; 64+2]; 3] = [&b_r2[xi%3], &b_r2[(xi+1)%3], &b_r2[(xi+2)%3]];
+      sgrproj_box_f_r2(&ap0, &bp0, &mut f_r2, xi, 0, cdef_h as usize, &cdeffed);
+    } else {
+      sgrproj_box_f_r0(&mut f_r2, xi, 0, cdef_h as usize, &cdeffed);
+    }
+    if s_r1 > 0 {
+      /*{
+        let r_diff = max_r - 1;
+        let xi = xi + 2 + r_diff;
+        print!("iimg: ");
+        for yi in r_diff..cdef_h + r_diff + 2 {
+          print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 3) * IIMG_SIZE + xi + 3]).wrapping_sub(integral_image[(yi + 3) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 3]));
+          //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
+        }
+        println!();
+      }*/
+      sgrproj_box_ab_r1(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
+                        xi as isize + 1, 0, cdef_h,
+                        s_r1, bdm8,
+                        &cdeffed, cdef_w, cdef_h,
+                        &cdeffed, cdef_w, cdef_h);
+      let ap1: [&[u32; 64+2]; 3] = [&a_r1[xi%3], &a_r1[(xi+1)%3], &a_r1[(xi+2)%3]];
+      let bp1: [&[u32; 64+2]; 3] = [&b_r1[xi%3], &b_r1[(xi+1)%3], &b_r1[(xi+2)%3]];
+
+      sgrproj_box_f_r1(&ap1, &bp1, &mut f_r1, xi, 0, cdef_h as usize, &cdeffed);
+    } else {
+      sgrproj_box_f_r0(&mut f_r1, xi, 0, cdef_h as usize, &cdeffed);
+    }
+
+    for yi in 0..cdef_h {
+      let u = i32::cast_from(cdeffed.p(yi,xi)) << SGRPROJ_RST_BITS;
+      let s = i32::cast_from(input.p(yi,xi)) << SGRPROJ_RST_BITS;
+      let f2 = f_r2[yi] as i32 - u;
+      let f1 = f_r1[yi] as i32 - u;
+      h[0][0] += f2 as f64 * f2 as f64;
+      h[1][1] += f1 as f64 * f1 as f64;
+      h[0][1] += f1 as f64 * f2 as f64;
+      c[0] += f2 as f64 * s as f64;
+      c[1] += f1 as f64 * s as f64;
+    }
+  }
+
+  // this is lifted almost in-tact from libaom
+  let n = cdef_w as f64 * cdef_h as f64;
+  h[0][0] /= n;
+  h[0][1] /= n;
+  h[1][1] /= n;
+  h[1][0] = h[0][1];
+  c[0] /= n;
+  c[1] /= n;
+  let (xq0, xq1) = if s_r2 == 0 {
+    // H matrix is now only the scalar h[1][1]
+    // C vector is now only the scalar c[1]
+    if h[1][1] == 0. {
+      (0, 0)
+    } else {
+      (0, (c[1] / h[1][1]).round() as i32)
+    }
+  } else if s_r1 == 0 {
+    // H matrix is now only the scalar h[0][0]
+    // C vector is now only the scalar c[0]
+    if h[0][0] == 0. {
+      (0, 0)
+    } else {
+      ((c[0] / h[0][0]).round() as i32, 0)
+    }
+  } else {
+    let det = h[0][0] * h[1][1] - h[0][1] * h[1][0];
+    if det == 0. {
+      (0, 0)
+    } else {
+      // If scaling up dividend would overflow, instead scale down the divisor
+      let div1 = (h[1][1] * c[0] - h[0][1] * c[1]) * (1 << SGRPROJ_PRJ_BITS) as f64;
+      let div2 = (h[0][0] * c[1] - h[1][0] * c[0]) * (1 << SGRPROJ_PRJ_BITS) as f64;
+
+      ((div1 / det).round() as i32, (div2 / det).round() as i32)
+    }
+  };
+  (clamp(xq0, SGRPROJ_XQD_MIN[0] as i32, SGRPROJ_XQD_MAX[0] as i32) as i8,
+   clamp(xq1, SGRPROJ_XQD_MIN[1] as i32, SGRPROJ_XQD_MAX[1] as i32) as i8)
+}
+
 // Frame inputs below aren't all equal, and will change as work
 // continues.  There's no deblocked reconstruction available at this
 // point of RDO, so we use the non-deblocked reconstruction, cdef and
@@ -568,8 +839,10 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
                                input: &PlaneSlice<T>,
                                cdeffed: &PlaneSlice<T>,
                                cdef_w: usize, cdef_h: usize) -> (i8, i8) {
-
   assert!(cdef_h <= 64);
+  if cdef_w == 64 && cdef_h == 64 {
+    return sgrproj_solve64x64(set, fi, input, cdeffed, cdef_w, cdef_h);
+  }
   let bdm8 = fi.sequence.bit_depth - 8;
   let mut a_r2: [[u32; 64+2]; 3] = [[0; 64+2]; 3];
   let mut b_r2: [[u32; 64+2]; 3] = [[0; 64+2]; 3];
