@@ -23,6 +23,7 @@ use crate::util::clamp;
 use crate::util::CastFromPrimitive;
 use crate::util::Pixel;
 
+use std::iter;
 use std::ops::{Index, IndexMut};
 
 pub const RESTORATION_TILESIZE_MAX_LOG2: usize = 8;
@@ -631,9 +632,19 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
 
   let max_r = if s_r2 > 0 { 2 } else if s_r1 > 0 { 1 } else { 0 };
   {
+    let mid = cdeffed.rows_iter().take(cdef_h);
+    let top = iter::repeat(&cdeffed[0]).take(max_r + 2);
+    let bottom = iter::repeat(&cdeffed[cdef_h - 1]).take(2);
+    let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
+      let mid = row.iter().take(cdef_w);
+      let left = iter::repeat(&row[0]).take(max_r + 2);
+      let right = iter::repeat(&row[cdef_w - 1]).take(max_r + 1);
+      left.chain(mid).chain(right)
+    });
     {
       let mut sum: u32 = 0;
       let mut sq_sum: u32 = 0;
+      /*
       let row = &cdeffed[0];
       for xi in -(max_r as isize + 2)..(cdef_w + max_r + 1) as isize {
         let xi_integral = (xi + max_r as isize + 2) as usize;
@@ -644,10 +655,40 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
         sq_sum = sq_sum.wrapping_add(current * current);
         sq_integral_image[xi_integral] = sq_sum;
       }
+      */
+      // Initialize using the first row
+      let row = rows_iter.next().unwrap();
+      for (src, (integral, sq_integral)) in row.zip(
+        integral_image.iter_mut().zip(sq_integral_image.iter_mut())) {
+        //let xi_integral = (xi + max_r as isize + 2) as usize;
+        //let xi_cdef = clamp(xi, 0,cdef_w as isize - 1) as usize;
+        let current = u32::cast_from(*src);
+        sum = sum.wrapping_add(current);
+        *integral = sum;
+        sq_sum = sq_sum.wrapping_add(current * current);
+        *sq_integral = sq_sum;
+      }
     }
     let mut integral_slice = &mut integral_image[..];
     let mut sq_integral_slice = &mut sq_integral_image[..];
-    for yi in -(max_r as isize + 1)..(cdef_h + 2) as isize {
+    for row in rows_iter {
+      let mut sum: u32 = 0;
+      let mut sq_sum: u32 = 0;
+      let (integral_row_prev, integral_row) = integral_slice.split_at_mut(IIMG_SIZE);
+      let (sq_integral_row_prev, sq_integral_row) = sq_integral_slice.split_at_mut(IIMG_SIZE);
+      for (src, ((integral_above, sq_integral_above), (integral, sq_integral))) in row.zip(integral_row_prev.iter().zip(sq_integral_row_prev.iter()).zip(
+        integral_row.iter_mut().zip(sq_integral_row.iter_mut()))
+      ) {
+        let current = u32::cast_from(*src);
+        sum = sum.wrapping_add(current);
+        *integral = sum.wrapping_add(*integral_above);
+        sq_sum = sq_sum.wrapping_add(current * current);
+        *sq_integral = sq_sum.wrapping_add(*sq_integral_above);
+      }
+      integral_slice = integral_row;
+      sq_integral_slice = sq_integral_row;
+    }
+    /*for yi in -(max_r as isize + 1)..(cdef_h + 2) as isize {
       let row = &cdeffed[clamp(yi, 0, cdef_h as isize - 1) as usize];
       let mut sum: u32 = 0;
       let mut sq_sum: u32 = 0;
@@ -666,13 +707,22 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
       }
       integral_slice = integral_row_current;
       sq_integral_slice = sq_integral_row_current;
-    }
+    }*/
   }
 
   /* prime the intermediate arrays */
   if s_r2 > 0 {
     /*{
       let xi = 0;
+      print!("iimg: ");
+      for yi in (0..cdef_h + 2).step_by(2) {
+        print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 5) * IIMG_SIZE + xi + 5]).wrapping_sub(integral_image[(yi + 5) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 5]));
+        //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
+      }
+      println!();
+    }
+    {
+      let xi = 1;
       print!("iimg: ");
       for yi in (0..cdef_h + 2).step_by(2) {
         print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 5) * IIMG_SIZE + xi + 5]).wrapping_sub(integral_image[(yi + 5) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 5]));
@@ -686,17 +736,6 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
                       s_r2, bdm8,
                       &cdeffed, cdef_w, cdef_h,
                       &cdeffed, cdef_w, cdef_h);
-    */
-    /*{
-      let xi = 1;
-      print!("iimg: ");
-      for yi in (0..cdef_h + 2).step_by(2) {
-        print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 5) * IIMG_SIZE + xi + 5]).wrapping_sub(integral_image[(yi + 5) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 5]));
-        //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
-      }
-      println!();
-    }*/
-    /*
     sgrproj_box_ab_r2(&mut a_r2[1], &mut b_r2[1],
                       0, 0, cdef_h,
                       s_r2, bdm8,
@@ -721,14 +760,8 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
         //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
       }
       println!();
-    }*/
-    /*
-    sgrproj_box_ab_r1(&mut a_r1[0], &mut b_r1[0],
-                      -1, 0, cdef_h,
-                      s_r1, bdm8,
-                      &cdeffed, cdef_w, cdef_h,
-                      &cdeffed, cdef_w, cdef_h);
-    /*{
+    }
+    {
       let r_diff = max_r - 1;
       let xi = 1 + r_diff;
       print!("iimg: ");
@@ -737,13 +770,20 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
         //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
       }
       println!();
-    }*/
+    }
+    */
+    /*
+    sgrproj_box_ab_r1(&mut a_r1[0], &mut b_r1[0],
+                      -1, 0, cdef_h,
+                      s_r1, bdm8,
+                      &cdeffed, cdef_w, cdef_h,
+                      &cdeffed, cdef_w, cdef_h);
     sgrproj_box_ab_r1(&mut a_r1[1], &mut b_r1[1],
                       0, 0, cdef_h,
                       s_r1, bdm8,
                       &cdeffed, cdef_w, cdef_h,
-                      &cdeffed, cdef_w, cdef_h);
-    */
+                      &cdeffed, cdef_w, cdef_h);*/
+
     let r_diff = max_r - 1;
     let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
     sgrproj_box_ab_r1_iimg(&mut a_r1[0], &mut b_r1[0],
@@ -762,8 +802,7 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
   for xi in 0..cdef_w {
     /* build intermediate array columns */
     if s_r2 > 0 {
-      /*
-      {
+      /*{
         let xi = xi + 2;
         print!("iimg: ");
         for yi in (0..cdef_h + 2).step_by(2) {
@@ -771,8 +810,7 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
           //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
         }
         println!();
-      }
-      */
+      }*/
       /*sgrproj_box_ab_r2(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
                         xi as isize + 1, 0, cdef_h,
                         s_r2, bdm8,
