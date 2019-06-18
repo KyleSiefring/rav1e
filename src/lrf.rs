@@ -430,6 +430,19 @@ fn get_integral_square(iimg: &[u32], stride: usize, xi: usize, yi: usize, size: 
     wrapping_sub(iimg[(yi + size) * stride + xi]).wrapping_sub(iimg[yi * stride + xi + size])
 }
 
+fn sgrproj_box_ab_r1_iimg(af: &mut[u32; 64+2],
+                               bf: &mut[u32; 64+2], iimg: &[u32], iimg_sq: &[u32], iimg_stride: usize,
+                               stripe_x: isize, stripe_h: usize,
+                               s: u32, bdm8: usize) {
+  for yi in 0..stripe_h + 2 {
+    let sum = get_integral_square(iimg, iimg_stride, stripe_x as usize, yi, 3);
+    let ssq = get_integral_square(iimg_sq, iimg_stride, stripe_x as usize, yi, 3);
+    let (reta, retb) = sgrproj_sum_finish(ssq, sum, 9, 455, s, bdm8);
+    af[yi] = reta;
+    bf[yi] = retb;
+  }
+}
+
 fn sgrproj_box_ab_r2_iimg(af: &mut[u32; 64+2],
                                bf: &mut[u32; 64+2], iimg: &[u32], iimg_sq: &[u32], iimg_stride: usize,
                                stripe_x: isize, stripe_h: usize,
@@ -678,7 +691,7 @@ pub fn sgrproj_solve64x64<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
     sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
                            &integral_image, &sq_integral_image, IIMG_SIZE,
                            0, cdef_h, s_r2, bdm8);
-    sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
+    sgrproj_box_ab_r2_iimg(&mut a_r2[1], &mut b_r2[1],
                            &integral_image, &sq_integral_image, IIMG_SIZE,
                            1, cdef_h, s_r2, bdm8);
   }
@@ -693,6 +706,7 @@ pub fn sgrproj_solve64x64<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
       }
       println!();
     }*/
+    /*
     sgrproj_box_ab_r1(&mut a_r1[0], &mut b_r1[0],
                       -1, 0, cdef_h,
                       s_r1, bdm8,
@@ -713,6 +727,19 @@ pub fn sgrproj_solve64x64<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
                       s_r1, bdm8,
                       &cdeffed, cdef_w, cdef_h,
                       &cdeffed, cdef_w, cdef_h);
+    */
+    let r_diff = max_r - 1;
+    let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
+    sgrproj_box_ab_r1_iimg(&mut a_r1[0], &mut b_r1[0],
+                           &integral_image[integral_image_offset..],
+                           &sq_integral_image[integral_image_offset..],
+                           IIMG_SIZE,
+                           0, cdef_h, s_r1, bdm8);
+    sgrproj_box_ab_r1_iimg(&mut a_r1[1], &mut b_r1[1],
+                           &integral_image[integral_image_offset..],
+                           &sq_integral_image[integral_image_offset..],
+                           IIMG_SIZE,
+                           1, cdef_h, s_r1, bdm8);
   }
 
   /* iterate by column */
@@ -735,7 +762,7 @@ pub fn sgrproj_solve64x64<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
                         s_r2, bdm8,
                         &cdeffed, cdef_w, cdef_h,
                         &cdeffed, cdef_w, cdef_h);*/
-      sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
+      sgrproj_box_ab_r2_iimg(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
                              &integral_image, &sq_integral_image, IIMG_SIZE,
                              xi as isize + 2, cdef_h, s_r2, bdm8);
       let ap0: [&[u32; 64+2]; 3] = [&a_r2[xi%3], &a_r2[(xi+1)%3], &a_r2[(xi+2)%3]];
@@ -755,11 +782,18 @@ pub fn sgrproj_solve64x64<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
         }
         println!();
       }*/
-      sgrproj_box_ab_r1(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
+      let r_diff = max_r - 1;
+      let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
+      /*sgrproj_box_ab_r1(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
                         xi as isize + 1, 0, cdef_h,
                         s_r1, bdm8,
                         &cdeffed, cdef_w, cdef_h,
-                        &cdeffed, cdef_w, cdef_h);
+                        &cdeffed, cdef_w, cdef_h);*/
+      sgrproj_box_ab_r1_iimg(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
+                             &integral_image[integral_image_offset..],
+                             &sq_integral_image[integral_image_offset..],
+                             IIMG_SIZE,
+                             xi as isize + 2, cdef_h, s_r1, bdm8);
       let ap1: [&[u32; 64+2]; 3] = [&a_r1[xi%3], &a_r1[(xi+1)%3], &a_r1[(xi+2)%3]];
       let bp1: [&[u32; 64+2]; 3] = [&b_r1[xi%3], &b_r1[(xi+1)%3], &b_r1[(xi+2)%3]];
 
