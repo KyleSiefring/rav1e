@@ -25,6 +25,7 @@ use crate::util::Pixel;
 
 use std::iter;
 use std::ops::{Index, IndexMut};
+use crate::tiling::RowsIter;
 
 pub const RESTORATION_TILESIZE_MAX_LOG2: usize = 8;
 
@@ -312,7 +313,7 @@ fn sgrproj_box_ab_r1<T: Pixel>(print: bool, af: &mut[u32; 64+2],
   // representing stripe_y-1 to stripe_y+stripe_h+1 inclusive
   let boundary0 = 0;
   let boundary3 = stripe_h + 2;
-  //if print { print!("box1: "); }
+  if print { print!("box1: "); }
   if backing.x + stripe_x > 0 && stripe_x < backing_w as isize - 1 &&
     cdeffed.x + stripe_x > 0 && stripe_x < cdeffed_w as isize - 1 {
     // Addressing is away from left and right edges of cdeffed storage;
@@ -380,7 +381,7 @@ fn sgrproj_box_ab_r2<T: Pixel>(print: bool, af: &mut[u32; 64+2],
   // representing stripe_y-1 to stripe_y+stripe_h+1 inclusive
   let boundary0 = 0; // even
   let boundary3 = stripe_h + 2; // don't care if odd
-  //if print { print!("box2: "); }
+  if print { print!("box2: "); }
   if backing.x + stripe_x > 1 && stripe_x < backing_w as isize - 2 &&
     cdeffed.x + stripe_x > 1 && stripe_x < cdeffed_w as isize - 2 {
     // Addressing is away from left and right edges of cdeffed storage;
@@ -577,11 +578,49 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
       sum += c;
     }
     */
-
-    // TODO: Write custom iterator instead
     let left_w = max_r + 2;
     //assert(deblocked.x == cdeffed.x)
+
     let left_uniques = cdeffed.x as usize - (cdeffed.x - left_w as isize).max(0) as usize;
+
+    let start_index_x = (cdeffed.x - left_w as isize).min(0);
+    let cdeffed_start = cdeffed.go_left(left_w).clamp();
+    //let deblocked_start = deblocked.go_left(left_w).clamp();
+
+    struct HorzPaddedIter<'a, T: Pixel> {
+      slice: &'a [T],
+      index: isize,
+      end: usize
+    }
+
+    impl<'a, T: Pixel> HorzPaddedIter<'a, T> {
+      fn new(slice: &'a [T], start_index: isize, width: usize) -> HorzPaddedIter<'a, T> {
+        HorzPaddedIter{slice, index: start_index, end: (width as isize + start_index) as usize}
+      }
+    }
+
+    impl<'a, T: Pixel> Iterator for HorzPaddedIter<'a, T> {
+      type Item = &'a T;
+
+      #[inline(always)]
+      fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.end as isize {
+          let ret = Some(&self.slice[clamp(self.index, 0, self.slice.len() as isize - 1) as usize]);
+          self.index += 1;
+          ret
+        } else {
+          None
+        }
+      }
+
+      #[inline(always)]
+      fn size_hint(&self) -> (usize, Option<usize>) {
+        let size: usize = (self.end as isize - self.index) as usize;
+        (size, Some(size))
+      }
+    }
+    // TODO: Write custom iterator instead
+
     let left_repeats = left_w - left_uniques;
     let cdeffed_left = cdeffed.reslice(-(left_uniques as isize), 0);
     let cdeffed_left_crop = cdeffed_left.reslice(0, (-cdeffed.y).max(0));
@@ -624,11 +663,19 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
       iter::repeat(&deblocked_bottom[num_uniques]).take(num_repeats_deblocked));
 
     let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
+      let width = left_w + stripe_w + right_w;
+      HorzPaddedIter::new(
+        &row[..row_uniques],
+        start_index_x,
+        width
+      )
+        /*
       let mid = row.iter().take(row_uniques);
       // TODO: fix
       let left = iter::repeat(&row[0]).take(left_repeats);
       let right = iter::repeat(&row[row_uniques - 1]).take(right_repeats);
       left.chain(mid).chain(right)
+        */
     });
     {
       //println!("elements:");
@@ -674,30 +721,30 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
   /* prime the intermediate arrays */
   if s_r2 > 0 {
     /*
-    /*{
+    {
       let xi = 0;
-      //print!("iimg: ");
+      print!("iimg: ");
       for yi in (0..stripe_h + 2).step_by(2) {
         print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 5) * IIMG_SIZE + xi + 5]).wrapping_sub(integral_image[(yi + 5) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 5]));
         //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
       }
       println!();
-    }*/
-    sgrproj_box_ab_r2(false,&mut a_r2[0], &mut b_r2[0],
+    }
+    sgrproj_box_ab_r2(true,&mut a_r2[0], &mut b_r2[0],
                       -1, 0, stripe_h,
                       s_r2, bdm8,
                       &deblocked, crop_w, crop_h,
                       &cdeffed, crop_w, crop_h);
-    /*{
+    {
       let xi = 1;
-      //print!("iimg: ");
+      print!("iimg: ");
       for yi in (0..stripe_h + 2).step_by(2) {
         print!("{} ", integral_image[yi * IIMG_SIZE + xi].wrapping_add(integral_image[(yi + 5) * IIMG_SIZE + xi + 5]).wrapping_sub(integral_image[(yi + 5) * IIMG_SIZE + xi]).wrapping_sub(integral_image[yi * IIMG_SIZE + xi + 5]));
         //print!("{} ", integral_image[yi * IIMG_SIZE + xi]);
       }
       println!();
-    }*/
-    sgrproj_box_ab_r2(false,&mut a_r2[1], &mut b_r2[1],
+    }
+    sgrproj_box_ab_r2(true, &mut a_r2[1], &mut b_r2[1],
                       0, 0, stripe_h,
                       s_r2, bdm8,
                       &deblocked, crop_w, crop_h,
@@ -751,12 +798,12 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
         }
         println!();
       }
-      */
-      /*sgrproj_box_ab_r2(false,&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
+      sgrproj_box_ab_r2(true,&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
                         xi as isize + 1, 0, stripe_h,
                         s_r2, bdm8,
                         &deblocked, crop_w, crop_h,
-                        &cdeffed, crop_w, crop_h);*/
+                        &cdeffed, crop_w, crop_h);
+                        */
       sgrproj_box_ab_r2_iimg(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
                              &integral_image, &sq_integral_image, IIMG_SIZE,
                              xi as isize + 2, stripe_h, s_r2, bdm8);
