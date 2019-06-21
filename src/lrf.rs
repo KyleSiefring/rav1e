@@ -907,10 +907,17 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
     let top = iter::repeat(&cdeffed[0]).take(max_r + 2);
     let bottom = iter::repeat(&cdeffed[cdef_h - 1]).take(2);
     let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
-      let mid = row.iter().take(cdef_w);
+      let left_w = max_r + 2;
+      let right_w = max_r + 1;
+      HorzPaddedIter::new(
+        &row[..cdef_w],
+        -(left_w as isize),
+        left_w + cdef_w + right_w
+      )
+      /*let mid = row.iter().take(cdef_w);
       let left = iter::repeat(&row[0]).take(max_r + 2);
       let right = iter::repeat(&row[cdef_w - 1]).take(max_r + 1);
-      left.chain(mid).chain(right)
+      left.chain(mid).chain(right)*/
     });
     {
       let mut sum: u32 = 0;
