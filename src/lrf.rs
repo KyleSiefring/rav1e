@@ -511,6 +511,41 @@ fn sgrproj_box_f_r2<T: Pixel>(af: &[&[u32; 64+2]; 3], bf: &[&[u32; 64+2]; 3], f:
   }
 }
 
+struct HorzPaddedIter<'a, T: Pixel> {
+  slice: &'a [T],
+  index: isize,
+  end: usize
+}
+
+impl<'a, T: Pixel> HorzPaddedIter<'a, T> {
+  fn new(slice: &'a [T], start_index: isize, width: usize) -> HorzPaddedIter<'a, T> {
+    HorzPaddedIter{slice, index: start_index, end: (width as isize + start_index) as usize}
+  }
+}
+
+impl<'a, T: Pixel> Iterator for HorzPaddedIter<'a, T> {
+  type Item = &'a T;
+
+  #[inline(always)]
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.index < self.end as isize {
+      let ret = Some(&self.slice[clamp(self.index, 0, self.slice.len() as isize - 1) as usize]);
+      self.index += 1;
+      ret
+    } else {
+      None
+    }
+  }
+
+  #[inline(always)]
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let size: usize = (self.end as isize - self.index) as usize;
+    (size, Some(size))
+  }
+}
+
+impl<T: Pixel> ExactSizeIterator for HorzPaddedIter<'_, T> {}
+
 pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvariants<T>,
                                        crop_w: usize, crop_h: usize,
                                        stripe_w: usize, stripe_h: usize,
@@ -587,40 +622,6 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
     let cdeffed_start = cdeffed.go_left(left_w).clamp();
     //let deblocked_start = deblocked.go_left(left_w).clamp();
 
-    struct HorzPaddedIter<'a, T: Pixel> {
-      slice: &'a [T],
-      index: isize,
-      end: usize
-    }
-
-    impl<'a, T: Pixel> HorzPaddedIter<'a, T> {
-      fn new(slice: &'a [T], start_index: isize, width: usize) -> HorzPaddedIter<'a, T> {
-        HorzPaddedIter{slice, index: start_index, end: (width as isize + start_index) as usize}
-      }
-    }
-
-    impl<'a, T: Pixel> Iterator for HorzPaddedIter<'a, T> {
-      type Item = &'a T;
-
-      #[inline(always)]
-      fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.end as isize {
-          let ret = Some(&self.slice[clamp(self.index, 0, self.slice.len() as isize - 1) as usize]);
-          self.index += 1;
-          ret
-        } else {
-          None
-        }
-      }
-
-      #[inline(always)]
-      fn size_hint(&self) -> (usize, Option<usize>) {
-        let size: usize = (self.end as isize - self.index) as usize;
-        (size, Some(size))
-      }
-    }
-    // TODO: Write custom iterator instead
-
     let left_repeats = left_w - left_uniques;
     let cdeffed_left = cdeffed.reslice(-(left_uniques as isize), 0);
     let cdeffed_left_crop = cdeffed_left.reslice(0, (-cdeffed.y).max(0));
@@ -671,7 +672,6 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
       )
         /*
       let mid = row.iter().take(row_uniques);
-      // TODO: fix
       let left = iter::repeat(&row[0]).take(left_repeats);
       let right = iter::repeat(&row[row_uniques - 1]).take(right_repeats);
       left.chain(mid).chain(right)
