@@ -24,8 +24,9 @@ use crate::util::CastFromPrimitive;
 use crate::util::Pixel;
 
 use std::iter;
+use std::iter::Peekable;
 use std::ops::{Index, IndexMut};
-use crate::tiling::RowsIter;
+use crate::plane::RowsIter;
 
 pub const RESTORATION_TILESIZE_MAX_LOG2: usize = 8;
 
@@ -546,6 +547,80 @@ impl<'a, T: Pixel> Iterator for HorzPaddedIter<'a, T> {
 
 impl<T: Pixel> ExactSizeIterator for HorzPaddedIter<'_, T> {}
 
+struct VertPaddedIter<'a, T: Pixel> {
+  deblocked: &'a Plane<T>,
+  cdeffed: &'a Plane<T>,
+  x: isize,
+  y: isize,
+  end: isize,
+  stripe_begin: isize,
+  stripe_end: isize,
+  crop: isize
+}
+
+impl<'a, 'b, T: Pixel> VertPaddedIter<'a, T> {
+  fn new(deblocked: &PlaneSlice<'a, T>, cdeffed: &PlaneSlice<'a, T>, stripe_h: usize, crop: usize, r: usize) -> VertPaddedIter<'a, T> {
+    let extra_rows_above = r + 2;
+    let extra_rows_below = 2;
+    let crop = crop as isize + deblocked.y;
+    let stripe_end = stripe_h as isize + deblocked.y;
+    let y = deblocked.y - extra_rows_above as isize;
+    // Negative indices indicate the the number of repetitions first element
+    // If y < 0 (out of frame) repeat that many times additionally
+    // Finally, use y minus the above rows if it's less than the results
+    //let index = (y.min(0) - (extra_rows_above - 2) as isize).min(y - extra_rows_above as isize);
+    // TODO: check that cdeffed.x/y == deblocked.x/y
+    //let cdeffed = cdeffed.go_up(2);
+    //let crop = (crop as isize + (y - 2).max(0)) as usize;
+
+    VertPaddedIter {
+      deblocked: deblocked.plane,
+      cdeffed: cdeffed.plane,
+      x: deblocked.x,
+      y,
+      end: (extra_rows_above + stripe_h + extra_rows_below) as isize + y,
+      stripe_begin: deblocked.y,
+      stripe_end,
+      crop
+    }
+  }
+}
+
+impl<'a, T: Pixel> Iterator for VertPaddedIter<'a, T> {
+  type Item = &'a [T];
+
+  #[inline(always)]
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.end > self.y {
+      let src_plane = if self.y >= self.stripe_begin && self.y < self.stripe_end as isize {
+        self.cdeffed
+      } else {
+        self.deblocked
+      };
+      // clamp vertically to storage at top and passed-in height at bottom
+      let cropped_y = clamp(self.y, 0, self.crop - 1);
+      // clamp vertically to stripe limits
+      let ly = clamp(cropped_y, self.stripe_begin - 2, self.stripe_end + 1);
+      // cannot directly return self.ps.row(row) due to lifetime issue
+      let range = src_plane.row_range(self.x, ly);
+      self.y += 1;
+      Some(&src_plane.data[range])
+    } else {
+      None
+    }
+  }
+
+  /*
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let remaining = self.plane.cfg.height as isize - self.y;
+    debug_assert!(remaining >= 0);
+    let remaining = remaining as usize;
+
+    (remaining, Some(remaining))
+  }
+  */
+}
+
 pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvariants<T>,
                                        crop_w: usize, crop_h: usize,
                                        stripe_w: usize, stripe_h: usize,
@@ -663,7 +738,8 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
       iter::repeat(&cdeffed_left[crop_h - 1]).take(num_repeats_cdeffed)).chain(
       iter::repeat(&deblocked_bottom[num_uniques]).take(num_repeats_deblocked));
 
-    let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
+    //let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
+    let mut rows_iter = VertPaddedIter::new(&deblocked_left, &cdeffed_left, stripe_h, crop_h, max_r).map(|row: &[T]| {
       let width = left_w + stripe_w + right_w;
       HorzPaddedIter::new(
         &row[..row_uniques],
@@ -758,7 +834,6 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
                            1, stripe_h, s_r2, bdm8);
   }
   if s_r1 > 0 {
-    /*
     sgrproj_box_ab_r1(false,&mut a_r1[0], &mut b_r1[0],
                       -1, 0, stripe_h,
                       s_r1, bdm8,
@@ -769,7 +844,6 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
                       s_r1, bdm8,
                       &deblocked, crop_w, crop_h,
                       &cdeffed, crop_w, crop_h);
-    */
     let r_diff = max_r - 1;
     let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
     sgrproj_box_ab_r1_iimg(&mut a_r1[0], &mut b_r1[0],
@@ -825,9 +899,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
         }
         println!();
       }
-      */
-      /*
-      sgrproj_box_ab_r1(false,&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
+      sgrproj_box_ab_r1(false, &mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
                         xi as isize + 1, 0, stripe_h,
                         s_r1, bdm8,
                         &deblocked, crop_w, crop_h,
@@ -906,7 +978,8 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
     let mid = cdeffed.rows_iter().take(cdef_h);
     let top = iter::repeat(&cdeffed[0]).take(max_r + 2);
     let bottom = iter::repeat(&cdeffed[cdef_h - 1]).take(2);
-    let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
+    //let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
+    let mut rows_iter = VertPaddedIter::new(cdeffed, cdeffed, cdef_h, cdef_h, max_r).map(|row: &[T]| {
       let left_w = max_r + 2;
       let right_w = max_r + 1;
       HorzPaddedIter::new(
