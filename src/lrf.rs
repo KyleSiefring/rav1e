@@ -23,10 +23,7 @@ use crate::util::clamp;
 use crate::util::CastFromPrimitive;
 use crate::util::Pixel;
 
-use std::iter;
-use std::iter::Peekable;
 use std::ops::{Index, IndexMut};
-use crate::plane::RowsIter;
 
 pub const RESTORATION_TILESIZE_MAX_LOG2: usize = 8;
 
@@ -269,15 +266,12 @@ fn sgrproj_box_sum_fastx_r2<T: Pixel>(print: bool, a: &mut u32, b: &mut u32,
   let mut ssq = 0;
   let mut sum = 0;
   for yi in y - 2..=y + 2 {
-    // decide if we're vertically inside or outside the stripe
-    let (src_plane, src_h, src_id) = if yi >= stripe_y && yi < stripe_y + stripe_h as isize {
+    let (src_plane, src_h) = if yi >= stripe_y && yi < stripe_y + stripe_h as isize {
       (cdeffed,
-       cdeffed_h as isize,
-       0)
+       cdeffed_h as isize)
     } else {
       (backing,
-       backing_h as isize,
-       1)
+       backing_h as isize)
     };
     // clamp vertically to storage addressing limit
     let cropped_y = clamp(yi, -src_plane.y, src_h as isize - 1);
@@ -559,12 +553,12 @@ struct VertPaddedIter<'a, T: Pixel> {
 }
 
 impl<'a, 'b, T: Pixel> VertPaddedIter<'a, T> {
-  fn new(deblocked: &PlaneSlice<'a, T>, cdeffed: &PlaneSlice<'a, T>, stripe_h: usize, crop: usize, r: usize) -> VertPaddedIter<'a, T> {
-    let extra_rows_above = r + 2;
-    let extra_rows_below = 2;
+  fn new(cdeffed: &PlaneSlice<'a, T>, deblocked: &PlaneSlice<'a, T>, stripe_h: usize, crop: usize, r: usize) -> VertPaddedIter<'a, T> {
+    let rows_above = r + 2;
+    let rows_below = 2;
     let crop = crop as isize + deblocked.y;
     let stripe_end = stripe_h as isize + deblocked.y;
-    let y = deblocked.y - extra_rows_above as isize;
+    let y = deblocked.y - rows_above as isize;
     // Negative indices indicate the the number of repetitions first element
     // If y < 0 (out of frame) repeat that many times additionally
     // Finally, use y minus the above rows if it's less than the results
@@ -578,7 +572,7 @@ impl<'a, 'b, T: Pixel> VertPaddedIter<'a, T> {
       cdeffed: cdeffed.plane,
       x: deblocked.x,
       y,
-      end: (extra_rows_above + stripe_h + extra_rows_below) as isize + y,
+      end: (rows_above + stripe_h + rows_below) as isize + y,
       stripe_begin: deblocked.y,
       stripe_end,
       crop
@@ -592,6 +586,7 @@ impl<'a, T: Pixel> Iterator for VertPaddedIter<'a, T> {
   #[inline(always)]
   fn next(&mut self) -> Option<Self::Item> {
     if self.end > self.y {
+      // decide if we're vertically inside or outside the stripe
       let src_plane = if self.y >= self.stripe_begin && self.y < self.stripe_end as isize {
         self.cdeffed
       } else {
@@ -628,6 +623,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
                                        deblocked: &PlaneSlice<T>,
                                        out: &mut PlaneMutSlice<T>) {
   assert!(stripe_h <= 64);
+  assert!(stripe_w <= 64);
 
   const IIMG_SIZE: usize = 64 + 6 + 2;
   let mut integral_image: [u32; IIMG_SIZE * IIMG_SIZE] = [0; IIMG_SIZE * IIMG_SIZE];
@@ -689,88 +685,44 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
     }
     */
     let left_w = max_r + 2;
+    let right_w = max_r + 1;
     //assert(deblocked.x == cdeffed.x)
 
-    let left_uniques = cdeffed.x as usize - (cdeffed.x - left_w as isize).max(0) as usize;
-
-    let start_index_x = (cdeffed.x - left_w as isize).min(0);
-    let cdeffed_start = cdeffed.go_left(left_w).clamp();
-    //let deblocked_start = deblocked.go_left(left_w).clamp();
-
-    let left_repeats = left_w - left_uniques;
-    let cdeffed_left = cdeffed.reslice(-(left_uniques as isize), 0);
-    let cdeffed_left_crop = cdeffed_left.reslice(0, (-cdeffed.y).max(0));
-    let deblocked_left = deblocked.reslice(-(left_uniques as isize), 0);
-    let deblocked_left_crop = deblocked_left.reslice(0, (-deblocked.y).max(0));
-    let right_w = max_r + 1;
+    // Find how many unique elements to use to the left and right
+    let left_uniques = if cdeffed.x == 0 { 0 } else { left_w };
     let right_uniques = right_w.min(crop_w - stripe_w);
-    let right_repeats = right_w - right_uniques;
+
+    // Find the total number of unique elements used
     let row_uniques = left_uniques + stripe_w + right_uniques;
 
-    let top_height = max_r + 2;
-    let num_uniques = (top_height as isize).min(deblocked.y).min(2);
-    let num_repeats = (top_height as isize - num_uniques) as usize;
-    let num_repeats_cdeffed = (-deblocked.y.min(0)) as usize;
-    let num_repeats_deblocked = num_repeats - num_repeats_cdeffed;
-    let num_uniques = num_uniques.max(0) as usize;
-    let deblocked_top = deblocked_left_crop.reslice(0, -(num_uniques as isize));
-    let cdeffed_top = cdeffed_left_crop.reslice(0, -(num_uniques as isize));
-    //println!("{}", deblocked_left.y);
-    let top = iter::repeat(&deblocked_top[0]).take(num_repeats_deblocked).chain(
-      iter::repeat(&cdeffed_top[0]).take(num_repeats_cdeffed))
-      .chain(deblocked_top.rows_iter().take(num_uniques));
+    let start_index_x = (cdeffed.x - left_w as isize).min(0);
 
-    let mid = cdeffed_left_crop.rows_iter().take(stripe_h + top_height - (num_repeats + num_uniques));
-
-    let height = 2;
-    // crop_h >= stripe_h???
-    // Can be negative
-    // let
-    //let num_uniques: isize = (height as isize).min(crop_h as isize - stripe_h as isize);
-    let num_uniques= height.min(crop_h.saturating_sub(stripe_h));
-    //let num_repeats = (height - num_uniques) as usize;
-    let num_repeats_cdeffed = stripe_h.saturating_sub(crop_h);
-    let num_repeats_deblocked = stripe_h + height - (num_repeats_cdeffed + crop_h.min(stripe_h));
-    //let num_uniques: usize = num_uniques.max(0) as usize;
-    let deblocked_bottom = deblocked_left.reslice(0, stripe_h.min(crop_h - 1) as isize);
-    // need a bottom for both src and deblock
-    let bottom = deblocked_bottom.rows_iter().take(num_uniques).chain(
-      iter::repeat(&cdeffed_left[crop_h - 1]).take(num_repeats_cdeffed)).chain(
-      iter::repeat(&deblocked_bottom[num_uniques]).take(num_repeats_deblocked));
-
-    //let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
-    let mut rows_iter = VertPaddedIter::new(&deblocked_left, &cdeffed_left, stripe_h, crop_h, max_r).map(|row: &[T]| {
+    let mut rows_iter = VertPaddedIter::new(
+      &cdeffed.go_left(left_uniques),
+      &deblocked.go_left(left_uniques),
+      stripe_h,
+      crop_h,
+      max_r).map(|row: &[T]| {
       let width = left_w + stripe_w + right_w;
       HorzPaddedIter::new(
         &row[..row_uniques],
         start_index_x,
         width
       )
-        /*
-      let mid = row.iter().take(row_uniques);
-      let left = iter::repeat(&row[0]).take(left_repeats);
-      let right = iter::repeat(&row[row_uniques - 1]).take(right_repeats);
-      left.chain(mid).chain(right)
-        */
     });
     {
-      //println!("elements:");
       let mut sum: u32 = 0;
       let mut sq_sum: u32 = 0;
       // Initialize using the first row
       let row = rows_iter.next().unwrap();
       for (src, (integral, sq_integral)) in row.zip(
         integral_image.iter_mut().zip(sq_integral_image.iter_mut())) {
-        //let xi_integral = (xi + max_r as isize + 2) as usize;
-        //let xi_cdef = clamp(xi, 0, cdef_w as isize - 1) as usize;
         let current = u32::cast_from(*src);
-        //print!("{} ", current);
         sum = sum.wrapping_add(current);
         *integral = sum;
         sq_sum = sq_sum.wrapping_add(current * current);
         *sq_integral = sq_sum;
       }
-      //println!();
     }
     let mut integral_slice = &mut integral_image[..];
     let mut sq_integral_slice = &mut sq_integral_image[..];
@@ -783,13 +735,11 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
         integral_row.iter_mut().zip(sq_integral_row.iter_mut()))
       ) {
         let current = u32::cast_from(*src);
-        //print!("{} ", current);
         sum = sum.wrapping_add(current);
         *integral = sum.wrapping_add(*integral_above);
         sq_sum = sq_sum.wrapping_add(current * current);
         *sq_integral = sq_sum.wrapping_add(*sq_integral_above);
       }
-      //println!();
       integral_slice = integral_row;
       sq_integral_slice = sq_integral_row;
     }
@@ -834,7 +784,8 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
                            1, stripe_h, s_r2, bdm8);
   }
   if s_r1 > 0 {
-    sgrproj_box_ab_r1(false,&mut a_r1[0], &mut b_r1[0],
+    /*
+    sgrproj_box_ab_r1(false, &mut a_r1[0], &mut b_r1[0],
                       -1, 0, stripe_h,
                       s_r1, bdm8,
                       &deblocked, crop_w, crop_h,
@@ -844,6 +795,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
                       s_r1, bdm8,
                       &deblocked, crop_w, crop_h,
                       &cdeffed, crop_w, crop_h);
+    */
     let r_diff = max_r - 1;
     let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
     sgrproj_box_ab_r1_iimg(&mut a_r1[0], &mut b_r1[0],
@@ -975,10 +927,6 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
 
   let max_r = if s_r2 > 0 { 2 } else if s_r1 > 0 { 1 } else { 0 };
   {
-    let mid = cdeffed.rows_iter().take(cdef_h);
-    let top = iter::repeat(&cdeffed[0]).take(max_r + 2);
-    let bottom = iter::repeat(&cdeffed[cdef_h - 1]).take(2);
-    //let mut rows_iter = top.chain(mid).chain(bottom).map(|row: &[T]| {
     let mut rows_iter = VertPaddedIter::new(cdeffed, cdeffed, cdef_h, cdef_h, max_r).map(|row: &[T]| {
       let left_w = max_r + 2;
       let right_w = max_r + 1;
@@ -987,26 +935,10 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
         -(left_w as isize),
         left_w + cdef_w + right_w
       )
-      /*let mid = row.iter().take(cdef_w);
-      let left = iter::repeat(&row[0]).take(max_r + 2);
-      let right = iter::repeat(&row[cdef_w - 1]).take(max_r + 1);
-      left.chain(mid).chain(right)*/
     });
     {
       let mut sum: u32 = 0;
       let mut sq_sum: u32 = 0;
-      /*
-      let row = &cdeffed[0];
-      for xi in -(max_r as isize + 2)..(cdef_w + max_r + 1) as isize {
-        let xi_integral = (xi + max_r as isize + 2) as usize;
-        let xi_cdef = clamp(xi, 0,cdef_w as isize - 1) as usize;
-        let current = u32::cast_from(row[xi_cdef]);
-        sum = sum.wrapping_add(current);
-        integral_image[xi_integral] = sum;
-        sq_sum = sq_sum.wrapping_add(current * current);
-        sq_integral_image[xi_integral] = sq_sum;
-      }
-      */
       // Initialize using the first row
       let row = rows_iter.next().unwrap();
       for (src, (integral, sq_integral)) in row.zip(
