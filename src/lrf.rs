@@ -86,158 +86,21 @@ fn sgrproj_sum_finish(ssq: u32, sum: u32, n: u32, one_over_n: u32, s: u32, bdm8:
   (a, (b + (1 << SGRPROJ_RECIP_BITS >> 1)) >> SGRPROJ_RECIP_BITS)
 }
 
-// The addressing below is a bit confusing, made worse by LRF's odd
-// clipping requirements, and our reusing code for partial frames.  So
-// I'm documenting the LRF conventions here in detail.
-
-// 'Relative to plane storage' means that a coordinate or bound is
-// being applied as if to the full Plane backing the PlaneSlice.  For
-// example, a PlaneSlice may represent a subset of a middle of a
-// plane, but when we say the top/left bounds are clipped 'relative to
-// plane storage', that means relative to 0,0 of the plane, not 0,0 of
-// the plane slice.
-
-// 'Relative to the slice view' means that a coordinate or bound is
-// counted from the 0,0 of the PlaneSlice, not the Plane from which it
-// was sliced.
-
-// Passed in plane slices may be the same size or different sizes;
-// filter access will be clipped to 0,0..w,h of the underlying plane
-// storage for both planes, depending which is accessed.  Note that
-// the passed in w/h that specifies the storage clipping is actually
-// relative to the the slice view, not the plane storage (it
-// simplifies the math internally).  Eg, if a PlaceSlice has a y
-// offset of -2 (meaning its origin is two rows above the top row of
-// the backing plane), and we pass in a height of 4, the rows
-// 0,1,2,3,4 of the slice address -2, -1, 0, 1, 2 of the backing plane
-// with access clipped to 0, 0, 0, 1, 1.
-
-// Active area cropping is done by specifying a w,h smaller
-// than the actual underlying plane storage.
-
-// stripe_y is the beginning of the current stripe (used for source
-// buffer choice/clipping) relative to the passed in plane view.  It
-// may (and regularly will) be negative.
-
-// stripe_h is the hright of the current stripe, again used for source
-// buffer choice/clipping).  It may specify a stripe boundary less
-// than, eqqal to, or larger than the buffers we're accessing.
-
-// x and y specify the center pixel of the current filter kernel
-// application.  They are relative to the passed in slice views.
-
-fn sgrproj_box_sum_slow<T: Pixel>(print: bool, a: &mut u32, b: &mut u32,
-                                  stripe_y: isize, stripe_h: usize,
-                                  x: isize, y: isize,
-                                  r: usize, n: u32, one_over_n: u32, s: u32, bdm8: usize,
-                                  backing: &PlaneSlice<T>, backing_w: usize, backing_h: usize,
-                                  cdeffed: &PlaneSlice<T>, cdeffed_w: usize, cdeffed_h: usize) {
-  let mut ssq = 0;
-  let mut sum = 0;
-
-  for yi in y-r as isize..=y+r as isize {
-    // decide if we're vertically inside or outside the stripe
-    let (src_plane, src_w, src_h) = if yi >= stripe_y && yi < stripe_y + stripe_h as isize {
-      (cdeffed,
-       (cdeffed_w as isize - x + r as isize) as usize,
-       cdeffed_h as isize)
-    } else {
-      (backing,
-       (backing_w as isize - x + r as isize) as usize,
-       backing_h as isize)
-    };
-    // clamp vertically to storage at top and passed-in height at bottom
-    let cropped_y = clamp(yi, -src_plane.y, src_h - 1);
-    // clamp vertically to stripe limits
-    let ly = clamp(cropped_y, stripe_y - 2, stripe_y + stripe_h as isize + 1);
-    // Reslice to avoid a negative X index.
-    let p = &src_plane.reslice(x - r as isize,ly)[0];
-    // left-hand addressing limit
-    let left = cmp::max(0, r as isize - x - src_plane.x) as usize;
-    // right-hand addressing limit
-    let right = cmp::min(2*r+1, src_w);
-
-    // run accumulation to left of frame storage (if any)
-    for _xi in 0..left {
-      let c = u32::cast_from(p[(r as isize - x) as usize]);
-      ssq += c*c;
-      sum += c;
-    }
-    // run accumulation in-frame
-    for xi in left..right {
-      let c = u32::cast_from(p[xi]);
-      ssq += c*c;
-      sum += c;
-    }
-    // run accumulation to right of frame (if any)
-    for _xi in right..=2*r {
-      let c = u32::cast_from(p[src_w - 1]);
-      ssq += c*c;
-      sum += c;
-    }
-  }
-  let (reta, retb) = sgrproj_sum_finish(ssq, sum, n, one_over_n, s, bdm8);
-  *a = reta;
-  *b = retb;
+// Using an integral image, compute the sum of a square region
+fn get_integral_square(
+  iimg: &[u32], stride: usize, xi: usize, yi: usize, size: usize
+) -> u32 {
+  // Cancel out overflow in iimg by using wrapping arithmetic
+  iimg[yi * stride + xi]
+    .wrapping_add(iimg[(yi + size) * stride + xi + size])
+    .wrapping_sub(iimg[(yi + size) * stride + xi])
+    .wrapping_sub(iimg[yi * stride + xi + size])
 }
 
-// computes an intermediate (ab) column for rows stripe_y through
-// stripe_y+stripe_h (no inclusize) at column stripe_x.
+// computes an intermediate (ab) column for stripe_h + 2 rows at
+// column stripe_x.
 // r=1 case computes every row as every row is used (see r2 version below)
-fn sgrproj_box_ab_r1<T: Pixel>(print: bool, af: &mut[u32; 64+2],
-                               bf: &mut[u32; 64+2],
-                               stripe_x: isize, stripe_y: isize, stripe_h: usize,
-                               s: u32, bdm8: usize,
-                               backing: &PlaneSlice<T>, backing_w: usize, backing_h: usize,
-                               cdeffed: &PlaneSlice<T>, cdeffed_w: usize, cdeffed_h: usize) {
-  // we will fill the af and bf arrays from 0..stripe_h+1 (ni),
-  // representing stripe_y-1 to stripe_y+stripe_h+1 inclusive
-  let boundary0 = 0;
-  let boundary3 = stripe_h + 2;
-  for i in boundary0..boundary3 {
-    sgrproj_box_sum_slow(print, &mut af[i], &mut bf[i],
-                         stripe_y, stripe_h,
-                         stripe_x, stripe_y + i as isize - 1,
-                         1, 9, 455, s, bdm8,
-                         backing, backing_w, backing_h,
-                         cdeffed, cdeffed_w, cdeffed_h);
-  }
-}
-
-// One oddness about the radius=2 intermediate array computations that
-// the spec doesn't make clear: Although the spec defines computation
-// of every row (of a, b and f), only half of the rows (every-other
-// row) are actually used.  We use the full-size array here but only
-// compute the even rows.  This is not so much optimization as trying
-// to illustrate what this convoluted filter is actually doing
-// (ie not as much as it may appear).
-fn sgrproj_box_ab_r2<T: Pixel>(print: bool, af: &mut[u32; 64+2],
-                               bf: &mut[u32; 64+2],
-                               stripe_x: isize, stripe_y: isize, stripe_h: usize,
-                               s: u32, bdm8: usize,
-                               backing: &PlaneSlice<T>, backing_w: usize, backing_h: usize,
-                               cdeffed: &PlaneSlice<T>, cdeffed_w: usize, cdeffed_h: usize) {
-  // we will fill the af and bf arrays from 0..stripe_h+1 (ni),
-  // representing stripe_y-1 to stripe_y+stripe_h+1 inclusive
-  let boundary0 = 0; // even
-  let boundary3 = stripe_h + 2; // don't care if odd
-  // top/bottom rows and left/right columns, where we need to worry about frame and stripe clipping
-  for i in (boundary0..boundary3).step_by(2) {
-    sgrproj_box_sum_slow(print, &mut af[i], &mut bf[i],
-                         stripe_y, stripe_h,
-                         stripe_x, stripe_y + i as isize - 1,
-                         2, 25, 164, s, bdm8,
-                         backing, backing_w, backing_h,
-                         cdeffed, cdeffed_w, cdeffed_h);
-  }
-}
-
-fn get_integral_square(iimg: &[u32], stride: usize, xi: usize, yi: usize, size: usize) -> u32 {
-  iimg[yi * stride + xi].wrapping_add(iimg[(yi + size) * stride + xi + size]).
-    wrapping_sub(iimg[(yi + size) * stride + xi]).wrapping_sub(iimg[yi * stride + xi + size])
-}
-
-fn sgrproj_box_ab_r1_iimg(
+fn sgrproj_box_ab_r1(
   af: &mut [u32; 64 + 2], bf: &mut [u32; 64 + 2], iimg: &[u32],
   iimg_sq: &[u32], iimg_stride: usize, stripe_x: isize, stripe_h: usize,
   s: u32, bdm8: usize
@@ -252,7 +115,14 @@ fn sgrproj_box_ab_r1_iimg(
   }
 }
 
-fn sgrproj_box_ab_r2_iimg(
+// One oddness about the radius=2 intermediate array computations that
+// the spec doesn't make clear: Although the spec defines computation
+// of every row (of a, b and f), only half of the rows (every-other
+// row) are actually used.  We use the full-size array here but only
+// compute the even rows.  This is not so much optimization as trying
+// to illustrate what this convoluted filter is actually doing
+// (ie not as much as it may appear).
+fn sgrproj_box_ab_r2(
   af: &mut [u32; 64 + 2], bf: &mut [u32; 64 + 2], iimg: &[u32],
   iimg_sq: &[u32], iimg_stride: usize, stripe_x: isize, stripe_h: usize,
   s: u32, bdm8: usize
@@ -313,18 +183,34 @@ fn sgrproj_box_f_r2<T: Pixel>(af: &[&[u32; 64+2]; 3], bf: &[&[u32; 64+2]; 3], f:
 }
 
 struct VertPaddedIter<'a, T: Pixel> {
+  // The two sources that can be selected when clipping
   deblocked: &'a Plane<T>,
   cdeffed: &'a Plane<T>,
+  // x index to choice where on the row to start
   x: isize,
+  // y index that will be mutated
   y: isize,
+  // The index at which to terminate. Can be larger than the slice length.
   end: isize,
+  // Used for source buffer choice/clipping. May (and regularly will)
+  // be negative.
   stripe_begin: isize,
+  // Also used for source buffer choice/clipping. May specify a stripe boundary
+  // less than, equal to, or larger than the buffers we're accessing.
   stripe_end: isize,
+  // Active area cropping is done by specifying a value smaller than the height
+  // of the plane.
   crop: isize
 }
 
 impl<'a, 'b, T: Pixel> VertPaddedIter<'a, T> {
-  fn new(cdeffed: &PlaneSlice<'a, T>, deblocked: &PlaneSlice<'a, T>, stripe_h: usize, crop: usize, r: usize) -> VertPaddedIter<'a, T> {
+  fn new(
+    cdeffed: &PlaneSlice<'a, T>, deblocked: &PlaneSlice<'a, T>,
+    stripe_h: usize, crop: usize, r: usize
+  ) -> VertPaddedIter<'a, T> {
+    // cdeffed and deblocked must start at the same coordinates from their
+    // underlying planes. Since cropping is provided via a separate params, the
+    // height of the underlying planes do not need to match.
     assert_eq!(cdeffed.x, deblocked.x);
     assert_eq!(cdeffed.y, deblocked.y);
 
@@ -332,7 +218,8 @@ impl<'a, 'b, T: Pixel> VertPaddedIter<'a, T> {
     let rows_above = r + 2;
     let rows_below = 2;
 
-    // Offset crop and stripe_h so they are no longer relative to y
+    // Offset crop and stripe_h so they are relative to the underlying plane
+    // and not the plane slice.
     let crop = crop as isize + deblocked.y;
     let stripe_end = stripe_h as isize + deblocked.y;
 
@@ -391,8 +278,13 @@ impl<'a, T: Pixel> Iterator for VertPaddedIter<'a, T> {
 impl<T: Pixel> ExactSizeIterator for VertPaddedIter<'_, T> {}
 
 struct HorzPaddedIter<'a, T: Pixel> {
+  // Active area cropping is done using the length of the slice
   slice: &'a [T],
+  // x index of the iterator
+  // When less than 0, repeat the first element. When greater than end, repeat
+  // the last element
   index: isize,
+  // The index at which to terminate. Can be larger than the slice length.
   end: usize
 }
 
@@ -405,7 +297,7 @@ impl<'a, T: Pixel> HorzPaddedIter<'a, T> {
       index: start_index,
       end: (width as isize + start_index) as usize
     }
-   }
+  }
 }
 
 impl<'a, T: Pixel> Iterator for HorzPaddedIter<'a, T> {
@@ -437,15 +329,19 @@ fn setup_integral_image<'a, T: Pixel>(
   integral_image: &mut [u32], sq_integral_image: &mut [u32],
   integral_image_stride: usize
 ) {
+  // Setup the first row
   {
     let mut sum: u32 = 0;
     let mut sq_sum: u32 = 0;
-    // Remove the first row and use it outside of the
+    // Remove the first row and use it outside of the main loop
     let row = rows_iter.next().unwrap();
     for (src, (integral, sq_integral)) in
       row.zip(integral_image.iter_mut().zip(sq_integral_image.iter_mut()))
     {
       let current = u32::cast_from(*src);
+
+      // Wrap adds to prevent undefined behaviour on overflow. Overflow is
+      // cancelled out when calculating the sum of a region.
       sum = sum.wrapping_add(current);
       *integral = sum;
       sq_sum = sq_sum.wrapping_add(current * current);
@@ -476,11 +372,16 @@ fn setup_integral_image<'a, T: Pixel>(
         .zip(integral_row.iter_mut().zip(sq_integral_row.iter_mut()))
     ) {
       let current = u32::cast_from(*src);
+      // Wrap adds to prevent undefined behaviour on overflow. Overflow is
+      // cancelled out when calculating the sum of a region.
       sum = sum.wrapping_add(current);
       *integral = sum.wrapping_add(*integral_above);
       sq_sum = sq_sum.wrapping_add(current * current);
       *sq_integral = sq_sum.wrapping_add(*sq_integral_above);
     }
+
+    // The current row also contains all future rows. By replacing our slices
+    // with it we can move down a row.
     integral_slice = integral_row;
     sq_integral_slice = sq_integral_row;
   }
@@ -495,9 +396,13 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
   assert!(stripe_h <= 64);
   assert!(stripe_w <= 64);
 
-  const IIMG_SIZE: usize = 64 + 6 + 2;
-  let mut integral_image: [u32; IIMG_SIZE * IIMG_SIZE] = [0; IIMG_SIZE * IIMG_SIZE];
-  let mut sq_integral_image: [u32; IIMG_SIZE * IIMG_SIZE] = [0; IIMG_SIZE * IIMG_SIZE];
+  const INTEGRAL_IMAGE_STRIDE: usize = 64 + 6 + 2;
+  let mut integral_image: [u32;
+    INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE] =
+    [0; INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE];
+  let mut sq_integral_image: [u32;
+    INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE] =
+    [0; INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE];
 
   let bdm8 = fi.sequence.bit_depth - 8;
   let mut a_r2: [[u32; 64+2]; 3] = [[0; 64+2]; 3];
@@ -523,6 +428,8 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
     // Number of elements outside the stripe
     let left_w = max_r + 2;
     let right_w = max_r + 1;
+
+    assert_eq!(cdeffed.x, deblocked.x);
 
     // Find how many unique elements to use to the left and right
     let left_uniques = if cdeffed.x == 0 { 0 } else { left_w };
@@ -555,40 +462,43 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
       &mut rows_iter,
       &mut integral_image,
       &mut sq_integral_image,
-      IIMG_SIZE
+      INTEGRAL_IMAGE_STRIDE
     );
   }
   /* prime the intermediate arrays */
   if s_r2 > 0 {
-    sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
-                           &integral_image, &sq_integral_image, IIMG_SIZE,
-                           0, stripe_h, s_r2, bdm8);
-    sgrproj_box_ab_r2_iimg(&mut a_r2[1], &mut b_r2[1],
-                           &integral_image, &sq_integral_image, IIMG_SIZE,
-                           1, stripe_h, s_r2, bdm8);
+    sgrproj_box_ab_r2(&mut a_r2[0], &mut b_r2[0],
+                      &integral_image, &sq_integral_image,
+                      INTEGRAL_IMAGE_STRIDE,
+                      0, stripe_h, s_r2, bdm8);
+    sgrproj_box_ab_r2(&mut a_r2[1], &mut b_r2[1],
+                      &integral_image, &sq_integral_image,
+                      INTEGRAL_IMAGE_STRIDE,
+                      1, stripe_h, s_r2, bdm8);
   }
   if s_r1 > 0 {
     let r_diff = max_r - 1;
-    let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
-    sgrproj_box_ab_r1_iimg(&mut a_r1[0], &mut b_r1[0],
-                           &integral_image[integral_image_offset..],
-                           &sq_integral_image[integral_image_offset..],
-                           IIMG_SIZE,
-                           0, stripe_h, s_r1, bdm8);
-    sgrproj_box_ab_r1_iimg(&mut a_r1[1], &mut b_r1[1],
-                           &integral_image[integral_image_offset..],
-                           &sq_integral_image[integral_image_offset..],
-                           IIMG_SIZE,
-                           1, stripe_h, s_r1, bdm8);
+    let integral_image_offset = r_diff + r_diff * INTEGRAL_IMAGE_STRIDE;
+    sgrproj_box_ab_r1(&mut a_r1[0], &mut b_r1[0],
+                      &integral_image[integral_image_offset..],
+                      &sq_integral_image[integral_image_offset..],
+                      INTEGRAL_IMAGE_STRIDE,
+                      0, stripe_h, s_r1, bdm8);
+    sgrproj_box_ab_r1(&mut a_r1[1], &mut b_r1[1],
+                      &integral_image[integral_image_offset..],
+                      &sq_integral_image[integral_image_offset..],
+                      INTEGRAL_IMAGE_STRIDE,
+                      1, stripe_h, s_r1, bdm8);
   }
 
   /* iterate by column */
   for xi in 0..stripe_w {
     /* build intermediate array columns */
     if s_r2 > 0 {
-      sgrproj_box_ab_r2_iimg(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
-                             &integral_image, &sq_integral_image, IIMG_SIZE,
-                             xi as isize + 2, stripe_h, s_r2, bdm8);
+      sgrproj_box_ab_r2(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
+                        &integral_image, &sq_integral_image,
+                        INTEGRAL_IMAGE_STRIDE,
+                        xi as isize + 2, stripe_h, s_r2, bdm8);
       let ap0: [&[u32; 64+2]; 3] = [&a_r2[xi%3], &a_r2[(xi+1)%3], &a_r2[(xi+2)%3]];
       let bp0: [&[u32; 64+2]; 3] = [&b_r2[xi%3], &b_r2[(xi+1)%3], &b_r2[(xi+2)%3]];
       sgrproj_box_f_r2(&ap0, &bp0, &mut f_r2, xi, 0, stripe_h as usize, &cdeffed);
@@ -597,15 +507,14 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
     }
     if s_r1 > 0 {
       let r_diff = max_r - 1;
-      let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
-      sgrproj_box_ab_r1_iimg(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
-                             &integral_image[integral_image_offset..],
-                             &sq_integral_image[integral_image_offset..],
-                             IIMG_SIZE,
-                             xi as isize + 2, stripe_h, s_r1, bdm8);
+      let integral_image_offset = r_diff + r_diff * INTEGRAL_IMAGE_STRIDE;
+      sgrproj_box_ab_r1(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
+                        &integral_image[integral_image_offset..],
+                        &sq_integral_image[integral_image_offset..],
+                        INTEGRAL_IMAGE_STRIDE,
+                        xi as isize + 2, stripe_h, s_r1, bdm8);
       let ap1: [&[u32; 64+2]; 3] = [&a_r1[xi%3], &a_r1[(xi+1)%3], &a_r1[(xi+2)%3]];
       let bp1: [&[u32; 64+2]; 3] = [&b_r1[xi%3], &b_r1[(xi+1)%3], &b_r1[(xi+2)%3]];
-
       sgrproj_box_f_r1(&ap1, &bp1, &mut f_r1, xi, 0, stripe_h as usize, &cdeffed);
     } else {
       sgrproj_box_f_r0(&mut f_r1, xi, 0, stripe_h as usize, &cdeffed);
@@ -645,9 +554,9 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
                                cdef_w: usize, cdef_h: usize) -> (i8, i8) {
   assert!(cdef_h <= 64);
   assert!(cdef_w <= 64);
-  const IIMG_SIZE: usize = 64 + 6 + 2;
-  let mut integral_image: [u32; IIMG_SIZE * IIMG_SIZE] = [0; IIMG_SIZE * IIMG_SIZE];
-  let mut sq_integral_image: [u32; IIMG_SIZE * IIMG_SIZE] = [0; IIMG_SIZE * IIMG_SIZE];
+  const INTEGRAL_IMAGE_STRIDE: usize = 64 + 6 + 2;
+  let mut integral_image: [u32; INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE] = [0; INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE];
+  let mut sq_integral_image: [u32; INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE] = [0; INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE];
 
   let bdm8 = fi.sequence.bit_depth - 8;
 
@@ -679,41 +588,44 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
       &mut rows_iter,
       &mut integral_image,
       &mut sq_integral_image,
-      IIMG_SIZE
+      INTEGRAL_IMAGE_STRIDE
     );
   }
 
   /* prime the intermediate arrays */
   if s_r2 > 0 {
-    sgrproj_box_ab_r2_iimg(&mut a_r2[0], &mut b_r2[0],
-                           &integral_image, &sq_integral_image, IIMG_SIZE,
-                           0, cdef_h, s_r2, bdm8);
-    sgrproj_box_ab_r2_iimg(&mut a_r2[1], &mut b_r2[1],
-                           &integral_image, &sq_integral_image, IIMG_SIZE,
-                           1, cdef_h, s_r2, bdm8);
+    sgrproj_box_ab_r2(&mut a_r2[0], &mut b_r2[0],
+                      &integral_image, &sq_integral_image,
+                      INTEGRAL_IMAGE_STRIDE,
+                      0, cdef_h, s_r2, bdm8);
+    sgrproj_box_ab_r2(&mut a_r2[1], &mut b_r2[1],
+                      &integral_image, &sq_integral_image,
+                      INTEGRAL_IMAGE_STRIDE,
+                      1, cdef_h, s_r2, bdm8);
   }
   if s_r1 > 0 {
     let r_diff = max_r - 1;
-    let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
-    sgrproj_box_ab_r1_iimg(&mut a_r1[0], &mut b_r1[0],
-                           &integral_image[integral_image_offset..],
-                           &sq_integral_image[integral_image_offset..],
-                           IIMG_SIZE,
-                           0, cdef_h, s_r1, bdm8);
-    sgrproj_box_ab_r1_iimg(&mut a_r1[1], &mut b_r1[1],
-                           &integral_image[integral_image_offset..],
-                           &sq_integral_image[integral_image_offset..],
-                           IIMG_SIZE,
-                           1, cdef_h, s_r1, bdm8);
+    let integral_image_offset = r_diff + r_diff * INTEGRAL_IMAGE_STRIDE;
+    sgrproj_box_ab_r1(&mut a_r1[0], &mut b_r1[0],
+                      &integral_image[integral_image_offset..],
+                      &sq_integral_image[integral_image_offset..],
+                      INTEGRAL_IMAGE_STRIDE,
+                      0, cdef_h, s_r1, bdm8);
+    sgrproj_box_ab_r1(&mut a_r1[1], &mut b_r1[1],
+                      &integral_image[integral_image_offset..],
+                      &sq_integral_image[integral_image_offset..],
+                      INTEGRAL_IMAGE_STRIDE,
+                      1, cdef_h, s_r1, bdm8);
   }
 
   /* iterate by column */
   for xi in 0..cdef_w {
     /* build intermediate array columns */
     if s_r2 > 0 {
-      sgrproj_box_ab_r2_iimg(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
-                             &integral_image, &sq_integral_image, IIMG_SIZE,
-                             xi as isize + 2, cdef_h, s_r2, bdm8);
+      sgrproj_box_ab_r2(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
+                        &integral_image, &sq_integral_image,
+                        INTEGRAL_IMAGE_STRIDE,
+                        xi as isize + 2, cdef_h, s_r2, bdm8);
       let ap0: [&[u32; 64+2]; 3] = [&a_r2[xi%3], &a_r2[(xi+1)%3], &a_r2[(xi+2)%3]];
       let bp0: [&[u32; 64+2]; 3] = [&b_r2[xi%3], &b_r2[(xi+1)%3], &b_r2[(xi+2)%3]];
       sgrproj_box_f_r2(&ap0, &bp0, &mut f_r2, xi, 0, cdef_h as usize, &cdeffed);
@@ -722,15 +634,14 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
     }
     if s_r1 > 0 {
       let r_diff = max_r - 1;
-      let integral_image_offset = r_diff + r_diff * IIMG_SIZE;
-      sgrproj_box_ab_r1_iimg(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
-                             &integral_image[integral_image_offset..],
-                             &sq_integral_image[integral_image_offset..],
-                             IIMG_SIZE,
-                             xi as isize + 2, cdef_h, s_r1, bdm8);
+      let integral_image_offset = r_diff + r_diff * INTEGRAL_IMAGE_STRIDE;
+      sgrproj_box_ab_r1(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
+                        &integral_image[integral_image_offset..],
+                        &sq_integral_image[integral_image_offset..],
+                        INTEGRAL_IMAGE_STRIDE,
+                        xi as isize + 2, cdef_h, s_r1, bdm8);
       let ap1: [&[u32; 64+2]; 3] = [&a_r1[xi%3], &a_r1[(xi+1)%3], &a_r1[(xi+2)%3]];
       let bp1: [&[u32; 64+2]; 3] = [&b_r1[xi%3], &b_r1[(xi+1)%3], &b_r1[(xi+2)%3]];
-
       sgrproj_box_f_r1(&ap1, &bp1, &mut f_r1, xi, 0, cdef_h as usize, &cdeffed);
     } else {
       sgrproj_box_f_r0(&mut f_r1, xi, 0, cdef_h as usize, &cdeffed);
