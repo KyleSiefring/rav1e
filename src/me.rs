@@ -285,13 +285,15 @@ mod native {
     sum
   }
 
+  #[inline(always)]
   fn butterfly(a: i32, b: i32) -> (i32, i32) {
     ((a + b), (a - b))
   }
 
-  fn hadamard4_1d(input: &mut [i32], n: usize, stride0: usize, stride1: usize) {
+  #[inline(always)]
+  fn hadamard4_1d(data: &mut [i32], n: usize, stride0: usize, stride1: usize) {
     for i in 0..n {
-      let sub: &mut [i32] = &mut input[i * stride0..];
+      let sub: &mut [i32] = &mut data[i * stride0..];
       let (a0, a1) = butterfly(sub[0 * stride1],sub[1 * stride1]);
       let (a2, a3) = butterfly(sub[2 * stride1],sub[3 * stride1]);
       let (b0, b2) = butterfly(a0, a2);
@@ -303,9 +305,10 @@ mod native {
     }
   }
 
-  fn hadamard8_1d(input: &mut [i32], n: usize, stride0: usize, stride1: usize) {
+  #[inline(always)]
+  fn hadamard8_1d(data: &mut [i32], n: usize, stride0: usize, stride1: usize) {
     for i in 0..n {
-      let sub: &mut [i32] = &mut input[i * stride0..];
+      let sub: &mut [i32] = &mut data[i * stride0..];
 
       let (a0, a1) = butterfly(sub[0 * stride1],sub[1 * stride1]);
       let (a2, a3) = butterfly(sub[2 * stride1],sub[3 * stride1]);
@@ -333,37 +336,22 @@ mod native {
     }
   }
 
-  fn hadamard_1d(input: &mut [i32], n: usize, stride0: usize, stride1: usize) {
-    if n == 4 {
-      for i in 0..4 {
-        let sub: &mut [i32] = &mut input[i * stride0..];
-        let a = sub[0 * stride1] + sub[1 * stride1];
-        let b = sub[0 * stride1] - sub[1 * stride1];
-        let c = sub[2 * stride1] + sub[3 * stride1];
-        let d = sub[2 * stride1] - sub[3 * stride1];
-        sub[0 * stride1] = a + c;
-        sub[2 * stride1] = a - c;
-        sub[1 * stride1] = b + d;
-        sub[3 * stride1] = b - d;
-      }
-    } else {
-      /*Recursive case for 8x8, 16x16, etc.
-        Subdivide then combine.*/
-      let n2 = n >> 1;
-      hadamard_1d(input, n2, stride0, stride1);
-      hadamard_1d(&mut input[n2*stride0..], n2, stride0, stride1);
-      hadamard_1d(&mut input[n2*stride1..], n2, stride0, stride1);
-      hadamard_1d(&mut input[n2*stride0 + n2*stride1..], n2, stride0, stride1);
-      let mut sub = input;
-      for _i in 0..n {
-        for j in (0..n2*stride1).step_by(stride1) {
-          let temp = sub[j] - sub[j + n2*stride1];
-          sub[j] += sub[j + n2*stride1];
-          sub[j + n2*stride1] = temp;
-        }
-        sub = &mut sub[stride0..];
-      }
-    }
+  #[inline(always)]
+  fn hadamard2d(data: &mut [i32], (w, h): (usize, usize)) {
+    /*Vertical transform.*/
+    let vert_func = if h == 4 { hadamard4_1d } else { hadamard8_1d };
+    vert_func(data, h, 1, h);
+    /*Horizontal transform.*/
+    let horz_func = if w == 4 { hadamard4_1d } else { hadamard8_1d };
+    horz_func(data, w, w, 1);
+  }
+
+  fn hadamard4x4(data: &mut [i32]) {
+    hadamard2d(data, (4, 4));
+  }
+
+  fn hadamard8x8(data: &mut [i32]) {
+    hadamard2d(data, (4, 4));
   }
 
   #[inline(always)]
@@ -375,25 +363,27 @@ mod native {
     _bit_depth: usize,
   ) -> u32 {
     let size: usize = blk_w.min(blk_h).min(8);
-    let func = if size == 4 { hadamard4_1d } else { hadamard8_1d };
+    let tx2d = if size == 4 { hadamard4x4 } else { hadamard8x8 };
 
     let mut sum = 0 as u64;
 
     for chunk_y in (0..blk_h).step_by(size) {
       for chunk_x in (0..blk_w).step_by(size) {
-        let chunk_area: Area = Area::Rect{x: chunk_x as isize, y: chunk_y as isize, width: size, height: size};
+        let chunk_area: Area = Area::Rect {
+          x: chunk_x as isize,
+          y: chunk_y as isize,
+          width: size,
+          height: size
+        };
         let chunk_org = plane_org.subregion(chunk_area);
         let chunk_ref = plane_ref.subregion(chunk_area);
-        let mut buf: &mut [i32] = &mut [0; 8 * 8][..size*size];
+        let buf: &mut [i32] = &mut [0; 8 * 8][..size*size];
         for (row_diff, (row_org, row_ref)) in buf.chunks_mut(size).zip(chunk_org.rows_iter().zip(chunk_ref.rows_iter())) {
           for (diff, (a, b)) in row_diff.iter_mut().zip(row_org.iter().zip(row_ref.iter())) {
             *diff = i32::cast_from(*a) - i32::cast_from(*b);
           }
         }
-        /*Horizontal transform.*/
-        func(&mut buf, size, size, 1);
-        /*Vertical transform.*/
-        func(&mut buf, size, 1, size);
+        tx2d(buf);
 
         sum += buf.iter().map(|a| a.abs() as u64).sum::<u64>();
       }
