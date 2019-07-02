@@ -285,6 +285,54 @@ mod native {
     sum
   }
 
+  fn butterfly(a: i32, b: i32) -> (i32, i32) {
+    ((a + b), (a - b))
+  }
+
+  fn hadamard4_1d(input: &mut [i32], n: usize, stride0: usize, stride1: usize) {
+    for i in 0..n {
+      let sub: &mut [i32] = &mut input[i * stride0..];
+      let (a0, a1) = butterfly(sub[0 * stride1],sub[1 * stride1]);
+      let (a2, a3) = butterfly(sub[2 * stride1],sub[3 * stride1]);
+      let (b0, b2) = butterfly(a0, a2);
+      let (b1, b3) = butterfly(a1, a3);
+      sub[0 * stride1] = b0;
+      sub[1 * stride1] = b1;
+      sub[2 * stride1] = b2;
+      sub[3 * stride1] = b3;
+    }
+  }
+
+  fn hadamard8_1d(input: &mut [i32], n: usize, stride0: usize, stride1: usize) {
+    for i in 0..n {
+      let sub: &mut [i32] = &mut input[i * stride0..];
+
+      let (a0, a1) = butterfly(sub[0 * stride1],sub[1 * stride1]);
+      let (a2, a3) = butterfly(sub[2 * stride1],sub[3 * stride1]);
+      let (a4, a5) = butterfly(sub[4 * stride1],sub[5 * stride1]);
+      let (a6, a7) = butterfly(sub[6 * stride1],sub[7 * stride1]);
+
+      let (b0, b2) = butterfly(a0, a2);
+      let (b1, b3) = butterfly(a1, a3);
+      let (b4, b6) = butterfly(a4, a6);
+      let (b5, b7) = butterfly(a5, a7);
+
+      let (c0, c4) = butterfly(b0, b4);
+      let (c1, c5) = butterfly(b1, b5);
+      let (c2, c6) = butterfly(b2, b6);
+      let (c3, c7) = butterfly(b3, b7);
+
+      sub[0 * stride1] = c0;
+      sub[1 * stride1] = c1;
+      sub[2 * stride1] = c2;
+      sub[3 * stride1] = c3;
+      sub[4 * stride1] = c4;
+      sub[5 * stride1] = c5;
+      sub[6 * stride1] = c6;
+      sub[7 * stride1] = c7;
+    }
+  }
+
   fn hadamard_1d(input: &mut [i32], n: usize, stride0: usize, stride1: usize) {
     if n == 4 {
       for i in 0..4 {
@@ -327,6 +375,7 @@ mod native {
     _bit_depth: usize,
   ) -> u32 {
     let size: usize = blk_w.min(blk_h).min(8);
+    let func = if size == 4 { hadamard4_1d } else { hadamard8_1d };
 
     let mut sum = 0 as u64;
 
@@ -342,9 +391,9 @@ mod native {
           }
         }
         /*Horizontal transform.*/
-        hadamard_1d(&mut buf, size, size, 1);
+        func(&mut buf, size, size, 1);
         /*Vertical transform.*/
-        hadamard_1d(&mut buf, size, 1, size);
+        func(&mut buf, size, 1, size);
 
         sum += buf.iter().map(|a| a.abs() as u64).sum::<u64>();
       }
