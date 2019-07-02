@@ -351,7 +351,7 @@ mod native {
   }
 
   fn hadamard8x8(data: &mut [i32]) {
-    hadamard2d(data, (4, 4));
+    hadamard2d(data, (8, 8));
   }
 
   #[inline(always)]
