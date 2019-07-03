@@ -8,9 +8,12 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-pub use self::nasm::*;
+pub use self::nasm::get_sad;
 #[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
-pub use self::native::*;
+pub use self::native::get_sad;
+
+pub use self::native::get_satd;
+
 use crate::context::{BlockOffset, BLOCK_TO_PLANE_SHIFT, MI_SIZE};
 use crate::encoder::ReferenceFrame;
 use crate::FrameInvariants;
@@ -245,17 +248,6 @@ mod nasm {
       }
     }
     super::native::get_sad(plane_org, plane_ref, blk_w, blk_h, bit_depth)
-  }
-
-  #[inline(always)]
-  pub fn get_satd<T: Pixel>(
-    plane_org: &PlaneRegion<'_, T>,
-    plane_ref: &PlaneRegion<'_, T>,
-    blk_w: usize,
-    blk_h: usize,
-    bit_depth: usize,
-  ) -> u32 {
-    super::native::get_satd(plane_org, plane_ref, blk_w, blk_h, bit_depth)
   }
 }
 
@@ -1217,7 +1209,7 @@ pub mod test {
   use crate::partition::BlockSize::*;
 
   // Generate plane data for get_sad_same()
-  fn setup_sad<T: Pixel>() -> (Plane<T>, Plane<T>) {
+  fn setup_planes<T: Pixel>() -> (Plane<T>, Plane<T>) {
     let mut input_plane = Plane::new(640, 480, 0, 0, 128 + 8, 128 + 8);
     let mut rec_plane = input_plane.clone();
     // Make the test pattern robust to data alignment
@@ -1272,7 +1264,7 @@ pub mod test {
     ];
 
     let bit_depth: usize = 8;
-    let (input_plane, rec_plane) = setup_sad::<T>();
+    let (input_plane, rec_plane) = setup_planes::<T>();
 
     for block in blocks {
       let bsw = block.0.width();
@@ -1297,5 +1289,65 @@ pub mod test {
   #[test]
   fn get_sad_same_u16() {
     get_sad_same_inner::<u16>();
+  }
+
+  fn get_satd_same_inner<T: Pixel>() {
+    let blocks: Vec<(BlockSize, u32)> = vec![
+      (BLOCK_4X4, 1408),
+      (BLOCK_4X8, 2016),
+      (BLOCK_8X4, 1816),
+      (BLOCK_8X8, 3984),
+      (BLOCK_8X16, 5136),
+      (BLOCK_16X8, 4864),
+      (BLOCK_16X16, 9984),
+      (BLOCK_16X32, 13824),
+      (BLOCK_32X16, 13760),
+      (BLOCK_32X32, 27952),
+      (BLOCK_32X64, 37168),
+      (BLOCK_64X32, 45104),
+      (BLOCK_64X64, 84176),
+      (BLOCK_64X128, 127920),
+      (BLOCK_128X64, 173680),
+      (BLOCK_128X128, 321456),
+      (BLOCK_4X16, 3136),
+      (BLOCK_16X4, 2632),
+      (BLOCK_8X32, 7056),
+      (BLOCK_32X8, 6624),
+      (BLOCK_16X64, 18432),
+      (BLOCK_64X16, 21312),
+    ];
+
+    let bit_depth: usize = 8;
+    let (input_plane, rec_plane) = setup_planes::<T>();
+
+    for block in blocks {
+      let bsw = block.0.width();
+      let bsh = block.0.height();
+      let area = Area::StartingAt { x: 32, y: 40 };
+
+      let mut input_region = input_plane.region(area);
+      let mut rec_region = rec_plane.region(area);
+
+      assert_eq!(
+        block.1,
+        get_satd(
+          &mut input_region,
+          &mut rec_region,
+          bsw,
+          bsh,
+          bit_depth
+        )
+      );
+    }
+  }
+
+  #[test]
+  fn get_satd_same_u8() {
+    get_satd_same_inner::<u8>();
+  }
+
+  #[test]
+  fn get_satd_same_u16() {
+    get_satd_same_inner::<u16>();
   }
 }
