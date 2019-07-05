@@ -8,6 +8,7 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 use criterion::*;
+use rav1e::bench::tiling::*;
 use rav1e::bench::dist;
 use rav1e::bench::partition::*;
 use rav1e::bench::partition::BlockSize::*;
@@ -16,53 +17,8 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use rav1e::Pixel;
 
-fn fill_plane<T: Pixel>(ra: &mut ChaChaRng, plane: &mut Plane<T>) {
-  let stride = plane.cfg.stride;
-  for row in plane.data_origin_mut().chunks_mut(stride) {
-    for pixel in row {
-      let v: u8 = ra.gen();
-      *pixel = T::cast_from(v);
-    }
-  }
-}
-
-fn new_plane<T: Pixel>(ra: &mut ChaChaRng, width: usize, height: usize) -> Plane<T> {
-  let mut p = Plane::new(width, height, 0, 0, 128 + 8, 128 + 8);
-
-  fill_plane(ra, &mut p);
-
-  p
-}
-
-fn run_sad_bench<T: Pixel>(b: &mut Bencher, &(bs, bit_depth): &(BlockSize, usize)) {
-  let mut ra = ChaChaRng::from_seed([0; 32]);
-  let bsw = bs.width();
-  let bsh = bs.height();
-  let w = 640;
-  let h = 480;
-  let input_plane = new_plane::<T>(&mut ra, w, h);
-  let rec_plane = new_plane::<T>(&mut ra, w, h);
-
-  let plane_org = input_plane.as_region();
-  let plane_ref = rec_plane.as_region();
-
-  b.iter(|| {
-    let _ =
-      black_box(dist::get_sad(&plane_org, &plane_ref, bsw, bsh, bit_depth));
-  })
-}
-
-fn bench_get_sad(b: &mut Bencher, &(bs, bit_depth): &(BlockSize, usize)) {
-  if bit_depth <= 8 {
-    run_sad_bench::<u8>(b, &(bs, bit_depth))
-  }
-  else {
-    run_sad_bench::<u16>(b, &(bs, bit_depth))
-  }
-}
-
-pub fn get_sad(c: &mut Criterion) {
-  let blocks = vec![
+const DIST_BENCH_SET: &[(BlockSize, usize)] =
+  &[
     (BLOCK_4X4, 8),
     (BLOCK_4X8, 8),
     (BLOCK_8X4, 8),
@@ -110,5 +66,72 @@ pub fn get_sad(c: &mut Criterion) {
     (BLOCK_64X16, 10)
   ];
 
-  c.bench_function_over_inputs("get_sad", bench_get_sad, blocks);
+fn fill_plane<T: Pixel>(ra: &mut ChaChaRng, plane: &mut Plane<T>) {
+  let stride = plane.cfg.stride;
+  for row in plane.data_origin_mut().chunks_mut(stride) {
+    for pixel in row {
+      let v: u8 = ra.gen();
+      *pixel = T::cast_from(v);
+    }
+  }
+}
+
+fn new_plane<T: Pixel>(ra: &mut ChaChaRng, width: usize, height: usize) -> Plane<T> {
+  let mut p = Plane::new(width, height, 0, 0, 128 + 8, 128 + 8);
+
+  fill_plane(ra, &mut p);
+
+  p
+}
+
+type DistFn<T> = fn(
+    plane_org: &PlaneRegion<'_, T>,
+    plane_ref: &PlaneRegion<'_, T>,
+    blk_w: usize,
+    blk_h: usize,
+    bit_depth: usize
+) -> u32;
+
+fn run_dist_bench<T: Pixel>(
+  b: &mut Bencher, &(bs, bit_depth): &(BlockSize, usize), func: DistFn<T>
+) {
+  let mut ra = ChaChaRng::from_seed([0; 32]);
+  let bsw = bs.width();
+  let bsh = bs.height();
+  let w = 640;
+  let h = 480;
+  let input_plane = new_plane::<T>(&mut ra, w, h);
+  let rec_plane = new_plane::<T>(&mut ra, w, h);
+
+  let plane_org = input_plane.as_region();
+  let plane_ref = rec_plane.as_region();
+
+  b.iter(|| {
+    let _ =
+      black_box(func(&plane_org, &plane_ref, bsw, bsh, bit_depth));
+  })
+}
+
+fn bench_get_sad(b: &mut Bencher, &&(bs, bit_depth): &&(BlockSize, usize)) {
+  if bit_depth <= 8 {
+    run_dist_bench::<u8>(b, &(bs, bit_depth), dist::get_sad::<u8>)
+  } else {
+    run_dist_bench::<u16>(b, &(bs, bit_depth), dist::get_sad::<u16>)
+  }
+}
+
+pub fn get_sad(c: &mut Criterion) {
+  c.bench_function_over_inputs("get_sad", bench_get_sad, DIST_BENCH_SET);
+}
+
+fn bench_get_satd(b: &mut Bencher, &&(bs, bit_depth): &&(BlockSize, usize)) {
+  if bit_depth <= 8 {
+    run_dist_bench::<u8>(b, &(bs, bit_depth), dist::get_satd::<u8>)
+  } else {
+    run_dist_bench::<u16>(b, &(bs, bit_depth), dist::get_satd::<u16>)
+  }
+}
+
+pub fn get_satd(c: &mut Criterion) {
+  c.bench_function_over_inputs("get_satd", bench_get_satd, DIST_BENCH_SET);
 }
