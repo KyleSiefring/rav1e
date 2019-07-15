@@ -483,6 +483,9 @@ pub struct FrameInvariants<T: Pixel> {
   /// should be ignored. Invalid frames occur when a subgop is prematurely
   /// ended, for example, by a key frame or the end of the video.
   pub invalid: bool,
+  /// The lookahead version of `rec_buffer`, used for storing and propagating
+  /// the original reference frames (rather than reconstructed ones).
+  pub lookahead_rec_buffer: ReferenceFramesSet<T>,
 }
 
 pub(crate) fn pos_to_lvl(pos: u64, pyramid_depth: u64) -> u64 {
@@ -623,6 +626,7 @@ impl<T: Pixel> FrameInvariants<T> {
       config,
       tx_mode_select : false,
       invalid: false,
+      lookahead_rec_buffer: ReferenceFramesSet::new(),
     }
   }
 
