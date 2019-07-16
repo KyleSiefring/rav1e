@@ -17,6 +17,9 @@ use crate::tiling::*;
 use crate::util::{clamp, msb, Pixel, CastFromPrimitive};
 
 use std::cmp;
+use std::mem;
+
+use ndarray::{ArrayView, ArrayView2, ShapeBuilder};
 
 pub struct CdefDirections {
   dir: [[u8; 8]; 8],
@@ -48,6 +51,28 @@ fn first_max_element(elems: &[i32]) -> (usize, i32) {
   (max_idx, *max_value)
 }
 
+unsafe fn cdef_find_dir_rs(
+  img: *const u8, img_stride: isize, var: *mut i32, coeff_shift: usize
+) -> i32 {
+  cdef_find_dir_generic_rs(img, img_stride, var, coeff_shift)
+}
+
+unsafe fn cdef_find_dir_hbd_rs(
+  img: *const u16, img_stride: isize, var: *mut i32, coeff_shift: usize
+) -> i32 {
+  cdef_find_dir_generic_rs(img, img_stride, var, coeff_shift)
+}
+
+unsafe fn cdef_find_dir_generic_rs<T: Pixel>(
+  img: *const T, img_stride: isize, var: *mut i32, coeff_shift: usize
+) -> i32 {
+  cdef_find_dir_internal(
+    ArrayView::from_shape_ptr((8, 8).strides((img_stride as usize, 1)), img),
+    &mut *var,
+    coeff_shift
+  )
+}
+
 // Detect direction. 0 means 45-degree up-right, 2 is horizontal, and so on.
 // The search minimizes the weighted variance along all the lines in a
 // particular direction, i.e. the squared error between the input and a
@@ -55,12 +80,12 @@ fn first_max_element(elems: &[i32]) -> (usize, i32) {
 // in a particular direction. Since each direction have the same sum(x^2) term,
 // that term is never computed. See Section 2, step 2, of:
 // http://jmvalin.ca/notes/intra_paint.pdf
-fn cdef_find_dir<T: Pixel>(img: &PlaneSlice<'_, T>, var: &mut i32, coeff_shift: usize) -> i32 {
+fn cdef_find_dir_internal<T: Pixel>(img: ArrayView2<T>, var: &mut i32, coeff_shift: usize) -> i32 {
   let mut cost: [i32; 8] = [0; 8];
   let mut partial: [[i32; 15]; 8] = [[0; 15]; 8];
   for i in 0..8 {
     for j in 0..8 {
-      let p: i32 = img[i][j].as_();
+      let p: i32 = img[[i, j]].as_();
       // We subtract 128 here to reduce the maximum range of the squared
       // partial sums.
       debug_assert!(p >> coeff_shift <= 255);
@@ -104,10 +129,22 @@ fn cdef_find_dir<T: Pixel>(img: &PlaneSlice<'_, T>, var: &mut i32, coeff_shift: 
   // Difference between the optimal variance and the variance along the
   // orthogonal direction. Again, the sum(x^2) terms cancel out.
   // We'd normally divide by 840, but dividing by 1024 is close enough
-  // for what we're going to do with this. */
+  // for what we're going to do with this.
   *var = (best_cost - cost[(best_dir + 4) & 7]) >> 10;
 
   best_dir as i32
+}
+
+fn cdef_find_dir<T: Pixel>(img: &PlaneSlice<'_, T>, var: &mut i32, coeff_shift: usize) -> i32 {
+  let var: *mut i32 = &mut *var;
+  let stride: isize = img.plane.cfg.stride as isize;
+  unsafe {
+    if mem::size_of::<T>() == 1 {
+      cdef_find_dir_rs(img.as_ptr() as *const _, stride, var, coeff_shift)
+    } else { // if mem::size_of::<T>() == 2
+      cdef_find_dir_hbd_rs(img.as_ptr() as *const _, stride, var, coeff_shift)
+    }
+  }
 }
 
 #[inline(always)]
