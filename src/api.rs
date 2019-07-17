@@ -1343,6 +1343,9 @@ impl<T: Pixel> ContextInner<T> {
           }
         });
 
+      // Save the motion vectors to FrameInvariants.
+      fi.mvs = fs.frame_mvs.clone();
+
       if WRITE_DEBUG_FILES {
         use crate::partition::RefType::*;
 
