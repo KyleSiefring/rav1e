@@ -60,6 +60,7 @@ pub struct ReferenceFrame<T: Pixel> {
   pub input_qres: Plane<T>,
   pub cdfs: CDFContext,
   pub frame_mvs: Vec<FrameMotionVectors>,
+  pub output_frameno: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2344,7 +2345,9 @@ pub fn encode_frame<T: Pixel>(
   packet
 }
 
-pub fn update_rec_buffer<T: Pixel>(fi: &mut FrameInvariants<T>, fs: FrameState<T>) {
+pub fn update_rec_buffer<T: Pixel>(
+  output_frameno: u64, fi: &mut FrameInvariants<T>, fs: FrameState<T>
+) {
   let rfs = Arc::new(
     ReferenceFrame {
       order_hint: fi.order_hint,
@@ -2353,6 +2356,7 @@ pub fn update_rec_buffer<T: Pixel>(fi: &mut FrameInvariants<T>, fs: FrameState<T
       input_qres: fs.input_qres,
       cdfs: fs.cdfs,
       frame_mvs: fs.frame_mvs,
+      output_frameno,
     }
   );
   for i in 0..(REF_FRAMES as usize) {
