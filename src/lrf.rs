@@ -965,10 +965,10 @@ impl RestorationState {
         let (stripe_start_y, stripe_size) = if si == 0 {
           (0, (64 - 8) >> ydec)
         } else {
+          let start = (si * 64 - 8) >> ydec;
           (
-            (si as isize * 64 - 8) >> ydec,
-            // one past, unlike spec
-            64 >> ydec
+            start as isize,
+            (64 >> ydec).min(crop_h - start)
           )
         };
 
