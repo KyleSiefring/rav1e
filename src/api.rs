@@ -8,24 +8,29 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 use arg_enum_proc_macro::ArgEnum;
+use arrayvec::ArrayVec;
 use bitstream_io::*;
 use num_derive::*;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde_derive::{Deserialize, Serialize};
 
 use crate::context::{FrameBlocks, SuperBlockOffset};
+use crate::dist::get_satd;
 use crate::encoder::*;
-use crate::frame::Frame;
+use crate::frame::{Frame, PlaneOffset};
 use crate::mc::MotionVector;
 use crate::me::MotionEstimation;
 use crate::metrics::calculate_frame_psnr;
 use crate::partition::*;
+use crate::predict::PredictionMode;
 use crate::rate::RCState;
 use crate::rate::FRAME_NSUBTYPES;
 use crate::rate::FRAME_SUBTYPE_I;
 use crate::rate::FRAME_SUBTYPE_P;
 use crate::rate::FRAME_SUBTYPE_SEF;
 use crate::scenechange::SceneChangeDetector;
+use crate::tiling::{Area, TileRect};
+use crate::transform::TxSize;
 use crate::util::Pixel;
 
 use std::collections::BTreeMap;
@@ -699,7 +704,11 @@ pub(crate) struct ContextInner<T: Pixel> {
   /// The next `input_frameno` to be processed by lookahead.
   next_lookahead_frame: u64,
   /// The next `output_frameno` to be computed by lookahead.
-  next_lookahead_output_frameno: u64
+  next_lookahead_output_frameno: u64,
+  /// Maps `output_frameno` to an array of future importances for each 4×4
+  /// block. That is, a value indicating how much future frames depend on the
+  /// block (for example, via inter-prediction).
+  block_importances: BTreeMap<u64, Box<[f32]>>
 }
 
 pub struct Context<T: Pixel> {
@@ -903,7 +912,8 @@ impl<T: Pixel> ContextInner<T> {
       maybe_prev_log_base_q: None,
       first_pass_data: FirstPassData { frames: Vec::new() },
       next_lookahead_frame: 0,
-      next_lookahead_output_frameno: 0
+      next_lookahead_output_frameno: 0,
+      block_importances: BTreeMap::new()
     }
   }
 
@@ -1398,6 +1408,269 @@ impl<T: Pixel> ContextInner<T> {
       }
     }
 
+    // Compute the block importances for all frames down to the current output
+    // frame. First, initialize them all with zeros.
+    let output_framenos = self
+      .frame_invariants
+      .iter()
+      .skip_while(|(&output_frameno, _)| output_frameno < self.output_frameno)
+      .filter(|(_, fi)| !fi.invalid && !fi.show_existing_frame)
+      .map(|(&output_frameno, _)| output_frameno)
+      .collect::<Vec<_>>();
+
+    for &output_frameno in output_framenos.iter() {
+      if let Some(importances) =
+        self.block_importances.get_mut(&output_frameno)
+      {
+        for x in importances.iter_mut() {
+          *x = 0.;
+        }
+      } else {
+        let fi = &self.frame_invariants[&output_frameno];
+        self.block_importances.insert(
+          output_frameno,
+          vec![0.; fi.w_in_b * fi.h_in_b].into_boxed_slice()
+        );
+      }
+    }
+
+    // Now compute and propagate the block importances from the end. The
+    // current output frame will get its block importances from the future
+    // frames.
+    for &output_frameno in output_framenos.iter().skip(1).rev() {
+      let fi = &self.frame_invariants[&output_frameno];
+
+      // TODO
+      if fi.frame_type == FrameType::KEY {
+        continue;
+      }
+
+      let frame = self.frame_q[&fi.input_frameno].as_ref().unwrap();
+
+      const BLOCK_SIZE: i64 = 4;
+      const MV_UNITS_PER_PIXEL: i64 = 8;
+      const BLOCK_SIZE_IN_MV_UNITS: i64 = BLOCK_SIZE * MV_UNITS_PER_PIXEL;
+      const BLOCK_AREA_IN_MV_UNITS: i64 =
+        BLOCK_SIZE_IN_MV_UNITS * BLOCK_SIZE_IN_MV_UNITS;
+
+      // There can be at most 3 of these.
+      let mut unique_indices = ArrayVec::<[_; 3]>::new();
+
+      for (mv_index, &rec_index) in fi.ref_frames.iter().enumerate() {
+        if unique_indices.iter().find(|&&(_, r)| r == rec_index).is_none() {
+          unique_indices.push((mv_index, rec_index));
+        }
+      }
+
+      // Compute and propagate the importance, split evenly between the
+      // referenced frames.
+      for &(mv_index, rec_index) in unique_indices.iter() {
+        let reference =
+          fi.lookahead_rec_buffer.frames[rec_index as usize].as_ref().unwrap();
+        let reference_frame = &reference.frame;
+        let reference_output_frameno = reference.output_frameno;
+
+        let mut plane_after_prediction = frame.planes[0].clone();
+
+        for y in 0..fi.h_in_b {
+          for x in 0..fi.w_in_b {
+            let mv = fi.mvs[mv_index][y][x];
+
+            // Coordinates of the top-left corner of the reference block, in MV
+            // units.
+            let reference_x =
+              x as i64 * BLOCK_SIZE_IN_MV_UNITS + mv.col as i64;
+            let reference_y =
+              y as i64 * BLOCK_SIZE_IN_MV_UNITS + mv.row as i64;
+
+            let plane_org = frame.planes[0].region(Area::Rect {
+              x: x as isize * BLOCK_SIZE as isize,
+              y: y as isize * BLOCK_SIZE as isize,
+              width: BLOCK_SIZE as usize,
+              height: BLOCK_SIZE as usize
+            });
+
+            let plane_ref = reference_frame.planes[0].region(Area::Rect {
+              x: reference_x as isize / MV_UNITS_PER_PIXEL as isize,
+              y: reference_y as isize / MV_UNITS_PER_PIXEL as isize,
+              width: BLOCK_SIZE as usize,
+              height: BLOCK_SIZE as usize
+            });
+
+            // TODO: other intra prediction modes.
+            let edge_buf = get_intra_edges(
+              &frame.planes[0].as_region(),
+              PlaneOffset {
+                x: x as isize * BLOCK_SIZE as isize,
+                y: y as isize * BLOCK_SIZE as isize
+              },
+              TxSize::TX_4X4,
+              fi.sequence.bit_depth,
+              Some(PredictionMode::DC_PRED)
+            );
+
+            let mut plane_after_prediction_region = plane_after_prediction
+              .region_mut(Area::Rect {
+                x: x as isize * BLOCK_SIZE as isize,
+                y: y as isize * BLOCK_SIZE as isize,
+                width: BLOCK_SIZE as usize,
+                height: BLOCK_SIZE as usize
+              });
+
+            PredictionMode::DC_PRED.predict_intra(
+              TileRect {
+                x: x * BLOCK_SIZE as usize,
+                y: y * BLOCK_SIZE as usize,
+                width: BLOCK_SIZE as usize,
+                height: BLOCK_SIZE as usize
+              },
+              &mut plane_after_prediction_region,
+              TxSize::TX_4X4,
+              fi.sequence.bit_depth,
+              &[], // Not used by DC_PRED.
+              0,   // Not used by DC_PRED.
+              &edge_buf
+            );
+
+            let plane_after_prediction_region =
+              plane_after_prediction.region(Area::Rect {
+                x: x as isize * BLOCK_SIZE as isize,
+                y: y as isize * BLOCK_SIZE as isize,
+                width: BLOCK_SIZE as usize,
+                height: BLOCK_SIZE as usize
+              });
+
+            let intra_cost: f32 = get_satd(
+              &plane_org,
+              &plane_after_prediction_region,
+              BLOCK_SIZE as usize,
+              BLOCK_SIZE as usize,
+              self.config.bit_depth
+            ) as f32;
+            let inter_cost = get_satd(
+              &plane_org,
+              &plane_ref,
+              BLOCK_SIZE as usize,
+              BLOCK_SIZE as usize,
+              self.config.bit_depth
+            ) as f32;
+
+            let future_importance =
+              self.block_importances[&output_frameno][y * fi.w_in_b + x];
+
+            let propagate_fraction = (1. - inter_cost / intra_cost).max(0.);
+            let propagate_amount = (intra_cost + future_importance)
+              * propagate_fraction
+              / unique_indices.len() as f32;
+
+            if let Some(reference_frame_block_importances) =
+              self.block_importances.get_mut(&reference_output_frameno)
+            {
+              let mut propagate =
+                |block_x_in_mv_units, block_y_in_mv_units, fraction| {
+                  let x = block_x_in_mv_units / BLOCK_SIZE_IN_MV_UNITS;
+                  let y = block_y_in_mv_units / BLOCK_SIZE_IN_MV_UNITS;
+
+                  // TODO: propagate partially if the block is partially off-frame
+                  // (possible on right and bottom edges)?
+                  if x >= 0
+                    && y >= 0
+                    && (x as usize) < fi.w_in_b
+                    && (y as usize) < fi.h_in_b
+                  {
+                    reference_frame_block_importances
+                      [y as usize * fi.w_in_b + x as usize] +=
+                      propagate_amount * fraction;
+                  }
+                };
+
+              // Coordinates of the top-left corner of the block intersecting the
+              // reference block from the top-left.
+              let top_left_block_x =
+                reference_x / BLOCK_SIZE_IN_MV_UNITS * BLOCK_SIZE_IN_MV_UNITS;
+              let top_left_block_y =
+                reference_y / BLOCK_SIZE_IN_MV_UNITS * BLOCK_SIZE_IN_MV_UNITS;
+
+              let top_right_block_x =
+                top_left_block_x + BLOCK_SIZE_IN_MV_UNITS;
+              let top_right_block_y = top_left_block_y;
+              let bottom_left_block_x = top_left_block_x;
+              let bottom_left_block_y =
+                top_left_block_y + BLOCK_SIZE_IN_MV_UNITS;
+              let bottom_right_block_x = top_right_block_x;
+              let bottom_right_block_y = bottom_left_block_y;
+
+              let top_left_block_fraction = ((top_right_block_x - reference_x)
+                * (bottom_left_block_y - reference_y))
+                as f32
+                / BLOCK_AREA_IN_MV_UNITS as f32;
+
+              propagate(
+                top_left_block_x,
+                top_left_block_y,
+                top_left_block_fraction
+              );
+
+              let top_right_block_fraction =
+                ((reference_x + BLOCK_SIZE_IN_MV_UNITS - top_right_block_x)
+                  * (bottom_left_block_y - reference_y))
+                  as f32
+                  / BLOCK_AREA_IN_MV_UNITS as f32;
+
+              propagate(
+                top_right_block_x,
+                top_right_block_y,
+                top_right_block_fraction
+              );
+
+              let bottom_left_block_fraction = ((top_right_block_x
+                - reference_x)
+                * (reference_y + BLOCK_SIZE_IN_MV_UNITS - bottom_left_block_y))
+                as f32
+                / BLOCK_AREA_IN_MV_UNITS as f32;
+
+              propagate(
+                bottom_left_block_x,
+                bottom_left_block_y,
+                bottom_left_block_fraction
+              );
+
+              let bottom_right_block_fraction =
+                ((reference_x + BLOCK_SIZE_IN_MV_UNITS - top_right_block_x)
+                  * (reference_y + BLOCK_SIZE_IN_MV_UNITS
+                    - bottom_left_block_y)) as f32
+                  / BLOCK_AREA_IN_MV_UNITS as f32;
+
+              propagate(
+                bottom_right_block_x,
+                bottom_right_block_y,
+                bottom_right_block_fraction
+              );
+            }
+          }
+        }
+      }
+
+      // At this point in the loop this frame's importances for this iteration
+      // of compute_lookahead_data() are finalized.
+      if WRITE_DEBUG_FILES {
+        let data = &self.block_importances[&output_frameno];
+        use byteorder::{NativeEndian, WriteBytesExt};
+        let mut buf = vec![];
+        buf.write_u64::<NativeEndian>(fi.h_in_b as u64).unwrap();
+        buf.write_u64::<NativeEndian>(fi.w_in_b as u64).unwrap();
+        for y in 0..fi.h_in_b {
+          for x in 0..fi.w_in_b {
+            let importance = data[y * fi.w_in_b + x];
+            buf.write_f32::<NativeEndian>(importance).unwrap();
+          }
+        }
+        ::std::fs::write(
+          format!("{}-{}-imps.bin", output_framenos[0], fi.input_frameno),
+          buf
+        )
+        .unwrap();
+      }
     }
   }
 
@@ -1611,6 +1884,7 @@ impl<T: Pixel> ContextInner<T> {
       self.frame_invariants.remove(&i);
       self.gop_output_frameno_start.remove(&i);
       self.gop_input_frameno_start.remove(&i);
+      self.block_importances.remove(&i);
     }
   }
 
