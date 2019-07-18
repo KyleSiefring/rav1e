@@ -690,76 +690,6 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
     );
   }
 
-  /*
-  /* prime the intermediate arrays */
-  if s_r2 > 0 {
-    sgrproj_box_ab_r2(&mut a_r2[0], &mut b_r2[0],
-                      &integral_image, &sq_integral_image,
-                      INTEGRAL_IMAGE_STRIDE,
-                      0, cdef_h, s_r2, bdm8);
-    sgrproj_box_ab_r2(&mut a_r2[1], &mut b_r2[1],
-                      &integral_image, &sq_integral_image,
-                      INTEGRAL_IMAGE_STRIDE,
-                      1, cdef_h, s_r2, bdm8);
-  }
-  if s_r1 > 0 {
-    let r_diff = max_r - 1;
-    let integral_image_offset = r_diff + r_diff * INTEGRAL_IMAGE_STRIDE;
-    sgrproj_box_ab_r1(&mut a_r1[0], &mut b_r1[0],
-                      &integral_image[integral_image_offset..],
-                      &sq_integral_image[integral_image_offset..],
-                      INTEGRAL_IMAGE_STRIDE,
-                      0, cdef_h, s_r1, bdm8);
-    sgrproj_box_ab_r1(&mut a_r1[1], &mut b_r1[1],
-                      &integral_image[integral_image_offset..],
-                      &sq_integral_image[integral_image_offset..],
-                      INTEGRAL_IMAGE_STRIDE,
-                      1, cdef_h, s_r1, bdm8);
-  }
-
-  /* iterate by column */
-  for xi in 0..cdef_w {
-    /* build intermediate array columns */
-    if s_r2 > 0 {
-      sgrproj_box_ab_r2(&mut a_r2[(xi+2)%3], &mut b_r2[(xi+2)%3],
-                        &integral_image, &sq_integral_image,
-                        INTEGRAL_IMAGE_STRIDE,
-                        xi as isize + 2, cdef_h, s_r2, bdm8);
-      let ap0: [&[u32; 64+2]; 3] = [&a_r2[xi%3], &a_r2[(xi+1)%3], &a_r2[(xi+2)%3]];
-      let bp0: [&[u32; 64+2]; 3] = [&b_r2[xi%3], &b_r2[(xi+1)%3], &b_r2[(xi+2)%3]];
-      sgrproj_box_f_r2(&ap0, &bp0, &mut f_r2, xi, 0, cdef_h as usize, &cdeffed);
-    } else {
-      sgrproj_box_f_r0(&mut f_r2, xi, 0, cdef_h as usize, &cdeffed);
-    }
-    if s_r1 > 0 {
-      let r_diff = max_r - 1;
-      let integral_image_offset = r_diff + r_diff * INTEGRAL_IMAGE_STRIDE;
-      sgrproj_box_ab_r1(&mut a_r1[(xi+2)%3], &mut b_r1[(xi+2)%3],
-                        &integral_image[integral_image_offset..],
-                        &sq_integral_image[integral_image_offset..],
-                        INTEGRAL_IMAGE_STRIDE,
-                        xi as isize + 2, cdef_h, s_r1, bdm8);
-      let ap1: [&[u32; 64+2]; 3] = [&a_r1[xi%3], &a_r1[(xi+1)%3], &a_r1[(xi+2)%3]];
-      let bp1: [&[u32; 64+2]; 3] = [&b_r1[xi%3], &b_r1[(xi+1)%3], &b_r1[(xi+2)%3]];
-      sgrproj_box_f_r1(&ap1, &bp1, &mut f_r1, xi, 0, cdef_h as usize, &cdeffed);
-    } else {
-      sgrproj_box_f_r0(&mut f_r1, xi, 0, cdef_h as usize, &cdeffed);
-    }
-
-    for yi in 0..cdef_h {
-      let u = i32::cast_from(cdeffed.p(xi,yi)) << SGRPROJ_RST_BITS;
-      let s = i32::cast_from(input.p(xi,yi)) << SGRPROJ_RST_BITS;
-      let f2 = f_r2[yi] as i32 - u;
-      let f1 = f_r1[yi] as i32 - u;
-      h[0][0] += f2 as f64 * f2 as f64;
-      h[1][1] += f1 as f64 * f1 as f64;
-      h[0][1] += f1 as f64 * f2 as f64;
-      c[0] += f2 as f64 * s as f64;
-      c[1] += f1 as f64 * s as f64;
-    }
-  }
-  */
-
   /* prime the intermediate arrays */
   if s_r2 > 0 {
     sgrproj_box_ab_r2_horz(&mut a_r2[0], &mut b_r2[0],
@@ -815,8 +745,8 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
       }
 
       for x in 0..cdef_w {
-        let u = i32::cast_from(cdeffed.p(y, x)) << SGRPROJ_RST_BITS;
-        let s = i32::cast_from(input.p(y,x)) << SGRPROJ_RST_BITS;
+        let u = i32::cast_from(cdeffed.p(x, y)) << SGRPROJ_RST_BITS;
+        let s = i32::cast_from(input.p(x,y)) << SGRPROJ_RST_BITS;
         let f2 = f_r2_ab[dy][x] as i32 - u;
         let f1 = f_r1[x] as i32 - u;
         h[0][0] += f2 as f64 * f2 as f64;
