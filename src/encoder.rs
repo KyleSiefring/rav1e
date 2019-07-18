@@ -316,6 +316,7 @@ pub struct FrameState<T: Pixel> {
   pub restoration: RestorationState,
   pub frame_mvs: Vec<FrameMotionVectors>,
   pub t: RDOTracker,
+  pub block_importances: Option<Arc<[f32]>>,
 }
 
 impl<T: Pixel> FrameState<T> {
@@ -351,7 +352,8 @@ impl<T: Pixel> FrameState<T> {
         }
         vec
       },
-      t: RDOTracker::new()
+      t: RDOTracker::new(),
+      block_importances: None
     }
   }
 

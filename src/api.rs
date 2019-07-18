@@ -1740,8 +1740,13 @@ impl<T: Pixel> ContextInner<T> {
           let fi = self.frame_invariants.get_mut(&cur_output_frameno).unwrap();
           fi.set_quantizers(&qps);
 
+          let block_importances: Arc<[f32]> =
+            self.block_importances.remove(&cur_output_frameno).unwrap().into();
+
           if self.rc_state.needs_trial_encode(fti) {
             let mut fs = FrameState::new_with_frame(fi, frame.clone());
+            fs.block_importances = Some(block_importances.clone());
+
             let data = encode_frame(fi, &mut fs);
             self.rc_state.update_state(
               (data.len() * 8) as i64,
@@ -1764,6 +1769,8 @@ impl<T: Pixel> ContextInner<T> {
 
           let fi = self.frame_invariants.get_mut(&cur_output_frameno).unwrap();
           let mut fs = FrameState::new_with_frame(fi, frame.clone());
+          fs.block_importances = Some(block_importances.clone());
+
           let data = encode_frame(fi, &mut fs);
           self.maybe_prev_log_base_q = Some(qps.log_base_q);
           // TODO: Add support for dropping frames.
