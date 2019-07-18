@@ -1626,7 +1626,10 @@ fn encode_partition_bottomup<T: Pixel, W: Writer>(
       let w: &mut W = if cw.bc.cdef_coded {w_post_cdef} else {w_pre_cdef};
       let tell = w.tell_frac();
       cw.write_partition(w, tile_bo, PartitionType::PARTITION_NONE, bsize);
-      compute_rd_cost(fi, w.tell_frac() - tell, 0)
+      let PlaneOffset { x, y } = ts.to_frame_block_offset(tile_bo).to_luma_plane_offset();
+      let rect = Rect { x, y, width: bsize.width(), height: bsize.height() };
+      compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, w.tell_frac() - tell, 0)
+      // compute_rd_cost(fi, w.tell_frac() - tell, 0)
     } else {
       0.0
     };
