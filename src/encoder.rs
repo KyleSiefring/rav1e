@@ -316,7 +316,6 @@ pub struct FrameState<T: Pixel> {
   pub restoration: RestorationState,
   pub frame_mvs: Vec<FrameMotionVectors>,
   pub t: RDOTracker,
-  pub block_importances: Option<Arc<[f32]>>,
 }
 
 impl<T: Pixel> FrameState<T> {
@@ -353,7 +352,6 @@ impl<T: Pixel> FrameState<T> {
         vec
       },
       t: RDOTracker::new(),
-      block_importances: None
     }
   }
 
@@ -492,6 +490,10 @@ pub struct FrameInvariants<T: Pixel> {
   /// The lookahead version of `rec_buffer`, used for storing and propagating
   /// the original reference frames (rather than reconstructed ones).
   pub lookahead_rec_buffer: ReferenceFramesSet<T>,
+  /// Future importance values for each 4×4 block. That is, a value indicating
+  /// how much future frames depend on the block (for example, via
+  /// inter-prediction).
+  pub block_importances: Box<[f32]>,
 }
 
 pub(crate) fn pos_to_lvl(pos: u64, pyramid_depth: u64) -> u64 {
@@ -640,6 +642,7 @@ impl<T: Pixel> FrameInvariants<T> {
         vec
       },
       lookahead_rec_buffer: ReferenceFramesSet::new(),
+      block_importances: vec![0.; w_in_b * h_in_b].into_boxed_slice(),
     }
   }
 
@@ -1628,7 +1631,7 @@ fn encode_partition_bottomup<T: Pixel, W: Writer>(
       cw.write_partition(w, tile_bo, PartitionType::PARTITION_NONE, bsize);
       let PlaneOffset { x, y } = ts.to_frame_block_offset(tile_bo).to_luma_plane_offset();
       let rect = Rect { x, y, width: bsize.width(), height: bsize.height() };
-      compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, w.tell_frac() - tell, 0)
+      compute_rd_cost_biased_by_importance(fi, rect, w.tell_frac() - tell, 0)
       // compute_rd_cost(fi, w.tell_frac() - tell, 0)
     } else {
       0.0

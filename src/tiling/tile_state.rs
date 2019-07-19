@@ -8,7 +8,6 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 use super::*;
-use std::convert::AsRef;
 
 use crate::context::*;
 use crate::encoder::*;
@@ -58,7 +57,6 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub restoration: TileRestorationStateMut<'a>,
   pub mvs: Vec<TileMotionVectorsMut<'a>>,
   pub rdo: RDOTracker,
-  pub block_importances: Option<&'a [f32]>,
 }
 
 impl<'a, T: Pixel> TileStateMut<'a, T> {
@@ -116,7 +114,6 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
         })
         .collect(),
       rdo: RDOTracker::new(),
-      block_importances: fs.block_importances.as_ref().map(AsRef::as_ref),
     }
   }
 

@@ -356,43 +356,38 @@ fn compute_tx_distortion<T: Pixel>(
 }
 
 pub fn compute_rd_cost_biased_by_importance<T: Pixel>(
-  fi: &FrameInvariants<T>, block_importances: Option<&[f32]>, rect: Rect,
-  rate: u32, distortion: u64
+  fi: &FrameInvariants<T>, rect: Rect, rate: u32, distortion: u64
 ) -> f64 {
-  if let Some(block_importances) = block_importances {
-    assert!(rect.x >= 0);
-    assert!(rect.y >= 0);
-    assert!(rect.x % 4 == 0);
-    assert!(rect.y % 4 == 0);
-    assert!(rect.width % 4 == 0);
-    assert!(rect.height % 4 == 0);
+  assert!(rect.x >= 0);
+  assert!(rect.y >= 0);
+  assert!(rect.x % 4 == 0);
+  assert!(rect.y % 4 == 0);
+  assert!(rect.width % 4 == 0);
+  assert!(rect.height % 4 == 0);
 
-    // eprintln!("{:?}", rect);
-    // eprintln!("{}×{}", fi.w_in_b, fi.h_in_b);
-    let x1 = rect.x as usize / 4;
-    let y1 = rect.y as usize / 4;
-    let x2 = (x1 + rect.height / 4).min(fi.w_in_b);
-    let y2 = (y1 + rect.height / 4).min(fi.h_in_b);
+  // eprintln!("{:?}", rect);
+  // eprintln!("{}×{}", fi.w_in_b, fi.h_in_b);
+  let x1 = rect.x as usize / 4;
+  let y1 = rect.y as usize / 4;
+  let x2 = (x1 + rect.height / 4).min(fi.w_in_b);
+  let y2 = (y1 + rect.height / 4).min(fi.h_in_b);
 
-    let mut mean_importance = 0.;
-    let mut count = 0;
-    for y in y1..y2 {
-      for x in x1..x2 {
-        mean_importance += block_importances[y * fi.w_in_b + x];
-        count += 1;
-      }
+  let mut mean_importance = 0.;
+  let mut count = 0;
+  for y in y1..y2 {
+    for x in x1..x2 {
+      mean_importance += fi.block_importances[y * fi.w_in_b + x];
+      count += 1;
     }
-    mean_importance /= count as f32;
-    // eprintln!("{}", mean_importance);
-
-    let mut bias = (mean_importance / 4.) as f64 + 0.8;
-    if !bias.is_finite() {
-      bias = 1.;
-    }
-    compute_rd_cost_biased(fi, rate, distortion, bias)
-  } else {
-    compute_rd_cost(fi, rate, distortion)
   }
+  mean_importance /= count as f32;
+  // eprintln!("{}", mean_importance);
+
+  let mut bias = (mean_importance / 4.) as f64 + 0.8;
+  if !bias.is_finite() {
+    bias = 1.;
+  }
+  compute_rd_cost_biased(fi, rate, distortion, bias)
 }
 
 pub fn compute_rd_cost_biased<T: Pixel>(fi: &FrameInvariants<T>, rate: u32, distortion: u64, bias: f64) -> f64 {
@@ -580,7 +575,7 @@ fn luma_chroma_mode_rdo<T: Pixel> (luma_mode: PredictionMode,
         };
         let PlaneOffset { x, y } = ts.to_frame_block_offset(tile_bo).to_luma_plane_offset();
         let rect = Rect { x, y, width: bsize.width(), height: bsize.height() };
-        let rd = compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, rate, distortion);
+        let rd = compute_rd_cost_biased_by_importance(fi, rect, rate, distortion);
         // let rd = compute_rd_cost(fi, rate, distortion);
         if rd < best.rd {
           //if rd < best.rd || luma_mode == PredictionMode::NEW_NEWMV {
@@ -922,7 +917,7 @@ pub fn rdo_mode_decision<T: Pixel>(
         );
       let PlaneOffset { x, y } = ts.to_frame_block_offset(tile_bo).to_luma_plane_offset();
       let rect = Rect { x, y, width: bsize.width(), height: bsize.height() };
-      let rd = compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, rate, distortion);
+      let rd = compute_rd_cost_biased_by_importance(fi, rect, rate, distortion);
       // let rd = compute_rd_cost(fi, rate, distortion);
       if rd < best.rd {
         best.rd = rd;
@@ -1090,7 +1085,7 @@ pub fn rdo_tx_type_decision<T: Pixel>(
     };
     let PlaneOffset { x, y } = ts.to_frame_block_offset(tile_bo).to_luma_plane_offset();
     let rect = Rect { x, y, width: bsize.width(), height: bsize.height() };
-    let rd = compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, rate, distortion);
+    let rd = compute_rd_cost_biased_by_importance(fi, rect, rate, distortion);
     // let rd = compute_rd_cost(fi, rate, distortion);
     if rd < best_rd {
       best_rd = rd;
@@ -1241,7 +1236,7 @@ pub fn rdo_partition_decision<T: Pixel, W: Writer>(
           cw.write_partition(w, tile_bo, partition, bsize);
           let PlaneOffset { x, y } = ts.to_frame_block_offset(tile_bo).to_luma_plane_offset();
           let rect = Rect { x, y, width: bsize.width(), height: bsize.height() };
-          cost = compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, w.tell_frac() - tell, 0);
+          cost = compute_rd_cost_biased_by_importance(fi, rect, w.tell_frac() - tell, 0);
           // cost = compute_rd_cost(fi, w.tell_frac() - tell, 0);
         }
         let mut rd_cost_sum = 0.0;
@@ -1403,7 +1398,7 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
                 };
                 let PlaneOffset { x, y } = ts.to_frame_super_block_offset(tile_sbo).plane_offset(&ts.input.planes[0].cfg);
                 let rect = Rect { x, y, width: (1 << SUPERBLOCK_TO_PLANE_SHIFT), height: (1 << SUPERBLOCK_TO_PLANE_SHIFT) };
-                cost[pli] = compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, rate, err);
+                cost[pli] = compute_rd_cost_biased_by_importance(fi, rect, rate, err);
                 // cost[pli] = compute_rd_cost(fi, rate, err);
                 cost_acc += cost[pli];
               }
@@ -1420,7 +1415,7 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
                 let rate = cw.count_lrf_switchable(w, &ts.restoration.as_const(), best_lrf[pli], pli);
                 let PlaneOffset { x, y } = ts.to_frame_super_block_offset(tile_sbo).plane_offset(&ts.input.planes[0].cfg);
                 let rect = Rect { x, y, width: (1 << SUPERBLOCK_TO_PLANE_SHIFT), height: (1 << SUPERBLOCK_TO_PLANE_SHIFT) };
-                cost[pli] = compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, rate, err);
+                cost[pli] = compute_rd_cost_biased_by_importance(fi, rect, rate, err);
                 // cost[pli] = compute_rd_cost(fi, rate, err);
                 cost_acc += cost[pli];
               }
@@ -1478,7 +1473,7 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
           let rate = cw.count_lrf_switchable(w, &ts.restoration.as_const(), current_lrf, pli);
           let PlaneOffset { x, y } = ts.to_frame_super_block_offset(tile_sbo).plane_offset(&ts.input.planes[0].cfg);
           let rect = Rect { x, y, width: (1 << SUPERBLOCK_TO_PLANE_SHIFT), height: (1 << SUPERBLOCK_TO_PLANE_SHIFT) };
-          let cost = compute_rd_cost_biased_by_importance(fi, ts.block_importances, rect, rate, err);
+          let cost = compute_rd_cost_biased_by_importance(fi, rect, rate, err);
           // let cost = compute_rd_cost(fi, rate, err);
           if best_cost[pli] < 0. || cost < best_cost[pli] {
             best_cost[pli] = cost;

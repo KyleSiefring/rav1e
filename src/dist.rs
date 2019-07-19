@@ -375,7 +375,7 @@ mod native {
         tx2d(buf);
 
         // Sum the absolute values of the transformed differences
-        sum += buf.iter().map(|a| a.abs() as u64).sum::<u64>();
+        sum += buf.iter().skip(1).map(|a| a.abs() as u64).sum::<u64>();
       }
     }
 

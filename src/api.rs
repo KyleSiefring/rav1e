@@ -704,11 +704,7 @@ pub(crate) struct ContextInner<T: Pixel> {
   /// The next `input_frameno` to be processed by lookahead.
   next_lookahead_frame: u64,
   /// The next `output_frameno` to be computed by lookahead.
-  next_lookahead_output_frameno: u64,
-  /// Maps `output_frameno` to an array of future importances for each 4×4
-  /// block. That is, a value indicating how much future frames depend on the
-  /// block (for example, via inter-prediction).
-  block_importances: BTreeMap<u64, Box<[f32]>>
+  next_lookahead_output_frameno: u64
 }
 
 pub struct Context<T: Pixel> {
@@ -912,8 +908,7 @@ impl<T: Pixel> ContextInner<T> {
       maybe_prev_log_base_q: None,
       first_pass_data: FirstPassData { frames: Vec::new() },
       next_lookahead_frame: 0,
-      next_lookahead_output_frameno: 0,
-      block_importances: BTreeMap::new()
+      next_lookahead_output_frameno: 0
     }
   }
 
@@ -1418,19 +1413,10 @@ impl<T: Pixel> ContextInner<T> {
       .map(|(&output_frameno, _)| output_frameno)
       .collect::<Vec<_>>();
 
-    for &output_frameno in output_framenos.iter() {
-      if let Some(importances) =
-        self.block_importances.get_mut(&output_frameno)
-      {
-        for x in importances.iter_mut() {
-          *x = 0.;
-        }
-      } else {
-        let fi = &self.frame_invariants[&output_frameno];
-        self.block_importances.insert(
-          output_frameno,
-          vec![0.; fi.w_in_b * fi.h_in_b].into_boxed_slice()
-        );
+    for output_frameno in output_framenos.iter() {
+      let fi = self.frame_invariants.get_mut(output_frameno).unwrap();
+      for x in fi.block_importances.iter_mut() {
+        *x = 0.;
       }
     }
 
@@ -1444,10 +1430,15 @@ impl<T: Pixel> ContextInner<T> {
       BLOCK_SIZE_IN_MV_UNITS * BLOCK_SIZE_IN_MV_UNITS;
 
     for &output_frameno in output_framenos.iter().skip(1).rev() {
-      let fi = &self.frame_invariants[&output_frameno];
+      // Remove fi from the map temporarily and put it back in in the end of
+      // the iteration. This is required because we need to mutably borrow
+      // referenced fis from the map, and that wouldn't be possible if this was
+      // an active borrow.
+      let fi = self.frame_invariants.remove(&output_frameno).unwrap();
 
       // TODO
       if fi.frame_type == FrameType::KEY {
+        self.frame_invariants.insert(output_frameno, fi);
         continue;
       }
 
@@ -1555,16 +1546,17 @@ impl<T: Pixel> ContextInner<T> {
               self.config.bit_depth
             ) as f32;
 
-            let future_importance =
-              self.block_importances[&output_frameno][y * fi.w_in_b + x];
+            let future_importance = fi.block_importances[y * fi.w_in_b + x];
 
             let propagate_fraction = (1. - inter_cost / intra_cost).max(0.);
             let propagate_amount = (intra_cost + future_importance)
               * propagate_fraction
               / unique_indices.len() as f32;
 
-            if let Some(reference_frame_block_importances) =
-              self.block_importances.get_mut(&reference_output_frameno)
+            if let Some(reference_frame_block_importances) = self
+              .frame_invariants
+              .get_mut(&reference_output_frameno)
+              .map(|fi| &mut fi.block_importances)
             {
               let mut propagate =
                 |block_x_in_mv_units, block_y_in_mv_units, fraction| {
@@ -1650,11 +1642,13 @@ impl<T: Pixel> ContextInner<T> {
           }
         }
       }
+
+      self.frame_invariants.insert(output_frameno, fi);
     }
 
     // Get the final block importance values for the current output frame.
     if !output_framenos.is_empty() {
-      let fi = &self.frame_invariants[&output_framenos[0]];
+      let fi = self.frame_invariants.get_mut(&output_framenos[0]).unwrap();
       let frame = self.frame_q[&fi.input_frameno].as_ref().unwrap();
 
       let mut plane_after_prediction = frame.planes[0].clone();
@@ -1719,15 +1713,13 @@ impl<T: Pixel> ContextInner<T> {
             self.config.bit_depth
           ) as f32;
 
-          let importance =
-            &mut self.block_importances.get_mut(&output_framenos[0]).unwrap()
-              [y * fi.w_in_b + x];
+          let importance = &mut fi.block_importances[y * fi.w_in_b + x];
           *importance = (1. + *importance / intra_cost).log2();
         }
       }
 
       if WRITE_DEBUG_FILES {
-        let data = &self.block_importances[&output_framenos[0]];
+        let data = &fi.block_importances;
         use byteorder::{NativeEndian, WriteBytesExt};
         let mut buf = vec![];
         buf.write_u64::<NativeEndian>(fi.h_in_b as u64).unwrap();
@@ -1738,11 +1730,8 @@ impl<T: Pixel> ContextInner<T> {
             buf.write_f32::<NativeEndian>(importance).unwrap();
           }
         }
-        ::std::fs::write(
-          format!("{}-imps.bin", fi.input_frameno),
-          buf
-        )
-        .unwrap();
+        ::std::fs::write(format!("{}-imps.bin", fi.input_frameno), buf)
+          .unwrap();
       }
     }
   }
@@ -1813,13 +1802,8 @@ impl<T: Pixel> ContextInner<T> {
           let fi = self.frame_invariants.get_mut(&cur_output_frameno).unwrap();
           fi.set_quantizers(&qps);
 
-          let block_importances: Arc<[f32]> =
-            self.block_importances.remove(&cur_output_frameno).unwrap().into();
-
           if self.rc_state.needs_trial_encode(fti) {
             let mut fs = FrameState::new_with_frame(fi, frame.clone());
-            fs.block_importances = Some(block_importances.clone());
-
             let data = encode_frame(fi, &mut fs);
             self.rc_state.update_state(
               (data.len() * 8) as i64,
@@ -1842,8 +1826,6 @@ impl<T: Pixel> ContextInner<T> {
 
           let fi = self.frame_invariants.get_mut(&cur_output_frameno).unwrap();
           let mut fs = FrameState::new_with_frame(fi, frame.clone());
-          fs.block_importances = Some(block_importances.clone());
-
           let data = encode_frame(fi, &mut fs);
           self.maybe_prev_log_base_q = Some(qps.log_base_q);
           // TODO: Add support for dropping frames.
@@ -1964,7 +1946,6 @@ impl<T: Pixel> ContextInner<T> {
       self.frame_invariants.remove(&i);
       self.gop_output_frameno_start.remove(&i);
       self.gop_input_frameno_start.remove(&i);
-      self.block_importances.remove(&i);
     }
   }
 
