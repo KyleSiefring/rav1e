@@ -478,12 +478,162 @@ fn sgrproj_box_f_r1<T: Pixel>(
   }*/
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn sgrproj_box_f_r2_avx2<T: Pixel>(
+  af: &[&[u32]; 2], bf: &[&[u32]; 2], f0: &mut[u32], f1: &mut[u32], x: usize,
+  y: usize, cdeffed: &PlaneSlice<T>
+) {
+  use std::mem;
+  #[cfg(target_arch = "x86")]
+  use std::arch::x86::*;
+  #[cfg(target_arch = "x86_64")]
+  use std::arch::x86_64::*;
+
+  let five = _mm256_set1_epi32(5);
+  let six = _mm256_set1_epi32(6);
+  let a0 = af[0].as_ptr();
+  let a2 = af[1].as_ptr();
+  let b0 = bf[0].as_ptr();
+  let b2 = bf[1].as_ptr();
+  let a = _mm256_add_epi32(
+    _mm256_madd_epi16(
+      _mm256_add_epi32(
+        _mm256_loadu_si256(a0.add(x) as *const _),
+        _mm256_loadu_si256(a0.add(x + 2) as *const _)
+      ),
+      five
+    ),
+    _mm256_madd_epi16(
+      _mm256_loadu_si256(a0.add(x + 1) as *const _),
+      six
+    )
+  );
+  let b = _mm256_add_epi32(
+    _mm256_mullo_epi32(
+      _mm256_add_epi32(
+        _mm256_loadu_si256(b0.add(x) as *const _),
+        _mm256_loadu_si256(b0.add(x + 2) as *const _)
+      ),
+      five
+    ),
+    _mm256_mullo_epi32(
+      _mm256_loadu_si256(b0.add(x + 1) as *const _),
+      six
+    )
+  );
+  let ao = _mm256_add_epi32(
+    _mm256_madd_epi16(
+      _mm256_add_epi32(
+        _mm256_loadu_si256(a2.add(x) as *const _),
+        _mm256_loadu_si256(a2.add(x + 2) as *const _)
+      ),
+      five
+    ),
+    _mm256_madd_epi16(
+      _mm256_loadu_si256(a2.add(x + 1) as *const _),
+      six
+    )
+  );
+  let bo = _mm256_add_epi32(
+    _mm256_mullo_epi32(
+      _mm256_add_epi32(
+        _mm256_loadu_si256(b2.add(x) as *const _),
+        _mm256_loadu_si256(b2.add(x + 2) as *const _)
+      ),
+      five
+    ),
+    _mm256_mullo_epi32(
+      _mm256_loadu_si256(b2.add(x + 1) as *const _),
+      six
+    )
+  );
+  let v = _mm256_add_epi32(
+    _mm256_madd_epi16(
+      _mm256_add_epi32(a, ao),
+      if mem::size_of::<T>() == 1 {
+        _mm256_cvtepu8_epi32(
+          _mm_loadl_epi64(cdeffed.subslice(x, y).as_ptr() as *const _)
+        )
+      } else {
+        _mm256_cvtepu16_epi32(
+          _mm_loadu_si128(cdeffed.subslice(x, y).as_ptr() as *const _)
+        )
+      }
+    ),
+    _mm256_add_epi32(b, bo)
+  );
+  let vo = _mm256_add_epi32(
+    _mm256_madd_epi16(
+      ao,
+      if mem::size_of::<T>() == 1 {
+        _mm256_cvtepu8_epi32(
+          _mm_loadl_epi64(cdeffed.subslice(x, y + 1).as_ptr() as *const _)
+        )
+      } else {
+        _mm256_cvtepu16_epi32(
+          _mm_loadu_si128(cdeffed.subslice(x, y + 1).as_ptr() as *const _)
+        )
+      }
+    ),
+    bo
+  );
+  const SHIFT: i32 = (5 + SGRPROJ_SGR_BITS - SGRPROJ_RST_BITS) as i32;
+  _mm256_storeu_si256(
+    f0.as_mut_ptr().add(x) as *mut _,
+    _mm256_srli_epi32(
+      _mm256_add_epi32(v, _mm256_set1_epi32(1 << SHIFT >> 1)),
+      SHIFT
+    )
+  );
+  const SHIFTO: i32 = (4 + SGRPROJ_SGR_BITS - SGRPROJ_RST_BITS) as i32;
+  _mm256_storeu_si256(
+    f1.as_mut_ptr().add(x) as *mut _,
+    _mm256_srli_epi32(
+      _mm256_add_epi32(vo, _mm256_set1_epi32(1 << SHIFTO >> 1)),
+      SHIFTO
+    )
+  );
+}
+
 fn sgrproj_box_f_r2<T: Pixel>(
   af: &[&[u32]; 2], bf: &[&[u32]; 2], f0: &mut[u32],
   f1: &mut[u32], y: usize, w: usize, cdeffed: &PlaneSlice<T>
 ) {
   let shift = 5 + SGRPROJ_SGR_BITS - SGRPROJ_RST_BITS;
   let shifto = 4 + SGRPROJ_SGR_BITS - SGRPROJ_RST_BITS;
+  for x in (0..w).step_by(8) {
+    if x + 8 < w {
+      #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+      {
+        if is_x86_feature_detected!("avx2") {
+          unsafe {
+            sgrproj_box_f_r2_avx2(af, bf, f0, f1, x, y, cdeffed);
+          }
+        }
+      }
+    } else {
+      for x in x..w {
+        let a =
+          5 * (af[0][x] + af[0][x+2]) +
+          6 * (af[0][x+1]);
+        let b =
+          5 * (bf[0][x] + bf[0][x+2]) +
+          6 * (bf[0][x+1]);
+        let ao =
+          5 * (af[1][x] + af[1][x+2]) +
+          6 * (af[1][x+1]);
+        let bo =
+          5 * (bf[1][x] + bf[1][x+2]) +
+          6 * (bf[1][x+1]);
+        let v = (a + ao) * u32::cast_from(cdeffed.p(x, y)) + b + bo;
+        f0[x] = (v + (1 << shift >> 1)) >> shift;
+        let vo = ao * u32::cast_from(cdeffed.p(x, y + 1)) + bo;
+        f1[x] = (vo + (1 << shifto >> 1)) >> shifto;
+      }
+    }
+  }
+  /*
   for x in 0..w {
     let a =
       5 * (af[0][x] + af[0][x+2]) +
@@ -502,6 +652,7 @@ fn sgrproj_box_f_r2<T: Pixel>(
     let vo = ao * u32::cast_from(cdeffed.p(x, y + 1)) + bo;
     f1[x] = (vo + (1 << shifto >> 1)) >> shifto;
   }
+  */
 }
 
 struct VertPaddedIter<'a, T: Pixel> {
