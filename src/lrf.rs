@@ -219,7 +219,7 @@ fn sgrproj_box_ab_r1(
   iimg_stride: usize, y: usize, stripe_w: usize, s: u32, bdm8: usize
 ) {
   for x in (0..stripe_w + 2).step_by(8) {
-    if x + 8 < stripe_w + 2 {
+    if x + 8 <= stripe_w + 2 {
       #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
       {
         if is_x86_feature_detected!("avx2") {
@@ -248,7 +248,7 @@ fn sgrproj_box_ab_r2(
   iimg_stride: usize, y: usize, stripe_w: usize, s: u32, bdm8: usize
 ) {
   for x in (0..stripe_w + 2).step_by(8) {
-    if x + 8 < stripe_w + 2 {
+    if x + 8 <= stripe_w + 2 {
       #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
       {
         if is_x86_feature_detected!("avx2") {
@@ -311,7 +311,7 @@ unsafe fn sgrproj_box_f_r0_avx2<T: Pixel>(
 
 fn sgrproj_box_f_r0<T: Pixel>(f: &mut[u32], y: usize, w: usize, cdeffed: &PlaneSlice<T>) {
   for x in (0..w).step_by(8) {
-    if x + 8 < w {
+    if x + 8 <= w {
       #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
       {
         if is_x86_feature_detected!("avx2") {
@@ -444,7 +444,7 @@ fn sgrproj_box_f_r1<T: Pixel>(
 ) {
   let shift = 5 + SGRPROJ_SGR_BITS - SGRPROJ_RST_BITS;
   for x in (0..w).step_by(8) {
-    if x + 8 < w {
+    if x + 8 <= w {
       #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
       {
         if is_x86_feature_detected!("avx2") {
@@ -603,7 +603,7 @@ fn sgrproj_box_f_r2<T: Pixel>(
   let shift = 5 + SGRPROJ_SGR_BITS - SGRPROJ_RST_BITS;
   let shifto = 4 + SGRPROJ_SGR_BITS - SGRPROJ_RST_BITS;
   for x in (0..w).step_by(8) {
-    if x + 8 < w {
+    if x + 8 <= w {
       #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
       {
         if is_x86_feature_detected!("avx2") {
