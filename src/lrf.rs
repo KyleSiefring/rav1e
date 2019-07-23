@@ -200,6 +200,21 @@ unsafe fn sgrproj_box_ab_r1_avx2(
   }
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn sgrproj_box_ab_r2_avx2(
+  af: &mut [u32], bf: &mut [u32], iimg: &[u32], iimg_sq: &[u32],
+  iimg_stride: usize, y: usize, stripe_w: usize, s: u32, bdm8: usize
+) {
+  for x in (0..stripe_w + 2).step_by(8) {
+    if x + 8 <= stripe_w + 2 {
+      sgrproj_box_ab_8_avx2(2, af, bf, iimg, iimg_sq, iimg_stride, x, y, s, bdm8);
+    } else {
+      sgrproj_box_ab_internal(2, af, bf, iimg, iimg_sq, iimg_stride, x, y, stripe_w, s, bdm8);
+    }
+  }
+}
+
 #[inline(always)]
 fn sgrproj_sum_finish(ssq: u32, sum: u32, n: u32, one_over_n: u32, s: u32, bdm8: usize) -> (u32, u32) {
   let scaled_ssq = (ssq + (1 << (2 * bdm8) >> 1)) >> (2 * bdm8);
@@ -229,6 +244,7 @@ fn get_integral_square(
     .wrapping_sub(iimg[y * stride + x + size])
 }
 
+#[inline(always)]
 fn sgrproj_box_ab_internal(
   r: usize, af: &mut [u32], bf: &mut [u32], iimg: &[u32], iimg_sq: &[u32],
   iimg_stride: usize, start_x: usize, y: usize, stripe_w: usize, s: u32, bdm8: usize
@@ -262,7 +278,6 @@ fn sgrproj_box_ab_r1(
     }
   }
   sgrproj_box_ab_internal(1, af, bf, iimg, iimg_sq, iimg_stride, 0, y, stripe_w, s, bdm8);
-
 }
 
 // computes an intermediate (ab) row for stripe_w + 2 columns at row y
@@ -270,39 +285,15 @@ fn sgrproj_box_ab_r2(
   af: &mut [u32], bf: &mut [u32], iimg: &[u32], iimg_sq: &[u32],
   iimg_stride: usize, y: usize, stripe_w: usize, s: u32, bdm8: usize
 ) {
-  for x in (0..stripe_w + 2).step_by(8) {
-    if x + 8 <= stripe_w + 2 {
-      #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-      {
-        if is_x86_feature_detected!("avx2") {
-          unsafe {
-            sgrproj_box_ab_8_avx2(2, af, bf, iimg, iimg_sq, iimg_stride, x, y, s, bdm8);
-          }
-        }
-      }
-    } else {
-      for x in x..stripe_w + 2 {
-        let sum =
-          get_integral_square(iimg, iimg_stride, x, y, 5);
-        let ssq =
-          get_integral_square(iimg_sq, iimg_stride, x, y, 5);
-        let (reta, retb) = sgrproj_sum_finish(ssq, sum, 25, 164, s, bdm8);
-        af[x] = reta;
-        bf[x] = retb;
-      }
+  #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+  {
+    if is_x86_feature_detected!("avx2") {
+      return unsafe {
+        sgrproj_box_ab_r2_avx2(af, bf, iimg, iimg_sq, iimg_stride, y, stripe_w, s, bdm8);
+      };
     }
   }
-  /*
-  for x in 0..stripe_w + 2 {
-    let sum =
-      get_integral_square(iimg, iimg_stride, x, y, 5);
-    let ssq =
-      get_integral_square(iimg_sq, iimg_stride, x, y, 5);
-    let (reta, retb) = sgrproj_sum_finish(ssq, sum, 25, 164, s, bdm8);
-    af[x] = reta;
-    bf[x] = retb;
-  }
-  */
+  sgrproj_box_ab_internal(2, af, bf, iimg, iimg_sq, iimg_stride, 0, y, stripe_w, s, bdm8);
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
