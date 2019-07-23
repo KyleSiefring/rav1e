@@ -1010,12 +1010,86 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
       let w0 = xqd[0] as i32;
       let w1 = xqd[1] as i32;
       let w2 = (1 << SGRPROJ_PRJ_BITS) - w0 - w1;
-
-      for x in 0..stripe_w {
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn sgrproj_final_avx2<T: Pixel>(
+  out: &mut PlaneMutSlice<T>, f_r2: &[u32], f_r1: &[u32], w0: i32, w1: i32, w2: i32, y: usize,
+  w: usize, cdeffed: &PlaneSlice<T>, bit_depth: usize
+) {
+  use std::mem;
+  #[cfg(target_arch = "x86")]
+  use std::arch::x86::*;
+  #[cfg(target_arch = "x86_64")]
+  use std::arch::x86_64::*;
+  for x in (0..w).step_by(8) {
+    if x + 8 <= w {
+      let w0 = _mm256_set1_epi32(w0);
+      let w1 = _mm256_set1_epi32(w1);
+      let w2 = _mm256_set1_epi32(w2);
+      let u = _mm256_slli_epi32(
+        if mem::size_of::<T>() == 1 {
+          _mm256_cvtepu8_epi32(
+            _mm_loadl_epi64(cdeffed.subslice(x, y).as_ptr() as *const _)
+          )
+        } else {
+          _mm256_cvtepu16_epi32(
+            _mm_loadu_si128(cdeffed.subslice(x, y).as_ptr() as *const _)
+          )
+        },
+        SGRPROJ_RST_BITS as i32
+      );
+      let v = _mm256_add_epi32(
+        _mm256_madd_epi16(
+          w0,
+          _mm256_loadu_si256(f_r2.as_ptr().add(x) as *const _)
+        ),
+        _mm256_add_epi32(
+          _mm256_madd_epi16(w1, u),
+          _mm256_madd_epi16(
+            w2,
+            _mm256_loadu_si256(f_r1.as_ptr().add(x) as *const _)
+          )
+        )
+      );
+      let s = _mm256_srli_epi32(
+        _mm256_add_epi32(
+          v,
+          _mm256_set1_epi32(1 << (SGRPROJ_RST_BITS + SGRPROJ_PRJ_BITS) as i32 >> 1)
+        ),
+        (SGRPROJ_RST_BITS + SGRPROJ_PRJ_BITS) as i32
+      );
+      let s = _mm_packus_epi32(
+        _mm256_castsi256_si128(s),
+        _mm256_extracti128_si256(s, 1)
+      );
+      if mem::size_of::<T>() == 1 {
+        let s = _mm_packus_epi16(s, s);
+        _mm_storel_epi64(out[y][x..].as_mut_ptr() as *mut _, s);
+      } else {
+        let s = _mm_min_epi16(s, _mm_set1_epi16((1 << bit_depth) - 1));
+        _mm_store_si128(out[y][x..].as_mut_ptr() as *mut _, s)
+      }
+    } else {
+      for x in x..w {
         let u = i32::cast_from(cdeffed.p(x, y)) << SGRPROJ_RST_BITS;
-        let v = w0 * f_r2_ab[dy][x] as i32 + w1 * u + w2 * f_r1[x] as i32;
+        let v = w0 * f_r2[x] as i32 + w1 * u + w2 * f_r1[x] as i32;
         let s = (v + (1 << (SGRPROJ_RST_BITS + SGRPROJ_PRJ_BITS) >> 1)) >> (SGRPROJ_RST_BITS + SGRPROJ_PRJ_BITS);
         out[y][x] = T::cast_from(clamp(s, 0, (1 << bit_depth) - 1));
+      }
+    }
+  }
+}
+      if is_x86_feature_detected!("avx2") {
+        unsafe {
+          sgrproj_final_avx2(out, f_r2_ab[dy], &f_r1, w0, w1, w2, y, stripe_w, cdeffed, bit_depth);
+        }
+      } else {
+        for x in 0..stripe_w {
+          let u = i32::cast_from(cdeffed.p(x, y)) << SGRPROJ_RST_BITS;
+          let v = w0 * f_r2_ab[dy][x] as i32 + w1 * u + w2 * f_r1[x] as i32;
+          let s = (v + (1 << (SGRPROJ_RST_BITS + SGRPROJ_PRJ_BITS) >> 1)) >> (SGRPROJ_RST_BITS + SGRPROJ_PRJ_BITS);
+          out[y][x] = T::cast_from(clamp(s, 0, (1 << bit_depth) - 1));
+        }
       }
     }
   }
@@ -1035,6 +1109,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
 
 // Input params follow the same rules as sgrproj_stripe_filter.
 // Inputs are relative to the colocated slice views.
+#[inline(never)]
 pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
                                input: &PlaneSlice<T>,
                                cdeffed: &PlaneSlice<T>,
@@ -1062,8 +1137,10 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
   let s_r2: u32 = SGRPROJ_PARAMS_S[set as usize][0];
   let s_r1: u32 = SGRPROJ_PARAMS_S[set as usize][1];
 
-  let mut h:[[f64; 2]; 2] = [[0.,0.],[0.,0.]];
-  let mut c:[f64; 2] = [0., 0.];
+  let mut h:[[i64; 2]; 2] = [[0,0],[0,0]];
+  let mut c:[i64; 2] = [0, 0];
+  //let mut h:[[f64; 2]; 2] = [[0.,0.],[0.,0.]];
+  //let mut c:[f64; 2] = [0., 0.];
 
   let max_r = if s_r2 > 0 { 2 } else if s_r1 > 0 { 1 } else { 0 };
   {
@@ -1158,15 +1235,17 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
         let s = i32::cast_from(input.p(x,y)) << SGRPROJ_RST_BITS;
         let f2 = f_r2_01[dy][x] as i32 - u;
         let f1 = f_r1[x] as i32 - u;
-        h[0][0] += f2 as f64 * f2 as f64;
-        h[1][1] += f1 as f64 * f1 as f64;
-        h[0][1] += f1 as f64 * f2 as f64;
-        c[0] += f2 as f64 * s as f64;
-        c[1] += f1 as f64 * s as f64;
+        h[0][0] += f2 as i64 * f2 as i64;
+        h[1][1] += f1 as i64 * f1 as i64;
+        h[0][1] += f1 as i64 * f2 as i64;
+        c[0] += f2 as i64 * s as i64;
+        c[1] += f1 as i64 * s as i64;
       }
     }
   }
 
+  let mut h:[[f64; 2]; 2] = [[h[0][0] as f64, h[0][1] as f64],[h[1][0] as f64, h[1][1] as f64]];
+  let mut c:[f64; 2] = [c[0] as f64, c[1] as f64];
   // this is lifted almost in-tact from libaom
   let n = cdef_w as f64 * cdef_h as f64;
   h[0][0] /= n;
