@@ -94,17 +94,6 @@ const X_BY_XPLUS1: [u32; 256] = [
   256,
 ];
 
-/*
-#[inline]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn sgrproj_sum_finish_avx2(
-  ssq: __, sum: u32, n: u32, one_over_n: u32, s: u32, bdm8: usize
-) -> (u32, u32) {
-
-}
-*/
-
 #[inline]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
@@ -168,7 +157,8 @@ unsafe fn sgrproj_box_ab_8_avx2(
   );
   let a = _mm256_i32gather_epi32(
     X_BY_XPLUS1.as_ptr() as * const _,
-    _mm256_min_epi32(z, _mm256_set1_epi32(255)), 4
+    _mm256_min_epi32(z, _mm256_set1_epi32(255)),
+    4
   );
   let b = _mm256_mullo_epi32(
     _mm256_madd_epi16(
@@ -1263,17 +1253,129 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
       } else {
         sgrproj_box_f_r0(&mut f_r1, y, cdef_w, &cdeffed);
       }
-
-      for x in 0..cdef_w {
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn sgrproj_final_avx2<T: Pixel>(
+  h: &mut [[i64; 2]; 2], c: &mut [i64; 2], f_r2: &[u32], f_r1: &[u32],
+  y: usize, w: usize, input: &PlaneSlice<T>, cdeffed: &PlaneSlice<T>
+) {
+  use std::mem;
+  #[cfg(target_arch = "x86")]
+  use std::arch::x86::*;
+  #[cfg(target_arch = "x86_64")]
+  use std::arch::x86_64::*;
+  let mut h00 = _mm256_setzero_si256();
+  let mut h11 = _mm256_setzero_si256();
+  let mut h01 = _mm256_setzero_si256();
+  let mut c0 = _mm256_setzero_si256();
+  let mut c1 = _mm256_setzero_si256();
+  for x in (0..w).step_by(8) {
+    if x + 8 <= w {
+      let u = _mm256_slli_epi32(
+        if mem::size_of::<T>() == 1 {
+          _mm256_cvtepu8_epi32(
+            _mm_loadl_epi64(cdeffed.subslice(x, y).as_ptr() as *const _)
+          )
+        } else {
+          _mm256_cvtepu16_epi32(
+            _mm_loadu_si128(cdeffed.subslice(x, y).as_ptr() as *const _)
+          )
+        },
+        SGRPROJ_RST_BITS as i32
+      );
+      let s = _mm256_slli_epi32(
+        if mem::size_of::<T>() == 1 {
+          _mm256_cvtepu8_epi32(
+            _mm_loadl_epi64(input.subslice(x, y).as_ptr() as *const _)
+          )
+        } else {
+          _mm256_cvtepu16_epi32(
+            _mm_loadu_si128(input.subslice(x, y).as_ptr() as *const _)
+          )
+        },
+        SGRPROJ_RST_BITS as i32
+      );
+      let f2 = _mm256_sub_epi32(
+        _mm256_loadu_si256(f_r2.as_ptr().add(x) as *const _),
+        u
+      );
+      let f1 = _mm256_sub_epi32(
+        _mm256_loadu_si256(f_r1.as_ptr().add(x) as *const _),
+        u
+      );
+      let f2_h = _mm256_bsrli_epi128(f2, 4);
+      let f1_h = _mm256_bsrli_epi128(f1, 4);
+      let s_h = _mm256_bsrli_epi128(s, 4);
+      h00 = _mm256_add_epi64(h00, _mm256_add_epi64(_mm256_mul_epi32(f2, f2), _mm256_mul_epi32(f2_h, f2_h)));
+      h11 = _mm256_add_epi64(h11, _mm256_add_epi64(_mm256_mul_epi32(f1, f1), _mm256_mul_epi32(f1_h, f1_h)));
+      h01 = _mm256_add_epi64(h01, _mm256_add_epi64(_mm256_mul_epi32(f1, f2), _mm256_mul_epi32(f1_h, f2_h)));
+      c0 = _mm256_add_epi64(c0, _mm256_add_epi64(_mm256_mul_epi32(f2, s), _mm256_mul_epi32(f2_h, s_h)));
+      c1 = _mm256_add_epi64(c1, _mm256_add_epi64(_mm256_mul_epi32(f1, s), _mm256_mul_epi32(f1_h, s_h)));
+    } else {
+      for x in x..w {
         let u = i32::cast_from(cdeffed.p(x, y)) << SGRPROJ_RST_BITS;
         let s = i32::cast_from(input.p(x,y)) << SGRPROJ_RST_BITS;
-        let f2 = f_r2_01[dy][x] as i32 - u;
+        let f2 = f_r2[x] as i32 - u;
         let f1 = f_r1[x] as i32 - u;
         h[0][0] += f2 as i64 * f2 as i64;
         h[1][1] += f1 as i64 * f1 as i64;
         h[0][1] += f1 as i64 * f2 as i64;
         c[0] += f2 as i64 * s as i64;
         c[1] += f1 as i64 * s as i64;
+      }
+    }
+  }
+  let mut h00 = _mm_add_epi64(
+    _mm256_castsi256_si128(h00),
+    _mm256_extracti128_si256(h00, 1)
+  );
+  h00 = _mm_add_epi64(h00,_mm_bsrli_si128(h00, 8));
+  h[0][0] += _mm_cvtsi128_si64(h00);
+
+  let mut h11 = _mm_add_epi64(
+    _mm256_castsi256_si128(h11),
+    _mm256_extracti128_si256(h11, 1)
+  );
+  h11 =  _mm_add_epi64(h11,_mm_bsrli_si128(h11, 8));
+  h[1][1] += _mm_cvtsi128_si64(h11);
+
+  let mut h01 = _mm_add_epi64(
+    _mm256_castsi256_si128(h01),
+    _mm256_extracti128_si256(h01, 1)
+  );
+  h01 = _mm_add_epi64(h01,_mm_bsrli_si128(h01, 8));
+  h[0][1] += _mm_cvtsi128_si64(h01);
+
+  let mut c0 = _mm_add_epi64(
+    _mm256_castsi256_si128(c0),
+    _mm256_extracti128_si256(c0, 1)
+  );
+  c0 = _mm_add_epi64(c0,_mm_bsrli_si128(c0, 8));
+  c[0] += _mm_cvtsi128_si64(c0);
+
+  let mut c1 = _mm_add_epi64(
+    _mm256_castsi256_si128(c1),
+    _mm256_extracti128_si256(c1, 1)
+  );
+  c1 = _mm_add_epi64(c1,_mm_bsrli_si128(c1, 8));
+  c[1] += _mm_cvtsi128_si64(c1);
+}
+      if is_x86_feature_detected!("avx2") {
+        unsafe {
+          sgrproj_final_avx2(&mut h, &mut c, f_r2_01[dy], &f_r1, y, cdef_w, input, cdeffed);
+        }
+      } else {
+        for x in 0..cdef_w {
+          let u = i32::cast_from(cdeffed.p(x, y)) << SGRPROJ_RST_BITS;
+          let s = i32::cast_from(input.p(x,y)) << SGRPROJ_RST_BITS;
+          let f2 = f_r2_01[dy][x] as i32 - u;
+          let f1 = f_r1[x] as i32 - u;
+          h[0][0] += f2 as i64 * f2 as i64;
+          h[1][1] += f1 as i64 * f1 as i64;
+          h[0][1] += f1 as i64 * f2 as i64;
+          c[0] += f2 as i64 * s as i64;
+          c[1] += f1 as i64 * s as i64;
+        }
       }
     }
   }
