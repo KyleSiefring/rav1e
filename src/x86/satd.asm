@@ -10,7 +10,6 @@ SECTION .text
 
 %define m(x) mangle(private_prefix %+ _ %+ x %+ SUFFIX)
 
-; TODO: provide registers in parameters
 ; Perform 4x4 hadamard transform on input with 2 rows per register.
 ; Rows 0 and 2 are in m0 and rows 1 and 3 are in m1.
 ; A second set of packed input can also be taken in m2 and m3.
@@ -18,18 +17,20 @@ SECTION .text
 %macro HADAMARD_4x4_PACKED 1
 %if %1 == 1
     %define tmp m2
-    ; 0->1, 1->2, 2->0
+    ; 2->0, 1->2, 0->2
     %define ROTATE SWAP 2, 1, 0
 %elif %1 == 2
     %define tmp m4
-    ; 0->1, 1->2, 2->3, 3->4, 4->0
+    ; 4->0, 3->2, 2->3, 1->2, 0->1
     %define ROTATE SWAP 4, 3, 2, 1, 0
 %endif
+    ; m0  d2 c2 b2 a2 d0 c0 b0 a0
+    ; m1  d3 c3 b3 a3 d1 c1 b1 a1
 
     ; Stage 1
-    ; 0, 2
+    ; m0  d2+d3 c2+c3 b2+b3 a2+a3 d0+d1 c0+c1 b0+b1 a0+a1
+    ; m1  d2-d3 c2-c3 b2-b3 a2-a3 d0-d1 c0-c1 b0-b1 a0-a1
     paddw              tmp, m0, m1
-    ; 1, 3
     psubw               m0, m1
 %if %1 == 2
     paddw               m1, m2, m3
@@ -38,8 +39,8 @@ SECTION .text
     ROTATE
 
     ; Stage 2
-    ; 0, 1, 0, 1, 0, 1, 0, 1
-    ; 2, 3, 2, 3, 2, 3, 2, 3
+    ; m0  d0-d1 d0+d1 c0-c1 c0+c1 b0-b1 b0+b1 a0-a1 a0+a1
+    ; m1  d2-d3 d2+d3 c2-c3 c2+c3 b2-b3 b2+b3 a2-a3 a2+a3
     punpcklwd          tmp, m0, m1
     punpckhwd           m0, m1
 %if %1 == 2
@@ -47,6 +48,11 @@ SECTION .text
     punpckhwd           m2, m3
 %endif
     ROTATE
+
+    ; m0  d0-d1+d2-d3 d0+d1+d2+d3 c0-c1+c2-c3 c0+c1+c2+c3
+    ;     b0-b1+b2-b3 b0+b1+b2+b3 a0-a1+a2-a3 a0+a1+a2+a3
+    ; m1  d0-d2-d2+d3 d0+d1-d2-d3 c0-c1-c2+c3 c0+c1-c2-c3
+    ;     b0-b1-b2+b3 b0+b1-b2-b3 a0-a1-a2-a3 a0+a1-a2-a3
     paddw              tmp, m0, m1
     psubw               m0, m1
 %if %1 == 2
@@ -55,18 +61,22 @@ SECTION .text
 %endif
     ROTATE
 
+    ; m0  s2 s0 r2 r0 q2 q0 p2 p0
+    ; m1  s3 s1 r3 r1 q3 q1 p3 p1
+
     ; Stage 1
-    ; 0,    2,    0,    2
-    ; 0, 1, 0, 1, 2, 3, 2, 3
-    ; 1,    3,    1,    3
-    ; 0, 1, 0, 1, 2, 3, 2, 3
-    shufps             tmp, m0, m1, q2020
-    shufps              m0, m1, q3131
+    ; m0  q3 q1 q2 q0 p3 p1 p2 p0
+    ; m1  s3 s1 s2 s0 r3 r1 r2 r0
+    punpckldq          tmp, m0, m1
+    punpckhdq           m0, m1
 %if %1 == 2
-    shufps              m1, m2, m3, q2020
-    shufps              m2, m3, q3131
+    punpckldq           m1, m2, m3
+    punpckhdq           m2, m3
 %endif
     ROTATE
+
+    ; m0  q3+s3 q1+s1 q2+s2 q0+s0 p3+r3 p1+r1 p2+r2 p0+r0
+    ; m1  q3-s3 q1-s1 q2-s2 q0-s0 p3-r3 p1-r1 p2-r2 p0-r0
     paddw              tmp, m0, m1
     psubw               m0, m1
 %if %1 == 2
@@ -76,33 +86,37 @@ SECTION .text
     ROTATE
 
     ; Stage 2
-    ; Utilize the equality (abs(a+b)+abs(a-b))/2 = max(abs(a),abs(b)) to merge
-    ;  the final butterfly stage, calculation of absolute values, and the
-    ;  first stage of accumulation.
-    ; Reduces the shift in the normalization step by one.
-    pabsw               m0, m0
-    pabsw               m1, m1
-
-    ; Reduce horizontally early instead of fully transposing
-    ; 2, X, 2, X
-    pshufd             tmp, m0, q3311
-    pmaxsw              m0, tmp
-    ; 3, X, 3, X
-    pshufd             tmp, m1, q3311
-    pmaxsw              m1, tmp
-
-    paddw               m0, m1
+    ; m0  p3-r3 p1-r1 p2-r2 p0-r0 p3+r3 p1+r1 p2+r2 p0+r0
+    ; m1  q3-s3 q1-s1 q2-s2 q0-s0 q3+s3 q1+s1 q2+s2 q0+s0
+    punpcklqdq         tmp, m0, m1
+    punpckhqdq          m0, m1
 %if %1 == 2
-    pabsw               m2, m2
-    pabsw               m3, m3
+    punpcklqdq          m1, m2, m3
+    punpckhqdq          m2, m3
+%endif
+    ROTATE
 
-    pshufd             tmp, m2, q3311
-    pmaxsw              m2, tmp
+    ; Use the fact that
+    ;   (abs(a+b)+abs(a-b))/2 = max(abs(a),abs(b))
+    ;  to merge the final butterfly with the abs and the first stage of
+    ;  accumulation.
+    ; Avoid pabsw by using max(a, b) + max(a + b + 0x7FFF, 0x7FFF) instead.
+    ; Actually calculates (abs(a+b)+abs(a-b))/2-0x7FFF.
+    ; The final sum must be offset to compensate for subtracting 0x7FFF.
+    paddw              tmp, m0, m1
+    pmaxsw              m0, m1
+    ; m1 is free
+    ; 0x7FFF
+    pcmpeqb             m1, m1
+    psrlw               m1, 1
 
-    pshufd             tmp, m3, q3311
-    pmaxsw              m3, tmp
-
-    paddw               m2, m3
+    paddsw             tmp, m1
+    psubw               m0, tmp
+%if %1 == 2
+    paddw              tmp, m2, m3
+    pmaxsw              m2, m3
+    paddsw             tmp, m1
+    psubw               m2, tmp
 
     paddw               m0, m2
 %endif
@@ -139,7 +153,9 @@ cglobal satd_4x4, 4, 6, 4, src, src_stride, dst, dst_stride, \
     HADAMARD_4x4_PACKED 1
 
     ; Reduce horizontally
-    movhlps             m1, m0
+    pshufd              m1, m0, q3232
+    paddw               m0, m1
+    pshuflw             m1, m0, q3232
     paddw               m0, m1
     pshuflw             m1, m0, q1111
 
@@ -147,6 +163,11 @@ cglobal satd_4x4, 4, 6, 4, src, src_stride, dst, dst_stride, \
     pavgw               m0, m1
     movd               eax, m0
     movzx              eax, ax
+
+    ; Add an offset for how the final butterfly stage and the first stage of
+    ;  accumulation was done. Since this offset is an even number, this can
+    ;  safely be done after normalization using pavgw.
+    sub                 ax, 4
     RET
 %endmacro
 
@@ -157,7 +178,7 @@ INIT_XMM avx2
 SATD_4x4_FN
 
 ; Load diffs of 8 entries for 2 row
-; Each set of 4 columns share a lane
+; Each set of 4 columns share an 128-bit lane
 %macro LOAD_PACK_DIFF_Qx2 7
     movq              xm%1, %2
     movq              xm%6, %4
@@ -176,7 +197,7 @@ cglobal satd_8x4, 4, 6, 4, src, src_stride, dst, dst_stride, \
     lea       src_stride3q, [src_strideq*3]
     lea       dst_stride3q, [dst_strideq*3]
     ; Load rows 0 and 2 to m0 and 1 and 3 to m1
-    ; Each set of 4 columns share lanes
+    ; Each set of 4 columns share 128-bit lanes
     LOAD_PACK_DIFF_Qx2 0, [srcq], [dstq], \
                           [srcq+src_strideq*2], [dstq+dst_strideq*2], \
                        2, 3
@@ -189,7 +210,9 @@ cglobal satd_8x4, 4, 6, 4, src, src_stride, dst, dst_stride, \
     ; Reduce horizontally
     vextracti128       xm1, m0, 1
     paddw              xm0, xm1
-    movhlps            xm1, xm0
+    pshufd             xm1, xm0, q3232
+    paddw              xm0, xm1
+    pshuflw            xm1, xm0, q3232
     paddw              xm0, xm1
     pshuflw            xm1, xm0, q1111
 
@@ -197,10 +220,15 @@ cglobal satd_8x4, 4, 6, 4, src, src_stride, dst, dst_stride, \
     pavgw              xm0, xm1
     movd               eax, xm0
     movzx              eax, ax
+
+    ; Add an offset for how the final butterfly stage and the first stage of
+    ;  accumulation was done. Since this offset is an even number, this can
+    ;  safely be done after normalization using pavgw.
+    sub                 ax, 8
     RET
 
 ; Load diffs of 4 entries for 4 rows
-; Each set of two rows share lanes
+; Each set of two rows share 128-bit lanes
 %macro LOAD_PACK_DIFF_Dx4 12
     movd              xm%1, %2
     movd             xm%10, %4
@@ -246,7 +274,9 @@ cglobal satd_4x8, 4, 8, 5, src, src_stride, dst, dst_stride, \
     ; Reduce horizontally
     vextracti128       xm1, m0, 1
     paddw              xm0, xm1
-    movhlps            xm1, xm0
+    pshufd             xm1, xm0, q3232
+    paddw              xm0, xm1
+    pshuflw            xm1, xm0, q3232
     paddw              xm0, xm1
     pshuflw            xm1, xm0, q1111
 
@@ -254,21 +284,23 @@ cglobal satd_4x8, 4, 8, 5, src, src_stride, dst, dst_stride, \
     pavgw              xm0, xm1
     movd               eax, xm0
     movzx              eax, ax
+    sub                 ax, 8
     RET
 
-; Rudimentary hadamard transform
-; Two Hadamard transforms share a lane.
+; Rudimentary fast hadamard transform
+; Two Hadamard transforms share an 128-bit lane.
 %macro HADAMARD_4x4 0
+    ; 4->0, 3->2, 2->3, 1->2, 0->1
     %define ROTATE SWAP 4, 3, 2, 1, 0
 
-    ; stage 1
+    ; Stage 1
     paddw               m0, m1, m2
     psubw               m1, m2
     paddw               m2, m3, m4
     psubw               m3, m4
     ROTATE
 
-    ; stage 2
+    ; Stage 2
     paddw               m0, m1, m3
     psubw               m1, m3
     paddw               m3, m2, m4
@@ -277,52 +309,77 @@ cglobal satd_4x8, 4, 8, 5, src, src_stride, dst, dst_stride, \
     ROTATE
 
     ; Transpose
-    ; Since two transforms share a lane, unpacking results in a single
+    ; Since two transforms share an 128-bit lane, unpacking results in a single
     ;  transform's values on each register. This has to be resolved later.
-    ; A (0, 1)
+    ; A and B indicate different 4x4 transforms.
+
+    ; Start
+    ; m1  B (a3 a2 a1 a0) A (a3 a2 a1 a0)
+    ; m2  B (b3 b2 b1 b0) A (b3 b2 b1 b0)
+    ; m3  B (c3 c2 c1 c0) A (c3 c2 c1 c0)
+    ; m4  B (d3 d2 d1 d0) A (d3 d2 d1 d0)
+
+    ; Stage 1
+    ; m1  A (b3 a3 b2 a2 b1 a1 b0 a0)
+    ; m2  B (b3 a3 b2 a2 b1 a1 b0 a0)
+    ; m3  A (d3 c3 d2 c2 d1 c1 d0 c0)
+    ; m4  B (d3 c3 d2 c2 d1 c1 d0 c0)
     punpcklwd           m0, m1, m2
-    ; B (0, 1)
     punpckhwd           m1, m2
-    ; A (2, 3)
     punpcklwd           m2, m3, m4
-    ; B (2, 3)
     punpckhwd           m3, m4
     ROTATE
 
-    ; A (0, 1, 2, 3)
+    ; m1  A (d3 c3 b3 a3 d2 c2 b2 a2)
+    ; m2  A (d1 c1 b1 a1 d0 c0 b0 a0)
+    ; m3  B (d3 c3 b3 a3 d2 c2 b2 a2)
+    ; m4  B (d1 c1 b1 a1 d0 c0 b0 a0)
     punpckldq           m0, m1, m3
     punpckhdq           m1, m3
-    ; B (0, 1, 2, 3)
     punpckldq           m3, m2, m4
     punpckhdq           m2, m4
     SWAP                3, 2, 1
     ROTATE
 
-    ; Make the transform share lanes again.
-    ; A (0, 1, 2, 3) B (0, 1, 2, 3)
+    ; Make the transforms share 128-bit lanes again.
+    ; m1  B (d0 c0 b0 a0) A (d0 c0 b0 a0)
+    ; m2  B (d1 c1 b1 a1) A (d1 c1 b1 a1)
+    ; m3  B (d2 c2 b2 a2) A (d2 c2 b2 a2)
+    ; m4  B (d3 c3 b3 a3) A (d3 c3 b3 a3)
     punpcklqdq          m0, m1, m2
     punpckhqdq          m1, m2
     punpcklqdq          m2, m3, m4
     punpckhqdq          m3, m4
     ROTATE
 
-    ; stage 1
+    ; Stage 1
     paddw               m0, m1, m2
     psubw               m1, m2
     paddw               m2, m3, m4
     psubw               m3, m4
     ROTATE
 
-    ; Utilize the equality (abs(a+b)+abs(a-b))/2 = max(abs(a),abs(b)) to merge
-    ;  the final butterfly stage, calculation of absolute values, and the
-    ;  first stage of accumulation.
-    ; Reduces the shift in the normalization step by one.
-    pabsw               m1, m1
-    pabsw               m3, m3
+    ; Use the fact that
+    ;   (abs(a+b)+abs(a-b))/2 = max(abs(a),abs(b))
+    ;  to merge the final butterfly with the abs and the first stage of
+    ;  accumulation.
+    ; Avoid pabsw by using max(a, b) + max(a + b + 0x7FFF, 0x7FFF) instead.
+    ; Actually calculates (abs(a+b)+abs(a-b))/2-0x7FFF.
+    ; The final sum must be offset to compensate for subtracting 0x7FFF.
+    paddw               m0, m1, m3
     pmaxsw              m1, m3
-    pabsw               m2, m2
-    pabsw               m4, m4
+    ; m2 is free
+    ; 0x7FFF
+    pcmpeqb             m3, m3
+    psrlw               m3, 1
+
+    paddsw              m0, m3
+    psubw               m1, m0
+
+    paddw               m0, m2, m4
     pmaxsw              m2, m4
+    paddsw              m0, m3
+    psubw               m2, m0
 
     paddw               m1, m2
     SWAP                1, 0
@@ -332,9 +389,9 @@ cglobal satd_4x8, 4, 8, 5, src, src_stride, dst, dst_stride, \
 %macro LOAD_DIFF_DQ 4
     movu              xm%1, %2
     movu              xm%4, %3
-    vpmovzxbw         m%1, xm%1,
-    vpmovzxbw         m%4, xm%4,
-    psubw             m%1, m%4
+    vpmovzxbw          m%1, xm%1
+    vpmovzxbw          m%4, xm%4
+    psubw              m%1, m%4
 %endmacro
 
 INIT_YMM avx2
@@ -352,9 +409,9 @@ cglobal satd_16x4, 4, 6, 5, src, src_stride, dst, dst_stride, \
     ; Reduce horizontally
     vextracti128       xm1, m0, 1
     paddw              xm0, xm1
-    movhlps            xm1, xm0
+    pshufd             xm1, xm0, q3232
     paddw              xm0, xm1
-    pshufd             xm1, xm0, q1111
+    pshuflw            xm1, xm0, q3232
     paddw              xm0, xm1
     pshuflw            xm1, xm0, q1111
 
@@ -363,6 +420,11 @@ cglobal satd_16x4, 4, 6, 5, src, src_stride, dst, dst_stride, \
     pavgw              xm0, xm1
     movd               eax, xm0
     movzx              eax, ax
+
+    ; Add an offset for how the final butterfly stage and the first stage of
+    ;  accumulation was done. Since this offset is an even number, this can
+    ;  safely be done after normalization using pavgw.
+    sub                 ax, 16
     RET
 
 INIT_YMM avx2
@@ -401,7 +463,9 @@ cglobal satd_4x16, 4, 8, 7, src, src_stride, dst, dst_stride, \
     ; Reduce horizontally
     vextracti128       xm1, m0, 1
     paddw              xm0, xm1
-    movhlps            xm1, xm0
+    pshufd             xm1, xm0, q3232
+    paddw              xm0, xm1
+    pshuflw            xm1, xm0, q3232
     paddw              xm0, xm1
     pshuflw            xm1, xm0, q1111
 
@@ -409,7 +473,54 @@ cglobal satd_4x16, 4, 8, 7, src, src_stride, dst, dst_stride, \
     pavgw              xm0, xm1
     movd               eax, xm0
     movzx              eax, ax
+
+    ; Add an offset for how the final butterfly stage and the first stage of
+    ;  accumulation was done. Since this offset is an even number, this can
+    ;  safely be done after normalization using pavgw.
+    sub                 ax, 16
     RET
+
+; On x86-64 we can transpose in-place without spilling registers.
+; By clever choices of the order to apply the butterflies and the order of
+;  their outputs, we can take the rows in order and output the columns in order
+;  without any extra operations and using just one temporary register.
+%macro TRANSPOSE8x8 9
+    punpckhwd           m%9, m%5, m%6
+    punpcklwd           m%5, m%6
+    ; m%6 is free
+    punpckhwd           m%6, m%1, m%2
+    punpcklwd           m%1, m%2
+    ; m%2 is free
+    punpckhwd           m%2, m%7, m%8
+    punpcklwd           m%7, m%8
+    ; m%8 is free
+    punpckhwd           m%8, m%3, m%4
+    punpcklwd           m%3, m%4
+    ; m%4 is free
+    punpckhdq           m%4, m%1, m%3
+    punpckldq           m%1, m%3
+    ; m%3 is free
+    punpckldq           m%3, m%5, m%7
+    punpckhdq           m%5, m%7
+    ; m%7 is free
+    punpckhdq           m%7, m%6, m%8
+    punpckldq           m%6, m%8
+    ; m%8 is free
+    punpckldq           m%8, m%9, m%2
+    punpckhdq           m%9, m%2
+    ; m%2 is free
+    punpckhqdq          m%2, m%1, m%3
+    punpcklqdq          m%1, m%3
+    ; m%3 is free
+    punpcklqdq          m%3, m%4, m%5
+    punpckhqdq          m%4, m%5
+    ; m%5 is free
+    punpcklqdq          m%5, m%6, m%8
+    punpckhqdq          m%6, m%8
+    ; m%8 is free
+    punpckhqdq          m%8, m%7, m%9
+    punpcklqdq          m%7, m%9
+%endmacro
 
 ; Load diff of 8 entries for 1 row
 %macro LOAD_DIFF_Q 4
@@ -428,7 +539,7 @@ cglobal satd_4x16, 4, 8, 7, src, src_stride, dst, dst_stride, \
     psubw              m%5, m%6
     paddw              m%6, m%7, m%8
     psubw              m%7, m%8
-    ; 9->8, 1->9, 2->1, 3->2, 4->3, 5->4, 6->5, 7->6, 8->7
+    ; 8->9, 7->8, 6->7, 5->6, 4->5, 3->4, 2->3, 1->2, 9->1
     SWAP                %8, %7, %6, %5, %4, %3, %2, %1, %9
 %endmacro
 
@@ -443,93 +554,67 @@ cglobal satd_4x16, 4, 8, 7, src, src_stride, dst, dst_stride, \
     paddw              m%7, m%6, m%8 ; 5
     psubw              m%6, m%8      ; 7
     SWAP                %7, %6, %5
-    ; 9->8, 1->9, 2->1, 3->2, 4->3, 5->4, 6->5, 7->6, 8->7
+    ; 8->9, 7->8, 6->7, 5->6, 4->5, 3->4, 2->3, 1->2, 9->1
     SWAP                %8, %7, %6, %5, %4, %3, %2, %1, %9
 %endmacro
 
-; TODO: provide registers in parameters
-; Rudimentary hadamard transform
+%macro HADAMARD_8_STAGE_3 9
+    paddw              m%9, m%1, m%5 ; 0
+    psubw              m%1, m%5      ; 4
+    paddw              m%5, m%2, m%6 ; 1
+    psubw              m%2, m%6      ; 5
+    paddw              m%6, m%3, m%7 ; 2
+    psubw              m%3, m%7      ; 6
+    paddw              m%7, m%4, m%8 ; 3
+    psubw              m%4, m%8      ; 7
+    SWAP                %5, %2, %6, %3, %7, %4, %1
+    ; 8->9, 7->8, 6->7, 5->6, 4->5, 3->4, 2->3, 1->2, 9->1
+    SWAP                %8, %7, %6, %5, %4, %3, %2, %1, %9
+%endmacro
+
+; Rudimentary fast hadamard transform
 %macro HADAMARD_8x8 0
     HADAMARD_8_STAGE_1 1, 2, 3, 4, 5, 6, 7, 8, 0
     HADAMARD_8_STAGE_2 1, 2, 3, 4, 5, 6, 7, 8, 0
+    HADAMARD_8_STAGE_3 1, 2, 3, 4, 5, 6, 7, 8, 0
 
-    ; Stage 3
-    paddw               m0, m1, m5 ; 0
-    psubw               m1, m5     ; 4
-    paddw               m5, m2, m6 ; 1
-    psubw               m2, m6     ; 5
-    paddw               m6, m3, m7 ; 2
-    psubw               m3, m7     ; 6
-    paddw               m7, m4, m8 ; 3
-    psubw               m4, m8     ; 7
-    SWAP                5, 2, 6, 3, 7, 4, 1
-    ; 0->8, 1->0, 2->1, 3->2, 4->3, 5->4, 6->5, 7->6, 8->7
-    SWAP                8, 7, 6, 5, 4, 3, 2, 1, 0
-
-    ; transpose
-    ; 0, 1
-    punpcklwd           m0, m1, m2
-    punpckhwd           m1, m2
-    ; 2, 3
-    punpcklwd           m2, m3, m4
-    punpckhwd           m3, m4
-    ; 4, 5
-    punpcklwd           m4, m5, m6
-    punpckhwd           m5, m6
-    ; 6, 7
-    punpcklwd           m6, m7, m8
-    punpckhwd           m7, m8
-    ; 0->8, 1->0, 2->1, 3->2, 4->3, 5->4, 6->5, 7->6, 8->7
-    SWAP                8, 7, 6, 5, 4, 3, 2, 1, 0
-
-    ; 0, 1, 2, 3
-    punpckldq           m0, m1, m3
-    punpckhdq           m1, m3
-    punpckldq           m3, m2, m4
-    punpckhdq           m2, m4
-    SWAP                3, 2, 1
-    ; 4, 5, 6, 7
-    punpckldq           m4, m5, m7 ; 4
-    punpckhdq           m5, m7     ; 6
-    punpckldq           m7, m6, m8 ; 5
-    punpckhdq           m6, m8     ; 7
-    SWAP                7, 6, 5
-    ; 0->8, 1->0, 2->1, 3->2, 4->3, 5->4, 6->5, 7->6, 8->7
-    SWAP                8, 7, 6, 5, 4, 3, 2, 1, 0
-
-    ; 0, 1, 2, 3, 4, 5, 6, 7
-    punpcklqdq          m0, m1, m5 ; 0
-    punpckhqdq          m1, m5     ; 4
-    punpcklqdq          m5, m2, m6 ; 1
-    punpckhqdq          m2, m6     ; 5
-    punpcklqdq          m6, m3, m7 ; 2
-    punpckhqdq          m3, m7     ; 6
-    punpcklqdq          m7, m4, m8 ; 3
-    punpckhqdq          m4, m8     ; 7
-    SWAP                5, 2, 6, 3, 7, 4, 1
-    ; 0->8, 1->0, 2->1, 3->2, 4->3, 5->4, 6->5, 7->6, 8->7
-    SWAP                8, 7, 6, 5, 4, 3, 2, 1, 0
+    TRANSPOSE8x8 1, 2, 3, 4, 5, 6, 7, 8, 0
 
     HADAMARD_8_STAGE_1 1, 2, 3, 4, 5, 6, 7, 8, 0
     HADAMARD_8_STAGE_2 1, 2, 3, 4, 5, 6, 7, 8, 0
 
     ; Stage 3
-    ; Utilize the equality (abs(a+b)+abs(a-b))/2 = max(abs(a),abs(b)) to merge
-    ;  the final butterfly stage, calculation of absolute values, and the
-    ;  first stage of accumulation.
-    ; Reduces the shift in the normalization step by one.
-    pabsw               m1, m1
-    pabsw               m5, m5
+    ; Use the fact that
+    ;   (abs(a+b)+abs(a-b))/2 = max(abs(a),abs(b))
+    ;  to merge the final butterfly with the abs and the first stage of
+    ;  accumulation.
+    ; Avoid pabsw by using max(a, b) + max(a + b + 0x7FFF, 0x7FFF) instead.
+    ; Actually calculates (abs(a+b)+abs(a-b))/2-0x7FFF.
+    ; The final sum must be offset to compensate for subtracting 0x7FFF.
+    paddw               m0, m1, m5
     pmaxsw              m1, m5
-    pabsw               m2, m2
-    pabsw               m6, m6
+    ; m1 is free
+    ; 0x7FFF
+    pcmpeqb             m5, m5
+    psrlw               m5, 1
+
+    paddsw              m0, m5
+    psubw               m1, m0
+
+    paddw               m0, m2, m6
     pmaxsw              m2, m6
-    pabsw               m3, m3
-    pabsw               m7, m7
+    paddsw              m0, m5
+    psubw               m2, m0
+
+    paddw               m0, m3, m7
     pmaxsw              m3, m7
-    pabsw               m4, m4
-    pabsw               m8, m8
+    paddsw              m0, m5
+    psubw               m3, m0
+
+    paddw               m0, m4, m8
     pmaxsw              m4, m8
+    paddsw              m0, m5
+    psubw               m4, m0
 
     paddw               m1, m2
     paddw               m3, m4
@@ -566,12 +651,16 @@ cglobal satd_8x8, 4, 6, 9, src, src_stride, dst, dst_stride, \
     punpckhwd           m0, m2
     paddd               m0, m1
 
-    movhlps             m1, m0
+    pshufd              m1, m0, q3232
     paddd               m0, m1
-    pshufd              m1, m0, q1111
+    pshuflw             m1, m0, q3232
     paddd               m0, m1
     movd               eax, m0
-    add                eax, 2
+
+    ; Normalize
+    ; Add rounding offset and an offset for how the final butterfly stage and
+    ;  the first stage of accumulation was done.
+    sub                eax, 32-2
     shr                eax, 2
     RET
 %endmacro
@@ -609,12 +698,16 @@ cglobal satd_16x8, 4, 6, 9, src, src_stride, dst, dst_stride, \
 
     vextracti128       xm1, m0, 1
     paddd              xm0, xm1
-    movhlps            xm1, xm0
+    pshufd             xm1, xm0, q3232
     paddd              xm0, xm1
-    pshufd             xm1, xm0, q1111
+    pshuflw            xm1, xm0, q3232
     paddd              xm0, xm1
     movd               eax, xm0
-    add                eax, 2
+
+    ; Normalize
+    ; Add rounding offset and an offset for how the final butterfly stage and
+    ;  the first stage of accumulation was done.
+    sub                eax, 64-2
     shr                eax, 2
     RET
 
@@ -678,12 +771,16 @@ cglobal satd_8x16, 4, 8, 11, src, src_stride, dst, dst_stride, \
 
     vextracti128       xm1, m0, 1
     paddd              xm0, xm1
-    movhlps            xm1, xm0
+    pshufd             xm1, xm0, q3232
     paddd              xm0, xm1
-    pshufd             xm1, xm0, q1111
+    pshuflw            xm1, xm0, q3232
     paddd              xm0, xm1
     movd               eax, xm0
-    add                eax, 2
+
+    ; Normalize
+    ; Add rounding offset and an offset for how the final butterfly stage and
+    ;  the first stage of accumulation was done.
+    sub                eax, 64-2
     shr                eax, 2
     RET
 
@@ -750,12 +847,16 @@ cglobal satd_8x32, 4, 8, 13, src, src_stride, dst, dst_stride, \
 
     vextracti128       xm0, m12, 1
     paddd              xm0, xm12
-    movhlps            xm1, xm0
+    pshufd             xm1, xm0, q3232
     paddd              xm0, xm1
-    pshufd             xm1, xm0, q1111
+    pshuflw            xm1, xm0, q3232
     paddd              xm0, xm1
     movd               eax, xm0
-    add                eax, 2
+
+    ; Normalize
+    ; Add rounding offset and an offset for how the final butterfly stage and
+    ;  the first stage of accumulation was done.
+    sub                eax, 128-2
     shr                eax, 2
     RET
 
@@ -835,12 +936,16 @@ cglobal satd_%1x%2, 4, 9, 11, src, src_stride, dst, dst_stride, \
     ; Reduce horizontally
     vextracti128       xm0, m10, 1
     paddd              xm0, xm10
-    movhlps            xm1, xm0
+    pshufd             xm1, xm0, q3232
     paddd              xm0, xm1
-    pshufd             xm1, xm0, q1111
+    pshuflw            xm1, xm0, q3232
     paddd              xm0, xm1
     movd               eax, xm0
-    add                eax, 2
+
+    ; Normalize
+    ; Add rounding offset and an offset for how the final butterfly stage and
+    ;  the first stage of accumulation was done.
+    sub                eax, %1*%2/2 - 2
     shr                eax, 2
     RET
 %endmacro

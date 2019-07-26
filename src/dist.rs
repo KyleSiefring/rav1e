@@ -23,14 +23,11 @@ mod nasm {
   use crate::util::*;
   use std::mem;
 
-  use libc;
-
   macro_rules! declare_asm_dist_fn {
     ($(($name: ident, $T: ident)),+) => (
       $(
         extern { fn $name (
-          src: *const $T, src_stride: libc::ptrdiff_t, dst: *const $T,
-          dst_stride: libc::ptrdiff_t
+          src: *const $T, src_stride: isize, dst: *const $T, dst_stride: isize
         ) -> u32; }
       )+
     )
@@ -107,8 +104,8 @@ mod nasm {
     blk_w: usize, blk_h: usize, bit_depth: usize
   ) -> u32 {
     let mut sum = 0 as u32;
-    let org_stride = (plane_org.plane_cfg.stride * 2) as libc::ptrdiff_t;
-    let ref_stride = (plane_ref.plane_cfg.stride * 2) as libc::ptrdiff_t;
+    let org_stride = (plane_org.plane_cfg.stride * 2) as isize;
+    let ref_stride = (plane_ref.plane_cfg.stride * 2) as isize;
     assert!(blk_h >= 4 && blk_w >= 4);
     let step_size =
       blk_h.min(blk_w).min(if bit_depth <= 10 { 128 } else { 4 });
@@ -139,8 +136,8 @@ mod nasm {
   ) -> u32 {
     let org_ptr = plane_org.data_ptr();
     let ref_ptr = plane_ref.data_ptr();
-    let org_stride = plane_org.plane_cfg.stride as libc::ptrdiff_t;
-    let ref_stride = plane_ref.plane_cfg.stride as libc::ptrdiff_t;
+    let org_stride = plane_org.plane_cfg.stride as isize;
+    let ref_stride = plane_ref.plane_cfg.stride as isize;
     if blk_w == 16 && blk_h == 16 && (org_ptr as usize & 15) == 0 {
       return rav1e_sad16x16_sse2(org_ptr, org_stride, ref_ptr, ref_stride);
     }
@@ -176,8 +173,8 @@ mod nasm {
   ) -> u32 {
     let org_ptr = plane_org.data_ptr();
     let ref_ptr = plane_ref.data_ptr();
-    let org_stride = plane_org.plane_cfg.stride as libc::ptrdiff_t;
-    let ref_stride = plane_ref.plane_cfg.stride as libc::ptrdiff_t;
+    let org_stride = plane_org.plane_cfg.stride as isize;
+    let ref_stride = plane_ref.plane_cfg.stride as isize;
 
     let func = match (blk_w, blk_h) {
       (4, 4) => rav1e_sad4x4_sse2,
@@ -270,8 +267,8 @@ mod nasm {
   ) -> u32 {
     let org_ptr = plane_org.data_ptr();
     let ref_ptr = plane_ref.data_ptr();
-    let org_stride = plane_org.plane_cfg.stride as libc::ptrdiff_t;
-    let ref_stride = plane_ref.plane_cfg.stride as libc::ptrdiff_t;
+    let org_stride = plane_org.plane_cfg.stride as isize;
+    let ref_stride = plane_ref.plane_cfg.stride as isize;
 
     let func = match (blk_w, blk_h) {
       (4, 4) => rav1e_satd_4x4_avx2,
