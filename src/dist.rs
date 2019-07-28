@@ -344,7 +344,7 @@ mod native {
     let size: usize = blk_w.min(blk_h).min(8);
     let tx2d = if size == 4 { hadamard4x4 } else { hadamard8x8 };
 
-    let mut dc = 0 i64;
+    let mut dc: i64 = 0;
     let mut sum = 0 as u64;
 
     // Loop over chunks the size of the chosen transform
@@ -376,7 +376,7 @@ mod native {
         tx2d(buf);
 
         // Sum the absolute values of the transformed differences
-        dc += buf[0];
+        dc += buf[0] as i64;
         sum += buf.iter().skip(1).map(|a| a.abs() as u64).sum::<u64>();
       }
     }
