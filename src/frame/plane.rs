@@ -331,7 +331,6 @@ impl<T: Pixel> Plane<T> {
     base..base + width
   }
 
-
   pub fn p(&self, x: usize, y: usize) -> T {
     self.data[self.index(x, y)]
   }
