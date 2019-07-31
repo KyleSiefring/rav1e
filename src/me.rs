@@ -625,7 +625,7 @@ fn compute_mv_rd_cost<T: Pixel>(
   plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>
 ) -> u64
 {
-  let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
+  let sad = get_satd(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
 
   let rate1 = get_mv_rate(cand_mv, pmv[0], fi.allow_high_precision_mv);
   let rate2 = get_mv_rate(cand_mv, pmv[1], fi.allow_high_precision_mv);
@@ -694,7 +694,7 @@ fn telescopic_subpel_search<T: Pixel>(
         let plane_org = ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
         let plane_ref = tmp_plane.as_region();
 
-        let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, fi.sequence.bit_depth);
+        let sad = get_satd(&plane_org, &plane_ref, blk_w, blk_h, fi.sequence.bit_depth);
 
         let rate1 = get_mv_rate(cand_mv, pmv[0], fi.allow_high_precision_mv);
         let rate2 = get_mv_rate(cand_mv, pmv[1], fi.allow_high_precision_mv);
@@ -723,7 +723,7 @@ fn full_search<T: Pixel>(
     let (cost, mv) = search_area.map(|(y, x)| {
       let plane_org = p_org.region(Area::StartingAt { x: po.x, y: po.y });
       let plane_ref = p_ref.region(Area::StartingAt { x, y });
-      let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
+      let sad = get_satd(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
 
       let mv = MotionVector {
         row: 8 * (y as i16 - po.y as i16),
