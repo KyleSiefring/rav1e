@@ -189,6 +189,13 @@ pub trait MotionEstimation {
                            mvx_min, mvx_max, mvy_min, mvy_max, blk_w, blk_h,
                            &mut best_mv, &mut lowest_cost, ref_frame);
 
+        let mut tmp_plane_opt = None;
+        lowest_cost = get_mv_rd_cost(
+          fi, frame_bo.to_luma_plane_offset(),
+          &ts.input.planes[0], &rec.frame.planes[0], fi.sequence.bit_depth,
+          pmv, lambda, true, mvx_min, mvx_max, mvy_min, mvy_max,
+          blk_w, blk_h, best_mv, &mut tmp_plane_opt, ref_frame);
+
         Self::sub_pixel_me(fi, ts, rec, tile_bo, lambda, pmv,
                            mvx_min, mvx_max, mvy_min, mvy_max, blk_w, blk_h,
                            &mut best_mv, &mut lowest_cost, ref_frame);
@@ -473,7 +480,7 @@ fn get_best_predictor<T: Pixel>(
   fi: &FrameInvariants<T>,
   po: PlaneOffset, p_org: &Plane<T>, p_ref: &Plane<T>,
   predictors: &[MotionVector],
-  bit_depth: usize, pmv: [MotionVector; 2], lambda: u32,
+  bit_depth: usize, pmv: [MotionVector; 2], lambda: u32, use_satd: bool,
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
   blk_w: usize, blk_h: usize,
   center_mv: &mut MotionVector, center_mv_cost: &mut u64,
@@ -484,7 +491,7 @@ fn get_best_predictor<T: Pixel>(
   for &init_mv in predictors.iter() {
     let cost = get_mv_rd_cost(
       fi, po, p_org, p_ref, bit_depth,
-      pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
+      pmv, lambda, use_satd, mvx_min, mvx_max, mvy_min, mvy_max,
       blk_w, blk_h, init_mv, tmp_plane_opt, ref_frame);
 
     if cost < *center_mv_cost {
@@ -521,7 +528,7 @@ fn diamond_me_search<T: Pixel>(
 
   get_best_predictor(
     fi, po, p_org, p_ref, &predictors,
-    bit_depth, pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
+    bit_depth, pmv, lambda, subpixel, mvx_min, mvx_max, mvy_min, mvy_max,
     blk_w, blk_h, center_mv, center_mv_cost,
     &mut tmp_plane_opt, ref_frame);
 
@@ -538,7 +545,7 @@ fn diamond_me_search<T: Pixel>(
 
         let rd_cost = get_mv_rd_cost(
           fi, po, p_org, p_ref, bit_depth,
-          pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
+          pmv, lambda, subpixel, mvx_min, mvx_max, mvy_min, mvy_max,
           blk_w, blk_h, cand_mv, &mut tmp_plane_opt, ref_frame);
 
         if rd_cost < best_diamond_rd_cost {
@@ -566,7 +573,7 @@ fn diamond_me_search<T: Pixel>(
 fn get_mv_rd_cost<T: Pixel>(
   fi: &FrameInvariants<T>,
   po: PlaneOffset, p_org: &Plane<T>, p_ref: &Plane<T>, bit_depth: usize,
-  pmv: [MotionVector; 2], lambda: u32,
+  pmv: [MotionVector; 2], lambda: u32, use_satd: bool,
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
   blk_w: usize, blk_h: usize,
   cand_mv: MotionVector, tmp_plane_opt: &mut Option<Plane<T>>,
@@ -602,7 +609,7 @@ fn get_mv_rd_cost<T: Pixel>(
     );
     let plane_ref = tmp_plane.as_region();
     compute_mv_rd_cost(
-      fi, pmv, lambda, bit_depth, blk_w, blk_h, cand_mv,
+      fi, pmv, lambda, use_satd, bit_depth, blk_w, blk_h, cand_mv,
       &plane_org, &plane_ref
     )
   } else {
@@ -612,7 +619,7 @@ fn get_mv_rd_cost<T: Pixel>(
       y: po.y + (cand_mv.row / 8) as isize
     });
     compute_mv_rd_cost(
-      fi, pmv, lambda, bit_depth, blk_w, blk_h, cand_mv,
+      fi, pmv, lambda, use_satd, bit_depth, blk_w, blk_h, cand_mv,
       &plane_org, &plane_ref
     )
   }
@@ -620,12 +627,15 @@ fn get_mv_rd_cost<T: Pixel>(
 
 fn compute_mv_rd_cost<T: Pixel>(
   fi: &FrameInvariants<T>,
-  pmv: [MotionVector; 2], lambda: u32,
+  pmv: [MotionVector; 2], lambda: u32, use_satd: bool,
   bit_depth: usize, blk_w: usize, blk_h: usize, cand_mv: MotionVector,
   plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>
-) -> u64
-{
-  let sad = get_satd(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
+) -> u64 {
+  let sad = if use_satd {
+    get_satd(&plane_org, &plane_ref, blk_w, blk_h, bit_depth)
+  } else {
+    get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth)
+  };
 
   let rate1 = get_mv_rate(cand_mv, pmv[0], fi.allow_high_precision_mv);
   let rate2 = get_mv_rate(cand_mv, pmv[1], fi.allow_high_precision_mv);
@@ -694,7 +704,7 @@ fn telescopic_subpel_search<T: Pixel>(
         let plane_org = ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
         let plane_ref = tmp_plane.as_region();
 
-        let sad = get_satd(&plane_org, &plane_ref, blk_w, blk_h, fi.sequence.bit_depth);
+        let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, fi.sequence.bit_depth);
 
         let rate1 = get_mv_rate(cand_mv, pmv[0], fi.allow_high_precision_mv);
         let rate2 = get_mv_rate(cand_mv, pmv[1], fi.allow_high_precision_mv);
@@ -723,7 +733,7 @@ fn full_search<T: Pixel>(
     let (cost, mv) = search_area.map(|(y, x)| {
       let plane_org = p_org.region(Area::StartingAt { x: po.x, y: po.y });
       let plane_ref = p_ref.region(Area::StartingAt { x, y });
-      let sad = get_satd(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
+      let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
 
       let mv = MotionVector {
         row: 8 * (y as i16 - po.y as i16),
