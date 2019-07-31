@@ -26,8 +26,8 @@ fn check_plane_region_bounds<T: Pixel>(
   assert!(rect.width >= blk_w && rect.height >= blk_h);
   assert!(rect.x >= -(cfg.xpad as isize));
   assert!(rect.y >= -(cfg.ypad as isize));
-  assert!(rect.x + (blk_w as isize) < (cfg.width as isize));
-  assert!(rect.y + (blk_h as isize) < (cfg.height as isize));
+  assert!(rect.x + (blk_w as isize) < (cfg.width + cfg.xpad) as isize);
+  assert!(rect.y + (blk_h as isize) < (cfg.height + cfg.ypad) as isize);
 }
 
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
