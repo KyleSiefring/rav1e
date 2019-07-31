@@ -14,8 +14,25 @@ pub use self::native::get_sad;
 
 pub use self::native::get_satd;
 
+use crate::frame::PlaneConfig;
+use crate::tiling::*;
+use crate::util::*;
+
+fn check_plane_region_bounds<T: Pixel>(
+  plane: &PlaneRegion<'_, T>, blk_w: usize, blk_h: usize
+) {
+  let rect: &Rect = plane.rect();
+  let cfg: &PlaneConfig = plane.plane_cfg;
+  assert!(rect.width >= blk_w && rect.height >= blk_h);
+  assert!(rect.x >= -(cfg.xpad as isize));
+  assert!(rect.y >= -(cfg.ypad as isize));
+  assert!(rect.x + (blk_w as isize) < (cfg.width as isize));
+  assert!(rect.y + (blk_h as isize) < (cfg.height as isize));
+}
+
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
 mod nasm {
+  use super::*;
   use crate::tiling::*;
   use crate::util::*;
   use std::mem;
@@ -188,6 +205,8 @@ mod nasm {
     plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
     blk_w: usize, blk_h: usize, bit_depth: usize
   ) -> u32 {
+    check_plane_region_bounds(plane_org, blk_w, blk_h);
+    check_plane_region_bounds(plane_ref, blk_w, blk_h);
     #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
     {
       if mem::size_of::<T>() == 2
