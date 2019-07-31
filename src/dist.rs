@@ -491,8 +491,10 @@ pub mod test {
 
   // Generate plane data for get_sad_same()
   fn setup_planes<T: Pixel>() -> (Plane<T>, Plane<T>) {
+    // Two planes with different strides
     let mut input_plane = Plane::new(640, 480, 0, 0, 128 + 8, 128 + 8);
-    let mut rec_plane = input_plane.clone();
+    let mut rec_plane = Plane::new(640, 480, 0, 0, 2 * 128 + 8, 2 * 128 + 8);
+
     // Make the test pattern robust to data alignment
     let xpad_off =
       (input_plane.cfg.xorigin - input_plane.cfg.xpad) as i32 - 8i32;

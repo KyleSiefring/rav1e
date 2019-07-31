@@ -637,7 +637,7 @@ cglobal satd_8x8, 4, 6, 9, src, src_stride, dst, dst_stride, \
     LOAD_DIFF_Q m3, [srcq+src_strideq*2], [dstq+dst_strideq*2], m4
     LOAD_DIFF_Q m4, [srcq+src_stride3q], [dstq+dst_stride3q], m5
     lea               srcq, [srcq+src_strideq*4]
-    lea               dstq, [dstq+src_strideq*4]
+    lea               dstq, [dstq+dst_strideq*4]
     LOAD_DIFF_Q m5, [srcq], [dstq], m6
     LOAD_DIFF_Q m6, [srcq+src_strideq*1], [dstq+dst_strideq*1], m7
     LOAD_DIFF_Q m7, [srcq+src_strideq*2], [dstq+dst_strideq*2], m8
@@ -682,7 +682,7 @@ cglobal satd_16x8, 4, 6, 9, src, src_stride, dst, dst_stride, \
     LOAD_DIFF_DQ 3, [srcq+src_strideq*2], [dstq+dst_strideq*2], 0
     LOAD_DIFF_DQ 4, [srcq+src_stride3q], [dstq+dst_stride3q], 0
     lea               srcq, [srcq+src_strideq*4]
-    lea               dstq, [dstq+src_strideq*4]
+    lea               dstq, [dstq+dst_strideq*4]
     LOAD_DIFF_DQ 5, [srcq], [dstq], 0
     LOAD_DIFF_DQ 6, [srcq+src_strideq*1], [dstq+dst_strideq*1], 0
     LOAD_DIFF_DQ 7, [srcq+src_strideq*2], [dstq+dst_strideq*2], 0
@@ -745,9 +745,9 @@ cglobal satd_8x16, 4, 8, 11, src, src_stride, dst, dst_stride, \
                      [src8q+src_stride3q], [dst8q+dst_stride3q], \
                      9, 10
     lea               srcq, [srcq+src_strideq*4]
-    lea               dstq, [dstq+src_strideq*4]
+    lea               dstq, [dstq+dst_strideq*4]
     lea              src8q, [src8q+src_strideq*4]
-    lea              dst8q, [dst8q+src_strideq*4]
+    lea              dst8q, [dst8q+dst_strideq*4]
     LOAD_DIFF_Qx2 5, [srcq], [dstq], \
                      [src8q], [dst8q], \
                      9, 10
@@ -816,9 +816,9 @@ cglobal satd_8x32, 4, 8, 13, src, src_stride, dst, dst_stride, \
                      [src8q+src_stride3q], [dst8q+dst_stride3q], \
                   9, 10
     lea               srcq, [srcq+src_strideq*4]
-    lea               dstq, [dstq+src_strideq*4]
+    lea               dstq, [dstq+dst_strideq*4]
     lea              src8q, [src8q+src_strideq*4]
-    lea              dst8q, [dst8q+src_strideq*4]
+    lea              dst8q, [dst8q+dst_strideq*4]
     LOAD_DIFF_Qx2 5, [srcq], [dstq], \
                      [src8q], [dst8q], \
                   9, 10
@@ -839,9 +839,9 @@ cglobal satd_8x32, 4, 8, 13, src, src_stride, dst, dst_stride, \
     paddd              m12, m0
 
     lea               srcq, [srcq+src_stride3q*4]
-    lea               dstq, [dstq+src_stride3q*4]
+    lea               dstq, [dstq+dst_stride3q*4]
     lea              src8q, [src8q+src_stride3q*4]
-    lea              dst8q, [dst8q+src_stride3q*4]
+    lea              dst8q, [dst8q+dst_stride3q*4]
     dec               cntd
     jge .loop
 
@@ -872,7 +872,7 @@ cglobal satd_16x8_internal, 0, 0, 0, \
     LOAD_DIFF_DQ 3, [srcq+src_strideq*2], [dstq+dst_strideq*2], 0
     LOAD_DIFF_DQ 4, [srcq+src_stride3q], [dstq+dst_stride3q], 0
     lea               srcq, [srcq+src_strideq*4]
-    lea               dstq, [dstq+src_strideq*4]
+    lea               dstq, [dstq+dst_strideq*4]
     LOAD_DIFF_DQ 5, [srcq], [dstq], 0
     LOAD_DIFF_DQ 6, [srcq+src_strideq*1], [dstq+dst_strideq*1], 0
     LOAD_DIFF_DQ 7, [srcq+src_strideq*2], [dstq+dst_strideq*2], 0
