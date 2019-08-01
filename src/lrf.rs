@@ -672,7 +672,7 @@ unsafe fn sgrproj_final_avx2<T: Pixel>(
     }
   }
 }
-      if is_x86_feature_detected!("avx2") {
+      if false && is_x86_feature_detected!("avx2") {
         unsafe {
           sgrproj_final_avx2(out, f_r2_ab[dy], &f_r1, w0, w1, w2, y, stripe_w, cdeffed, bit_depth);
         }
@@ -929,7 +929,7 @@ unsafe fn sgrproj_final_avx2<T: Pixel>(
   c1 = _mm_add_epi64(c1,_mm_bsrli_si128(c1, 8));
   c[1] += _mm_cvtsi128_si64(c1);
 }
-      if is_x86_feature_detected!("avx2") {
+      if false && is_x86_feature_detected!("avx2") {
         unsafe {
           sgrproj_final_avx2(&mut h, &mut c, f_r2_01[dy], &f_r1, y, cdef_w, input, cdeffed);
         }
