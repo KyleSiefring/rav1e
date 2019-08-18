@@ -1305,6 +1305,37 @@ impl<T: Pixel> ContextInner<T> {
         fi.lookahead_intra_costs[y * fi.w_in_b + x] = intra_cost;
       }
     }
+
+    for y in (0..fi.h_in_b - 1).step_by(2) {
+      for x in (0..fi.w_in_b - 1).step_by(2) {
+        let plane_org = frame.planes[0].region(Area::Rect {
+          x: x as isize * MI_SIZE as isize,
+          y: y as isize * MI_SIZE as isize,
+          width: MI_SIZE * 2,
+          height: MI_SIZE * 2,
+        });
+        let plane_after_prediction_region = plane_after_prediction
+          .region(Area::Rect {
+            x: x as isize * MI_SIZE as isize,
+            y: y as isize * MI_SIZE as isize,
+            width: MI_SIZE * 2,
+            height: MI_SIZE * 2,
+          });
+
+        let intra_cost = get_satd(
+          &plane_org,
+          &plane_after_prediction_region,
+          MI_SIZE * 2,
+          MI_SIZE * 2,
+          self.config.bit_depth,
+        );
+
+        fi.lookahead_intra_costs[y * fi.w_in_b + x] = intra_cost / 4;
+        fi.lookahead_intra_costs[(y + 1) * fi.w_in_b + x] = intra_cost / 4;
+        fi.lookahead_intra_costs[y * fi.w_in_b + x + 1] = intra_cost / 4;
+        fi.lookahead_intra_costs[(y + 1) * fi.w_in_b + x + 1] = intra_cost / 4;
+      }
+    }
   }
 
   fn compute_lookahead_data(&mut self) {
