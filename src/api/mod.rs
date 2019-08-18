@@ -21,7 +21,7 @@ use crate::context::*;
 use crate::context::{
   FrameBlocks, SuperBlockOffset, TileSuperBlockOffset, MI_SIZE,
 };
-use crate::dist::get_satd;
+use crate::dist::get_sad;
 use crate::encoder::*;
 use crate::frame::*;
 use crate::metrics::calculate_frame_psnr;
@@ -1294,7 +1294,7 @@ impl<T: Pixel> ContextInner<T> {
             height: MI_SIZE,
           });
 
-        let intra_cost = get_satd(
+        let intra_cost = get_sad(
           &plane_org,
           &plane_after_prediction_region,
           MI_SIZE,
@@ -1457,7 +1457,7 @@ impl<T: Pixel> ContextInner<T> {
               height: MI_SIZE,
             });
 
-            let inter_cost = get_satd(
+            let inter_cost = get_sad(
               &plane_org,
               &plane_ref,
               MI_SIZE,
