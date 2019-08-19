@@ -1300,6 +1300,7 @@ impl<T: Pixel> ContextInner<T> {
           MI_SIZE,
           MI_SIZE,
           self.config.bit_depth,
+          false
         );
 
         fi.lookahead_intra_costs[y * fi.w_in_b + x] = intra_cost;
@@ -1463,6 +1464,7 @@ impl<T: Pixel> ContextInner<T> {
               MI_SIZE,
               MI_SIZE,
               self.config.bit_depth,
+              true
             ) as f32;
 
             let intra_cost =

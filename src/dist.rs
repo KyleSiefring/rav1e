@@ -12,9 +12,9 @@ pub use self::nasm::get_sad;
 #[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
 pub use self::native::get_sad;
 
-#[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-pub use self::nasm::get_satd;
-#[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
+//#[cfg(all(target_arch = "x86_64", feature = "nasm"))]
+//pub use self::nasm::get_satd;
+//#[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
 pub use self::native::get_satd;
 
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
@@ -322,7 +322,7 @@ mod nasm {
         };
       }
     }
-    super::native::get_satd(plane_org, plane_ref, blk_w, blk_h, bit_depth)
+    super::native::get_satd(plane_org, plane_ref, blk_w, blk_h, bit_depth, true)
   }
 }
 
@@ -429,7 +429,7 @@ mod native {
   #[inline(always)]
   pub fn get_satd<T: Pixel>(
     plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
-    blk_w: usize, blk_h: usize, _bit_depth: usize,
+    blk_w: usize, blk_h: usize, _bit_depth: usize, use_dc: bool,
   ) -> u32 {
     // Size of hadamard transform should be 4x4 or 8x8
     // 4x* and *x4 use 4x4 and all other use 8x8
@@ -467,7 +467,7 @@ mod native {
         tx2d(buf);
 
         // Sum the absolute values of the transformed differences
-        sum += buf.iter().map(|a| a.abs() as u64).sum::<u64>();
+        sum += buf.iter().skip(if use_dc {0} else {1}).map(|a| a.abs() as u64).sum::<u64>();
       }
     }
 
