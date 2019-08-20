@@ -133,12 +133,47 @@ fn constrain(diff: i32, threshold: i32, damping: i32) -> i32 {
   }
 }
 
+extern {
+  fn rav1e_cdef_filter_4x4_avx2(
+    dst: *mut u8,
+    dst_stride: isize,
+    tmp: *const u16,
+    tmp_stride: isize,
+    pri_strength: i32,
+    sec_strength: i32,
+    dir: i32,
+    damping: i32,
+  );
+  fn rav1e_cdef_filter_8x8_avx2(
+    dst: *mut u8,
+    dst_stride: isize,
+    tmp: *const u16,
+    tmp_stride: isize,
+    pri_strength: i32,
+    sec_strength: i32,
+    dir: i32,
+    damping: i32,
+  );
+}
+
 #[allow(clippy::erasing_op, clippy::identity_op, clippy::neg_multiply)]
 unsafe fn cdef_filter_block<T: Pixel>(
   dst: *mut T, dstride: isize, input: *const u16, istride: isize,
   pri_strength: i32, sec_strength: i32, dir: usize, damping: i32,
   xsize: isize, ysize: isize, coeff_shift: i32,
 ) {
+  if std::mem::size_of::<T>() == 1 {
+    if xsize == 4 && ysize == 4 {
+      return unsafe {
+        rav1e_cdef_filter_4x4_avx2(dst as *mut _, dstride,input, istride, pri_strength, sec_strength, dir as i32, damping)
+      }
+    }
+    if xsize == 8 && ysize == 8 {
+      return unsafe {
+        rav1e_cdef_filter_8x8_avx2(dst as *mut _, dstride,input, istride, pri_strength, sec_strength, dir as i32, damping)
+      }
+    }
+  }
   let cdef_pri_taps = [[4, 2], [3, 3]];
   let cdef_sec_taps = [[2, 1], [2, 1]];
   let pri_taps = cdef_pri_taps[((pri_strength >> coeff_shift) & 1) as usize];
