@@ -17,6 +17,12 @@ use crate::tiling::*;
 use crate::util::{clamp, msb, CastFromPrimitive, Pixel};
 
 use std::cmp;
+use crate::cpu_features::CpuFeatureLevel;
+
+#[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
+pub use self::native::*;
+#[cfg(all(target_arch = "x86_64", feature = "nasm"))]
+pub use crate::asm::cdef::*;
 
 pub struct CdefDirections {
   dir: [[u8; 8]; 8],
@@ -116,129 +122,101 @@ fn cdef_find_dir<T: Pixel>(
   best_dir as i32
 }
 
-#[inline(always)]
-fn constrain(diff: i32, threshold: i32, damping: i32) -> i32 {
-  if threshold != 0 {
-    let shift = cmp::max(0, damping - msb(threshold));
-    let magnitude =
-      cmp::min(diff.abs(), cmp::max(0, threshold - (diff.abs() >> shift)));
+pub(crate) mod native {
+  use super::*;
 
-    if diff < 0 {
-      -magnitude
+  #[inline(always)]
+  fn constrain(diff: i32, threshold: i32, damping: i32) -> i32 {
+    if threshold != 0 {
+      let shift = cmp::max(0, damping - msb(threshold));
+      let magnitude =
+        cmp::min(diff.abs(), cmp::max(0, threshold - (diff.abs() >> shift)));
+
+      if diff < 0 {
+        -magnitude
+      } else {
+        magnitude
+      }
     } else {
-      magnitude
-    }
-  } else {
-    0
-  }
-}
-
-extern {
-  fn rav1e_cdef_filter_4x4_avx2(
-    dst: *mut u8,
-    dst_stride: isize,
-    tmp: *const u16,
-    tmp_stride: isize,
-    pri_strength: i32,
-    sec_strength: i32,
-    dir: i32,
-    damping: i32,
-  );
-  fn rav1e_cdef_filter_8x8_avx2(
-    dst: *mut u8,
-    dst_stride: isize,
-    tmp: *const u16,
-    tmp_stride: isize,
-    pri_strength: i32,
-    sec_strength: i32,
-    dir: i32,
-    damping: i32,
-  );
-}
-
-#[allow(clippy::erasing_op, clippy::identity_op, clippy::neg_multiply)]
-unsafe fn cdef_filter_block<T: Pixel>(
-  dst: *mut T, dstride: isize, input: *const u16, istride: isize,
-  pri_strength: i32, sec_strength: i32, dir: usize, damping: i32,
-  xsize: isize, ysize: isize, coeff_shift: i32,
-) {
-  if std::mem::size_of::<T>() == 1 {
-    if xsize == 4 && ysize == 4 {
-      return unsafe {
-        rav1e_cdef_filter_4x4_avx2(dst as *mut _, dstride,input, istride, pri_strength, sec_strength, dir as i32, damping)
-      }
-    }
-    if xsize == 8 && ysize == 8 {
-      return unsafe {
-        rav1e_cdef_filter_8x8_avx2(dst as *mut _, dstride,input, istride, pri_strength, sec_strength, dir as i32, damping)
-      }
+      0
     }
   }
-  let cdef_pri_taps = [[4, 2], [3, 3]];
-  let cdef_sec_taps = [[2, 1], [2, 1]];
-  let pri_taps = cdef_pri_taps[((pri_strength >> coeff_shift) & 1) as usize];
-  let sec_taps = cdef_sec_taps[((pri_strength >> coeff_shift) & 1) as usize];
-  let cdef_directions = [
-    [-1 * istride + 1, -2 * istride + 2],
-    [0 * istride + 1, -1 * istride + 2],
-    [0 * istride + 1, 0 * istride + 2],
-    [0 * istride + 1, 1 * istride + 2],
-    [1 * istride + 1, 2 * istride + 2],
-    [1 * istride + 0, 2 * istride + 1],
-    [1 * istride + 0, 2 * istride + 0],
-    [1 * istride + 0, 2 * istride - 1],
-  ];
-  for i in 0..ysize {
-    for j in 0..xsize {
-      let ptr_in = input.offset(i * istride + j);
-      let ptr_out = dst.offset(i * dstride + j);
-      let x = *ptr_in;
-      let mut sum = 0 as i32;
-      let mut max = x;
-      let mut min = x;
-      for k in 0..2usize {
-        let cdef_dirs = [
-          cdef_directions[dir][k],
-          cdef_directions[(dir + 2) & 7][k],
-          cdef_directions[(dir + 6) & 7][k],
-        ];
-        let pri_tap = pri_taps[k];
-        let p = [*ptr_in.offset(cdef_dirs[0]), *ptr_in.offset(-cdef_dirs[0])];
-        for p_elem in p.iter() {
-          sum += pri_tap
-            * constrain(
+
+  #[allow(clippy::erasing_op, clippy::identity_op, clippy::neg_multiply)]
+  pub(crate) unsafe fn cdef_filter_block<T: Pixel>(
+    dst: *mut T, dstride: isize, input: *const u16, istride: isize,
+    pri_strength: i32, sec_strength: i32, dir: usize, damping: i32,
+    bit_depth: usize, xdec: usize, ydec: usize, _cpu: CpuFeatureLevel,
+  ) {
+    let xsize = (8 >> xdec) as isize;
+    let ysize = (8 >> ydec) as isize;
+    let coeff_shift = bit_depth as usize - 8;
+    let cdef_pri_taps = [[4, 2], [3, 3]];
+    let cdef_sec_taps = [[2, 1], [2, 1]];
+    let pri_taps = cdef_pri_taps[((pri_strength >> coeff_shift) & 1) as usize];
+    let sec_taps = cdef_sec_taps[((pri_strength >> coeff_shift) & 1) as usize];
+    let cdef_directions = [
+      [-1 * istride + 1, -2 * istride + 2],
+      [0 * istride + 1, -1 * istride + 2],
+      [0 * istride + 1, 0 * istride + 2],
+      [0 * istride + 1, 1 * istride + 2],
+      [1 * istride + 1, 2 * istride + 2],
+      [1 * istride + 0, 2 * istride + 1],
+      [1 * istride + 0, 2 * istride + 0],
+      [1 * istride + 0, 2 * istride - 1],
+    ];
+    for i in 0..ysize {
+      for j in 0..xsize {
+        let ptr_in = input.offset(i * istride + j);
+        let ptr_out = dst.offset(i * dstride + j);
+        let x = *ptr_in;
+        let mut sum = 0 as i32;
+        let mut max = x;
+        let mut min = x;
+        for k in 0..2usize {
+          let cdef_dirs = [
+            cdef_directions[dir][k],
+            cdef_directions[(dir + 2) & 7][k],
+            cdef_directions[(dir + 6) & 7][k],
+          ];
+          let pri_tap = pri_taps[k];
+          let p = [*ptr_in.offset(cdef_dirs[0]), *ptr_in.offset(-cdef_dirs[0])];
+          for p_elem in p.iter() {
+            sum += pri_tap
+              * constrain(
               i32::cast_from(*p_elem) - i32::cast_from(x),
               pri_strength,
               damping,
             );
-          if *p_elem != CDEF_VERY_LARGE {
-            max = cmp::max(*p_elem, max);
+            if *p_elem != CDEF_VERY_LARGE {
+              max = cmp::max(*p_elem, max);
+            }
+            min = cmp::min(*p_elem, min);
           }
-          min = cmp::min(*p_elem, min);
-        }
 
-        let s = [
-          *ptr_in.offset(cdef_dirs[1]),
-          *ptr_in.offset(-cdef_dirs[1]),
-          *ptr_in.offset(cdef_dirs[2]),
-          *ptr_in.offset(-cdef_dirs[2]),
-        ];
-        let sec_tap = sec_taps[k];
-        for s_elem in s.iter() {
-          if *s_elem != CDEF_VERY_LARGE {
-            max = cmp::max(*s_elem, max);
-          }
-          min = cmp::min(*s_elem, min);
-          sum += sec_tap
-            * constrain(
+          let s = [
+            *ptr_in.offset(cdef_dirs[1]),
+            *ptr_in.offset(-cdef_dirs[1]),
+            *ptr_in.offset(cdef_dirs[2]),
+            *ptr_in.offset(-cdef_dirs[2]),
+          ];
+          let sec_tap = sec_taps[k];
+          for s_elem in s.iter() {
+            if *s_elem != CDEF_VERY_LARGE {
+              max = cmp::max(*s_elem, max);
+            }
+            min = cmp::min(*s_elem, min);
+            sum += sec_tap
+              * constrain(
               i32::cast_from(*s_elem) - i32::cast_from(x),
               sec_strength,
               damping,
             );
+          }
         }
+        let v = i32::cast_from(x) + ((8 + sum - (sum < 0) as i32) >> 4);
+        *ptr_out = T::cast_from(clamp(v, min as i32, max as i32));
       }
-      let v = i32::cast_from(x) + ((8 + sum - (sum < 0) as i32) >> 4);
-      *ptr_out = T::cast_from(clamp(v, min as i32, max as i32));
     }
   }
 }
@@ -390,6 +368,7 @@ pub fn cdef_filter_superblock<T: Pixel>(
   sbo_global: TileSuperBlockOffset, cdef_index: u8,
   cdef_dirs: &CdefDirections,
 ) {
+  let bit_depth = fi.sequence.bit_depth;
   let coeff_shift = fi.sequence.bit_depth as i32 - 8;
   let cdef_damping = fi.cdef_damping as i32;
   let cdef_y_strength = fi.cdef_y_strengths[cdef_index as usize];
@@ -457,7 +436,6 @@ pub fn cdef_filter_superblock<T: Pixel>(
             };
 
             unsafe {
-              let xsize = 8 >> xdec;
               let ysize = 8 >> ydec;
 
               let PlaneConfig { ypad, xpad, .. } = in_slice.plane.cfg;
@@ -484,9 +462,10 @@ pub fn cdef_filter_superblock<T: Pixel>(
                 local_sec_strength,
                 local_dir,
                 local_damping,
-                xsize as isize,
-                ysize as isize,
-                coeff_shift as i32,
+                bit_depth,
+                xdec,
+                ydec,
+                fi.config.cpu_feature_level,
               );
             }
           }
