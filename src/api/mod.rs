@@ -108,6 +108,8 @@ pub struct EncoderConfig {
   pub tiles: usize,
   /// Number of frames to read ahead for RDO lookahead computation.
   pub rdo_lookahead_frames: u64,
+  /// Use satd instead of sad for subpel search
+  pub use_satd_subpel: bool,
   pub speed_settings: SpeedSettings,
   pub show_psnr: bool,
   pub train_rdo: bool,
@@ -158,6 +160,7 @@ impl EncoderConfig {
       tile_rows_log2: 0,
       tiles: 0,
       rdo_lookahead_frames: 40,
+      use_satd_subpel: true,
       speed_settings: SpeedSettings::from_preset(speed),
       show_psnr: false,
       train_rdo: false,
