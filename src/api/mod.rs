@@ -160,7 +160,7 @@ impl EncoderConfig {
       tile_rows_log2: 0,
       tiles: 0,
       rdo_lookahead_frames: 40,
-      use_satd_subpel: true,
+      use_satd_subpel: false,
       speed_settings: SpeedSettings::from_preset(speed),
       show_psnr: false,
       train_rdo: false,
