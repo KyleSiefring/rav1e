@@ -330,7 +330,7 @@ impl SpeedSettings {
   }
 
   fn use_satd_subpel(speed: usize) -> bool {
-    speed <= 9
+    false
   }
 }
 
