@@ -16,8 +16,8 @@ use crate::frame::*;
 use crate::tiling::*;
 use crate::util::{clamp, msb, CastFromPrimitive, Pixel};
 
-use std::cmp;
 use crate::cpu_features::CpuFeatureLevel;
+use std::cmp;
 
 #[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
 pub use self::native::*;
@@ -144,7 +144,7 @@ pub(crate) mod native {
 
   #[allow(clippy::erasing_op, clippy::identity_op, clippy::neg_multiply)]
   pub(crate) unsafe fn cdef_filter_block<T: Pixel>(
-    dst: *mut T, dstride: isize, input: *const u16, istride: isize,
+    dst: &mut PlaneRegionMut<'_, T>, input: *const u16, istride: isize,
     pri_strength: i32, sec_strength: i32, dir: usize, damping: i32,
     bit_depth: usize, xdec: usize, ydec: usize, _cpu: CpuFeatureLevel,
   ) {
@@ -168,7 +168,6 @@ pub(crate) mod native {
     for i in 0..ysize {
       for j in 0..xsize {
         let ptr_in = input.offset(i * istride + j);
-        let ptr_out = dst.offset(i * dstride + j);
         let x = *ptr_in;
         let mut sum = 0 as i32;
         let mut max = x;
@@ -180,14 +179,15 @@ pub(crate) mod native {
             cdef_directions[(dir + 6) & 7][k],
           ];
           let pri_tap = pri_taps[k];
-          let p = [*ptr_in.offset(cdef_dirs[0]), *ptr_in.offset(-cdef_dirs[0])];
+          let p =
+            [*ptr_in.offset(cdef_dirs[0]), *ptr_in.offset(-cdef_dirs[0])];
           for p_elem in p.iter() {
             sum += pri_tap
               * constrain(
-              i32::cast_from(*p_elem) - i32::cast_from(x),
-              pri_strength,
-              damping,
-            );
+                i32::cast_from(*p_elem) - i32::cast_from(x),
+                pri_strength,
+                damping,
+              );
             if *p_elem != CDEF_VERY_LARGE {
               max = cmp::max(*p_elem, max);
             }
@@ -208,14 +208,15 @@ pub(crate) mod native {
             min = cmp::min(*s_elem, min);
             sum += sec_tap
               * constrain(
-              i32::cast_from(*s_elem) - i32::cast_from(x),
-              sec_strength,
-              damping,
-            );
+                i32::cast_from(*s_elem) - i32::cast_from(x),
+                sec_strength,
+                damping,
+              );
           }
         }
         let v = i32::cast_from(x) + ((8 + sum - (sum < 0) as i32) >> 4);
-        *ptr_out = T::cast_from(clamp(v, min as i32, max as i32));
+        dst[i as usize][j as usize] =
+          T::cast_from(clamp(v, min as i32, max as i32));
       }
     }
   }
@@ -401,7 +402,7 @@ pub fn cdef_filter_superblock<T: Pixel>(
           let var = cdef_dirs.var[bx][by];
           for p in 0..3 {
             let out_plane = &mut out_frame.planes[p];
-            let out_po = sbo.plane_offset(&out_plane.cfg);
+            //let out_po = sbo.plane_offset(&out_plane.cfg);
             let in_plane = &in_frame.planes[p];
             let in_po = sbo.plane_offset(&in_plane.cfg);
             let xdec = in_plane.cfg.xdec;
@@ -409,8 +410,10 @@ pub fn cdef_filter_superblock<T: Pixel>(
 
             let in_stride = in_plane.cfg.stride;
             let in_slice = &in_plane.slice(in_po);
-            let out_stride = out_plane.cfg.stride;
-            let out_slice = &mut out_plane.mut_slice(out_po);
+            let out_region =
+              &mut out_plane.region_mut(Area::BlockStartingAt {
+                bo: sbo.block_offset(0, 0).0,
+              });
 
             let local_pri_strength;
             let local_sec_strength;
@@ -436,12 +439,10 @@ pub fn cdef_filter_superblock<T: Pixel>(
             };
 
             unsafe {
+              let xsize = 8 >> xdec;
               let ysize = 8 >> ydec;
 
               let PlaneConfig { ypad, xpad, .. } = in_slice.plane.cfg;
-              assert!(
-                out_slice.rows_iter().len() >= ((8 * by) >> ydec) + ysize
-              );
               assert!(
                 in_slice.rows_iter().len() + ypad
                   >= ((8 * by) >> ydec) + ysize + 2
@@ -449,13 +450,15 @@ pub fn cdef_filter_superblock<T: Pixel>(
               assert!(in_slice.x - 2 >= -(xpad as isize));
               assert!(in_slice.y - 2 >= -(ypad as isize));
 
-              let dst =
-                out_slice[(8 * by) >> ydec][(8 * bx) >> xdec..].as_mut_ptr();
+              let mut dst = out_region.subregion_mut(Area::BlockRect {
+                bo: BlockOffset { x: 2 * bx, y: 2 * by },
+                width: xsize,
+                height: ysize,
+              });
               let input =
                 in_slice[(8 * by) >> ydec][(8 * bx) >> xdec..].as_ptr();
               cdef_filter_block(
-                dst,
-                out_stride as isize,
+                &mut dst,
                 input,
                 in_stride as isize,
                 local_pri_strength,

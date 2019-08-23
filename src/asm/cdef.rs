@@ -7,10 +7,11 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
+use crate::cdef::*;
 use crate::cpu_features::CpuFeatureLevel;
 use crate::util::*;
-use crate::cdef::*;
 
+use crate::tiling::PlaneRegionMut;
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
 use x86_64::*;
 
@@ -43,31 +44,32 @@ const fn decimate_index(xdec: usize, ydec: usize) -> usize {
 }
 
 pub unsafe fn cdef_filter_block<T: Pixel>(
-  dst: *mut T, dst_stride: isize, src: *const u16, src_stride: isize,
+  dst: &mut PlaneRegionMut<'_, T>, src: *const u16, src_stride: isize,
   pri_strength: i32, sec_strength: i32, dir: usize, damping: i32,
   bit_depth: usize, xdec: usize, ydec: usize, cpu: CpuFeatureLevel,
 ) {
-  let call_native = |dst: *mut T| {
-    native::cdef_filter_block(dst,
-                            dst_stride,
-                            src,
-                            src_stride,
-                            pri_strength,
-                            sec_strength,
-                            dir,
-                            damping,
-                            bit_depth,
-                            xdec,
-                            ydec,
-                            cpu);
+  let call_native = |dst: &mut PlaneRegionMut<T>| {
+    native::cdef_filter_block(
+      dst,
+      src,
+      src_stride,
+      pri_strength,
+      sec_strength,
+      dir,
+      damping,
+      bit_depth,
+      xdec,
+      ydec,
+      cpu,
+    );
   };
   match T::type_enum() {
     PixelType::U8 => {
       match CDEF_FILTER_FNS[cpu.as_index()][decimate_index(xdec, ydec)] {
         Some(func) => {
           (func)(
-            dst as *mut _,
-            T::to_asm_stride(dst_stride as usize),
+            dst.data_ptr_mut() as *mut _,
+            T::to_asm_stride(dst.plane_cfg.stride),
             src,
             src_stride,
             pri_strength,
@@ -75,7 +77,7 @@ pub unsafe fn cdef_filter_block<T: Pixel>(
             dir as i32,
             damping,
           );
-        },
+        }
         None => call_native(dst),
       }
     }
@@ -83,8 +85,8 @@ pub unsafe fn cdef_filter_block<T: Pixel>(
       match CDEF_FILTER_HBD_FNS[cpu.as_index()][decimate_index(xdec, ydec)] {
         Some(func) => {
           (func)(
-            dst as *mut _,
-            T::to_asm_stride(dst_stride as usize),
+            dst.data_ptr_mut() as *mut _,
+            T::to_asm_stride(dst.plane_cfg.stride),
             src,
             src_stride,
             pri_strength,
@@ -93,7 +95,7 @@ pub unsafe fn cdef_filter_block<T: Pixel>(
             damping,
             bit_depth as i32,
           );
-        },
+        }
         None => call_native(dst),
       }
     }
@@ -106,36 +108,18 @@ mod x86_64 {
 
   extern {
     fn rav1e_cdef_filter_4x4_avx2(
-      dst: *mut u8,
-      dst_stride: isize,
-      tmp: *const u16,
-      tmp_stride: isize,
-      pri_strength: i32,
-      sec_strength: i32,
-      dir: i32,
-      damping: i32,
+      dst: *mut u8, dst_stride: isize, tmp: *const u16, tmp_stride: isize,
+      pri_strength: i32, sec_strength: i32, dir: i32, damping: i32,
     );
 
     fn rav1e_cdef_filter_4x8_avx2(
-      dst: *mut u8,
-      dst_stride: isize,
-      tmp: *const u16,
-      tmp_stride: isize,
-      pri_strength: i32,
-      sec_strength: i32,
-      dir: i32,
-      damping: i32,
+      dst: *mut u8, dst_stride: isize, tmp: *const u16, tmp_stride: isize,
+      pri_strength: i32, sec_strength: i32, dir: i32, damping: i32,
     );
 
     fn rav1e_cdef_filter_8x8_avx2(
-      dst: *mut u8,
-      dst_stride: isize,
-      tmp: *const u16,
-      tmp_stride: isize,
-      pri_strength: i32,
-      sec_strength: i32,
-      dir: i32,
-      damping: i32,
+      dst: *mut u8, dst_stride: isize, tmp: *const u16, tmp_stride: isize,
+      pri_strength: i32, sec_strength: i32, dir: i32, damping: i32,
     );
   }
 
@@ -147,13 +131,14 @@ mod x86_64 {
     out
   };
 
-  pub(crate) static CDEF_FILTER_FNS: [[Option<CdefFilterFn>; 4]; CpuFeatureLevel::len()] = {
+  pub(crate) static CDEF_FILTER_FNS: [[Option<CdefFilterFn>; 4];
+    CpuFeatureLevel::len()] = {
     let mut out: [[Option<CdefFilterFn>; 4]; CpuFeatureLevel::len()] =
       [[None; 4]; CpuFeatureLevel::len()];
     out[CpuFeatureLevel::AVX2 as usize] = CDEF_FILTER_FNS_AVX2;
     out
   };
 
-  pub(crate) static CDEF_FILTER_HBD_FNS: [[Option<CdefFilterHBDFn>; 4]; CpuFeatureLevel::len()] =
-      [[None; 4]; CpuFeatureLevel::len()];
+  pub(crate) static CDEF_FILTER_HBD_FNS: [[Option<CdefFilterHBDFn>; 4];
+    CpuFeatureLevel::len()] = [[None; 4]; CpuFeatureLevel::len()];
 }
