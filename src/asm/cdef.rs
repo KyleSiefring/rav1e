@@ -9,6 +9,7 @@
 
 use crate::cdef::*;
 use crate::cpu_features::CpuFeatureLevel;
+use crate::frame::*;
 use crate::util::*;
 
 use crate::tiling::PlaneRegionMut;
@@ -63,6 +64,12 @@ pub unsafe fn cdef_filter_block<T: Pixel>(
       cpu,
     );
   };
+  #[cfg(feature = "check_asm")]
+  let ref_dst = {
+    let mut copy = dst.scratch_copy();
+    call_native(&mut copy.as_region_mut());
+    copy
+  };
   match T::type_enum() {
     PixelType::U8 => {
       match CDEF_FILTER_FNS[cpu.as_index()][decimate_index(xdec, ydec)] {
@@ -97,6 +104,16 @@ pub unsafe fn cdef_filter_block<T: Pixel>(
           );
         }
         None => call_native(dst),
+      }
+    }
+  }
+  #[cfg(feature = "check_asm")]
+  {
+    for (dst_row, ref_row) in
+      dst.rows_iter().zip(ref_dst.as_region().rows_iter())
+    {
+      for (dst, reference) in dst_row.iter().zip(ref_row) {
+        assert_eq!(*dst, *reference);
       }
     }
   }
