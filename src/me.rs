@@ -535,10 +535,10 @@ impl MotionEstimation for FullSearch {
     mv_range: MotionVectorRange, blk_w: usize, blk_h: usize,
     best_mv: &mut MotionVector, lowest_cost: &mut u64, _ref_frame: RefType,
   ) {
-    let mvx_min = mv_range.min.row as isize;
-    let mvx_max = mv_range.max.row as isize;
-    let mvy_min = mv_range.min.col as isize;
-    let mvy_max = mv_range.max.col as isize;
+    let mvx_min = mv_range.min.col as isize;
+    let mvx_max = mv_range.max.col as isize;
+    let mvy_min = mv_range.min.row as isize;
+    let mvy_max = mv_range.max.row as isize;
 
     let frame_bo = ts.to_frame_block_offset(tile_bo);
     let frame_po = frame_bo.to_luma_plane_offset();
@@ -609,10 +609,10 @@ impl MotionEstimation for FullSearch {
     mv_range: MotionVectorRange, blk_w: usize, blk_h: usize,
     best_mv: &mut MotionVector, lowest_cost: &mut u64, _ref_frame: RefType,
   ) {
-    let mvx_min = mv_range.min.row as isize;
-    let mvx_max = mv_range.max.row as isize;
-    let mvy_min = mv_range.min.col as isize;
-    let mvy_max = mv_range.max.col as isize;
+    let mvx_min = mv_range.min.col as isize;
+    let mvx_max = mv_range.max.col as isize;
+    let mvy_min = mv_range.min.row as isize;
+    let mvy_max = mv_range.max.row as isize;
 
     let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
     let frame_po = PlaneOffset {
@@ -1025,10 +1025,10 @@ pub fn estimate_motion_ss4<T: Pixel>(
     let range_y = 64 * fi.me_range_scale as isize;
     let mv_range: MotionVectorRange =
       get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo_adj, blk_w, blk_h);
-    let mvx_min = mv_range.min.row as isize;
-    let mvx_max = mv_range.max.row as isize;
-    let mvy_min = mv_range.min.col as isize;
-    let mvy_max = mv_range.max.col as isize;
+    let mvx_min = mv_range.min.col as isize;
+    let mvx_max = mv_range.max.col as isize;
+    let mvy_min = mv_range.min.row as isize;
+    let mvy_max = mv_range.max.row as isize;
     let x_lo = po.x + (((-range_x).max(mvx_min / 8)) >> 2);
     let x_hi = po.x + (((range_x).min(mvx_max / 8)) >> 2);
     let y_lo = po.y + (((-range_y).max(mvy_min / 8)) >> 2);
