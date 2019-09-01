@@ -958,13 +958,8 @@ fn full_search<T: Pixel>(
   step: usize, bit_depth: usize, lambda: u32, pmv: [MotionVector; 2],
   allow_high_precision_mv: bool,
 ) {
-  let search_range_y = (y_lo..=y_hi).step_by(step);
-  let search_range_x = (x_lo..=x_hi).step_by(step);
-  let search_area =
-    search_range_y.flat_map(|y| search_range_x.clone().map(move |x| (y, x)));
-
-  let (cost, mv) = search_area
-    .map(|(y, x)| {
+  for y in (y_lo..=y_hi).step_by(step) {
+    for x in (x_lo..=x_hi).step_by(step) {
       let plane_org = p_org.region(Area::StartingAt { x: po.x, y: po.y });
       let plane_ref = p_ref.region(Area::StartingAt { x, y });
       let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
@@ -979,13 +974,12 @@ fn full_search<T: Pixel>(
       let rate = rate1.min(rate2 + 1);
       let cost = 256 * sad as u64 + rate as u64 * lambda as u64;
 
-      (cost, mv)
-    })
-    .min_by_key(|(c, _)| *c)
-    .unwrap();
-
-  *lowest_cost = cost;
-  *best_mv = mv;
+      if cost < *lowest_cost {
+        *lowest_cost = cost;
+        *best_mv = mv;
+      }
+    }
+  }
 }
 
 // Adjust block offset such that entire block lies within boundaries
