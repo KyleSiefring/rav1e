@@ -72,7 +72,7 @@ impl MotionVectorRange {
     mv.col >= self.min.col
       && mv.col <= self.max.col
       && mv.row >= self.min.row
-      && mv.row <= self.max.col
+      && mv.row <= self.max.row
   }
 }
 
