@@ -958,9 +958,12 @@ fn full_search<T: Pixel>(
   step: usize, bit_depth: usize, lambda: u32, pmv: [MotionVector; 2],
   allow_high_precision_mv: bool,
 ) {
+  let plane_org = p_org.region(Area::StartingAt { x: po.x, y: po.y });
+  //let search_region = p_ref.region(
+  //  Area::Rect {x: x_lo, y: y_lo, width: (x_hi - x_lo + 1) as usize, height: (y_hi - y_lo + 1) as usize});
+  //for y in (y_lo..=y_hi).zip(search_region.vert_windows()).step_by(step) {
   for y in (y_lo..=y_hi).step_by(step) {
     for x in (x_lo..=x_hi).step_by(step) {
-      let plane_org = p_org.region(Area::StartingAt { x: po.x, y: po.y });
       let plane_ref = p_ref.region(Area::StartingAt { x, y });
       let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
 
