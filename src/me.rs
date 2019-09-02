@@ -959,13 +959,19 @@ fn full_search<T: Pixel>(
   allow_high_precision_mv: bool,
 ) {
   let plane_org = p_org.region(Area::StartingAt { x: po.x, y: po.y });
-  //let search_region = p_ref.region(
-  //  Area::Rect {x: x_lo, y: y_lo, width: (x_hi - x_lo + 1) as usize, height: (y_hi - y_lo + 1) as usize});
-  //for y in (y_lo..=y_hi).zip(search_region.vert_windows()).step_by(step) {
-  for y in (y_lo..=y_hi).step_by(step) {
-    for x in (x_lo..=x_hi).step_by(step) {
-      let plane_ref = p_ref.region(Area::StartingAt { x, y });
-      let sad = get_sad(&plane_org, &plane_ref, blk_w, blk_h, bit_depth);
+  let search_region = p_ref.region(
+    Area::Rect {
+      x: x_lo,
+      y: y_lo,
+      width: (x_hi - x_lo) as usize + blk_w,
+      height: (y_hi - y_lo) as usize + blk_h
+    }
+  );
+  for vert_window in search_region.vert_windows(blk_h).step_by(step) {
+    for ref_window in vert_window.horz_windows(blk_w).step_by(step) {
+      let sad = get_sad(&plane_org, &ref_window, blk_w, blk_h, bit_depth);
+
+      let &Rect {x, y, ..} = ref_window.rect();
 
       let mv = MotionVector {
         row: 8 * (y as i16 - po.y as i16),
