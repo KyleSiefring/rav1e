@@ -8,7 +8,7 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-pub use self::nasm::get_sad;
+pub use crate::asm::dist::get_sad;
 #[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
 pub use self::native::get_sad;
 
@@ -35,41 +35,6 @@ mod nasm {
   }
 
   declare_asm_dist_fn![
-    // SSSE3
-    (rav1e_sad_4x4_hbd_ssse3, u16),
-    (rav1e_sad_8x8_hbd10_ssse3, u16),
-    (rav1e_sad_16x16_hbd_ssse3, u16),
-    (rav1e_sad_32x32_hbd10_ssse3, u16),
-    (rav1e_sad_64x64_hbd10_ssse3, u16),
-    (rav1e_sad_128x128_hbd10_ssse3, u16),
-    // SSE2
-    (rav1e_sad4x4_sse2, u8),
-    (rav1e_sad4x8_sse2, u8),
-    (rav1e_sad4x16_sse2, u8),
-    (rav1e_sad8x4_sse2, u8),
-    (rav1e_sad8x8_sse2, u8),
-    (rav1e_sad8x16_sse2, u8),
-    (rav1e_sad8x32_sse2, u8),
-    (rav1e_sad16x16_sse2, u8),
-    (rav1e_sad32x32_sse2, u8),
-    (rav1e_sad64x64_sse2, u8),
-    (rav1e_sad128x128_sse2, u8),
-    // AVX
-    (rav1e_sad16x4_avx2, u8),
-    (rav1e_sad16x8_avx2, u8),
-    (rav1e_sad16x16_avx2, u8),
-    (rav1e_sad16x32_avx2, u8),
-    (rav1e_sad16x64_avx2, u8),
-    (rav1e_sad32x8_avx2, u8),
-    (rav1e_sad32x16_avx2, u8),
-    (rav1e_sad32x32_avx2, u8),
-    (rav1e_sad32x64_avx2, u8),
-    (rav1e_sad64x16_avx2, u8),
-    (rav1e_sad64x32_avx2, u8),
-    (rav1e_sad64x64_avx2, u8),
-    (rav1e_sad64x128_avx2, u8),
-    (rav1e_sad128x64_avx2, u8),
-    (rav1e_sad128x128_avx2, u8),
     (rav1e_satd_4x4_avx2, u8),
     (rav1e_satd_8x8_avx2, u8),
     (rav1e_satd_16x16_avx2, u8),
@@ -91,166 +56,8 @@ mod nasm {
     (rav1e_satd_8x32_avx2, u8),
     (rav1e_satd_32x8_avx2, u8),
     (rav1e_satd_16x64_avx2, u8),
-    (rav1e_satd_64x16_avx2, u8),
-    (rav1e_satd_32x128_avx2, u8),
-    (rav1e_satd_128x32_avx2, u8)
+    (rav1e_satd_64x16_avx2, u8)
   ];
-
-  #[target_feature(enable = "ssse3")]
-  unsafe fn sad_hbd_ssse3(
-    plane_org: &PlaneRegion<'_, u16>, plane_ref: &PlaneRegion<'_, u16>,
-    bsize: BlockSize, bit_depth: usize,
-  ) -> u32 {
-    let blk_w = bsize.width();
-    let blk_h = bsize.height();
-
-    let mut sum = 0 as u32;
-    let org_stride = (plane_org.plane_cfg.stride * 2) as isize;
-    let ref_stride = (plane_ref.plane_cfg.stride * 2) as isize;
-    assert!(blk_h >= 4 && blk_w >= 4);
-    let step_size =
-      blk_h.min(blk_w).min(if bit_depth <= 10 { 128 } else { 4 });
-    let func = match step_size.ilog() {
-      3 => rav1e_sad_4x4_hbd_ssse3,
-      4 => rav1e_sad_8x8_hbd10_ssse3,
-      5 => rav1e_sad_16x16_hbd_ssse3,
-      6 => rav1e_sad_32x32_hbd10_ssse3,
-      7 => rav1e_sad_64x64_hbd10_ssse3,
-      8 => rav1e_sad_128x128_hbd10_ssse3,
-      _ => rav1e_sad_128x128_hbd10_ssse3,
-    };
-    for r in (0..blk_h).step_by(step_size) {
-      for c in (0..blk_w).step_by(step_size) {
-        // FIXME for now, T == u16
-        let org_ptr = &plane_org[r][c] as *const u16;
-        let ref_ptr = &plane_ref[r][c] as *const u16;
-        sum += func(org_ptr, org_stride, ref_ptr, ref_stride);
-      }
-    }
-    sum
-  }
-
-  #[target_feature(enable = "sse2")]
-  unsafe fn sad_sse2(
-    plane_org: &PlaneRegion<'_, u8>, plane_ref: &PlaneRegion<'_, u8>,
-    bsize: BlockSize,
-  ) -> u32 {
-    let blk_w = bsize.width();
-    let blk_h = bsize.height();
-    let org_ptr = plane_org.data_ptr();
-    let ref_ptr = plane_ref.data_ptr();
-    let org_stride = plane_org.plane_cfg.stride as isize;
-    let ref_stride = plane_ref.plane_cfg.stride as isize;
-    if blk_w == 16 && blk_h == 16 && (org_ptr as usize & 15) == 0 {
-      return rav1e_sad16x16_sse2(org_ptr, org_stride, ref_ptr, ref_stride);
-    }
-    // Note: unaligned blocks come from hres/qres ME search
-    let ptr_align_log2 = (org_ptr as usize).trailing_zeros() as usize;
-    // The largest unaligned-safe function is for 8x8
-    let ptr_align = 1 << ptr_align_log2.max(3);
-    let step_size = blk_h.min(blk_w).min(ptr_align);
-    let func = match step_size.ilog() {
-      3 => rav1e_sad4x4_sse2,
-      4 => rav1e_sad8x8_sse2,
-      5 => rav1e_sad16x16_sse2,
-      6 => rav1e_sad32x32_sse2,
-      7 => rav1e_sad64x64_sse2,
-      8 => rav1e_sad128x128_sse2,
-      _ => rav1e_sad128x128_sse2,
-    };
-    let mut sum = 0 as u32;
-    for r in (0..blk_h).step_by(step_size) {
-      for c in (0..blk_w).step_by(step_size) {
-        let org_ptr = &plane_org[r][c] as *const u8;
-        let ref_ptr = &plane_ref[r][c] as *const u8;
-        sum += func(org_ptr, org_stride, ref_ptr, ref_stride);
-      }
-    }
-    sum
-  }
-
-  #[target_feature(enable = "avx2")]
-  unsafe fn sad_avx2(
-    plane_org: &PlaneRegion<'_, u8>, plane_ref: &PlaneRegion<'_, u8>,
-    bsize: BlockSize,
-  ) -> u32 {
-    let org_ptr = plane_org.data_ptr();
-    let ref_ptr = plane_ref.data_ptr();
-    let org_stride = plane_org.plane_cfg.stride as isize;
-    let ref_stride = plane_ref.plane_cfg.stride as isize;
-
-    use BlockSize::*;
-    let func = match bsize {
-      BLOCK_4X4 => rav1e_sad4x4_sse2,
-      BLOCK_4X8 => rav1e_sad4x8_sse2,
-      BLOCK_4X16 => rav1e_sad4x16_sse2,
-
-      BLOCK_8X4 => rav1e_sad8x4_sse2,
-      BLOCK_8X8 => rav1e_sad8x8_sse2,
-      BLOCK_8X16 => rav1e_sad8x16_sse2,
-      BLOCK_8X32 => rav1e_sad8x32_sse2,
-
-      BLOCK_16X4 => rav1e_sad16x4_avx2,
-      BLOCK_16X8 => rav1e_sad16x8_avx2,
-      BLOCK_16X16 => rav1e_sad16x16_avx2,
-      BLOCK_16X32 => rav1e_sad16x32_avx2,
-      BLOCK_16X64 => rav1e_sad16x64_avx2,
-
-      BLOCK_32X8 => rav1e_sad32x8_avx2,
-      BLOCK_32X16 => rav1e_sad32x16_avx2,
-      BLOCK_32X32 => rav1e_sad32x32_avx2,
-      BLOCK_32X64 => rav1e_sad32x64_avx2,
-
-      BLOCK_64X16 => rav1e_sad64x16_avx2,
-      BLOCK_64X32 => rav1e_sad64x32_avx2,
-      BLOCK_64X64 => rav1e_sad64x64_avx2,
-      BLOCK_64X128 => rav1e_sad64x128_avx2,
-
-      BLOCK_128X64 => rav1e_sad128x64_avx2,
-      BLOCK_128X128 => rav1e_sad128x128_avx2,
-
-      _ => unreachable!(),
-    };
-    func(org_ptr, org_stride, ref_ptr, ref_stride)
-  }
-
-  #[inline(always)]
-  pub fn get_sad<T: Pixel>(
-    plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
-    bsize: BlockSize, bit_depth: usize,
-  ) -> u32 {
-    #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-    {
-      if mem::size_of::<T>() == 2 && is_x86_feature_detected!("ssse3") {
-        return unsafe {
-          let plane_org =
-            &*(plane_org as *const _ as *const PlaneRegion<'_, u16>);
-          let plane_ref =
-            &*(plane_ref as *const _ as *const PlaneRegion<'_, u16>);
-          sad_hbd_ssse3(plane_org, plane_ref, bsize, bit_depth)
-        };
-      }
-      if mem::size_of::<T>() == 1 && is_x86_feature_detected!("avx2") {
-        return unsafe {
-          let plane_org =
-            &*(plane_org as *const _ as *const PlaneRegion<'_, u8>);
-          let plane_ref =
-            &*(plane_ref as *const _ as *const PlaneRegion<'_, u8>);
-          sad_avx2(plane_org, plane_ref, bsize)
-        };
-      }
-      if mem::size_of::<T>() == 1 && is_x86_feature_detected!("sse2") {
-        return unsafe {
-          let plane_org =
-            &*(plane_org as *const _ as *const PlaneRegion<'_, u8>);
-          let plane_ref =
-            &*(plane_ref as *const _ as *const PlaneRegion<'_, u8>);
-          sad_sse2(plane_org, plane_ref, bsize)
-        };
-      }
-    }
-    super::native::get_sad(plane_org, plane_ref, bsize, bit_depth)
-  }
 
   #[target_feature(enable = "avx2")]
   unsafe fn satd_avx2(
@@ -294,7 +101,6 @@ mod nasm {
     func(org_ptr, org_stride, ref_ptr, ref_stride)
   }
 
-  #[allow(unused)]
   #[inline(always)]
   pub fn get_satd<T: Pixel>(
     plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
@@ -316,15 +122,16 @@ mod nasm {
   }
 }
 
-mod native {
+pub(crate) mod native {
   use crate::partition::BlockSize;
   use crate::tiling::*;
   use crate::util::*;
+  use crate::cpu_features::CpuFeatureLevel;
 
   #[inline(always)]
   pub fn get_sad<T: Pixel>(
     plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
-    bsize: BlockSize, _bit_depth: usize,
+    bsize: BlockSize, _bit_depth: usize, _cpu: CpuFeatureLevel
   ) -> u32 {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
@@ -481,6 +288,7 @@ pub mod test {
   use crate::partition::BlockSize::*;
   use crate::tiling::Area;
   use crate::util::Pixel;
+  use crate::cpu_features::CpuFeatureLevel;
 
   // Generate plane data for get_sad_same()
   fn setup_planes<T: Pixel>() -> (Plane<T>, Plane<T>) {
@@ -558,7 +366,7 @@ pub mod test {
 
       assert_eq!(
         block.1,
-        get_sad(&mut input_region, &mut rec_region, bsw, bsh, bit_depth)
+        get_sad(&mut input_region, &mut rec_region, bsw, bsh, bit_depth, CpuFeatureLevel::default())
       );
     }
   }

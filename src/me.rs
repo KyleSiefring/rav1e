@@ -507,7 +507,10 @@ impl MotionEstimation for DiamondSearch {
       mvx_max >> 1,
       mvy_min >> 1,
       mvy_max >> 1,
-      bsize.subsampled_size(1, 1),
+      BlockSize::from_width_and_height(
+        bsize.width() >> 1,
+        bsize.height() >> 1,
+      ),
       false,
       best_mv,
       lowest_cost,
@@ -543,6 +546,7 @@ impl MotionEstimation for FullSearch {
         + ((range + (cmv.row / 8) as isize).max(mvy_min / 8).min(mvy_max / 8));
 
       full_search(
+        fi,
         x_lo,
         x_hi,
         y_lo,
@@ -554,7 +558,6 @@ impl MotionEstimation for FullSearch {
         lowest_cost,
         frame_po,
         2,
-        fi.sequence.bit_depth,
         lambda,
         pmv,
         fi.allow_high_precision_mv,
@@ -625,18 +628,21 @@ impl MotionEstimation for FullSearch {
             .min(mvy_max / 8))
             >> 1);
         full_search(
+          fi,
           x_lo,
           x_hi,
           y_lo,
           y_hi,
-          bsize.subsampled_size(1, 1),
+          BlockSize::from_width_and_height(
+            bsize.width() >> 1,
+            bsize.height() >> 1,
+          ),
           &ts.input_hres,
           &rec.input_hres,
           best_mv,
           lowest_cost,
           frame_po,
           1,
-          fi.sequence.bit_depth,
           lambda,
           [MotionVector::default(); 2],
           fi.allow_high_precision_mv,
@@ -839,7 +845,7 @@ fn compute_mv_rd_cost<T: Pixel>(
   let sad = if use_satd {
     get_satd(&plane_org, &plane_ref, bsize, bit_depth)
   } else {
-    get_sad(&plane_org, &plane_ref, bsize, bit_depth)
+    get_sad(&plane_org, &plane_ref, bsize, bit_depth, fi.cpu_feature_level)
   };
 
   let rate1 = get_mv_rate(cand_mv, pmv[0], fi.allow_high_precision_mv);
@@ -935,11 +941,12 @@ fn telescopic_subpel_search<T: Pixel>(
 }
 
 fn full_search<T: Pixel>(
-  x_lo: isize, x_hi: isize, y_lo: isize, y_hi: isize, bsize: BlockSize,
+  fi: &FrameInvariants<T>, x_lo: isize, x_hi: isize, y_lo: isize, y_hi: isize, bsize: BlockSize,
   p_org: &Plane<T>, p_ref: &Plane<T>, best_mv: &mut MotionVector,
-  lowest_cost: &mut u64, po: PlaneOffset, step: usize, bit_depth: usize,
+  lowest_cost: &mut u64, po: PlaneOffset, step: usize,
   lambda: u32, pmv: [MotionVector; 2], allow_high_precision_mv: bool,
 ) {
+  let bit_depth = fi.sequence.bit_depth;
   let blk_w = bsize.width();
   let blk_h = bsize.height();
   let plane_org = p_org.region(Area::StartingAt { x: po.x, y: po.y });
@@ -953,7 +960,7 @@ fn full_search<T: Pixel>(
   // Select rectangular regions within search region with vert+horz windows
   for vert_window in search_region.vert_windows(blk_h).step_by(step) {
     for ref_window in vert_window.horz_windows(blk_w).step_by(step) {
-      let sad = get_sad(&plane_org, &ref_window, bsize, bit_depth);
+      let sad = get_sad(&plane_org, &ref_window, bsize, bit_depth, fi.cpu_feature_level);
 
       let &Rect { x, y, .. } = ref_window.rect();
 
@@ -1037,6 +1044,7 @@ pub fn estimate_motion_ss4<T: Pixel>(
     let lambda = (fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
 
     full_search(
+      fi,
       x_lo,
       x_hi,
       y_lo,
@@ -1048,7 +1056,6 @@ pub fn estimate_motion_ss4<T: Pixel>(
       &mut lowest_cost,
       po,
       1,
-      fi.sequence.bit_depth,
       lambda,
       [MotionVector::default(); 2],
       fi.allow_high_precision_mv,
