@@ -727,6 +727,7 @@ impl<T: Pixel> ContextInner<T> {
           &plane_after_prediction_region,
           bsize,
           self.config.bit_depth,
+          fi.cpu_feature_level,
         );
 
         fi.lookahead_intra_costs[y * fi.w_in_imp_b + x] = intra_cost;
@@ -892,9 +893,13 @@ impl<T: Pixel> ContextInner<T> {
               height: IMPORTANCE_BLOCK_SIZE,
             });
 
-            let inter_cost =
-              get_satd(&plane_org, &plane_ref, bsize, self.config.bit_depth)
-                as f32;
+            let inter_cost = get_satd(
+              &plane_org,
+              &plane_ref,
+              bsize,
+              self.config.bit_depth,
+              fi.cpu_feature_level,
+            ) as f32;
 
             let intra_cost =
               fi.lookahead_intra_costs[y * fi.w_in_imp_b + x] as f32;

@@ -7,131 +7,20 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
-#[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-pub use crate::asm::dist::get_sad;
 #[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
-pub use self::native::get_sad;
-
+pub use self::native::*;
 #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-pub use self::nasm::get_satd;
-#[cfg(any(not(target_arch = "x86_64"), not(feature = "nasm")))]
-pub use self::native::get_satd;
-
-#[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-mod nasm {
-  use crate::partition::BlockSize;
-  use crate::tiling::*;
-  use crate::util::*;
-  use std::mem;
-
-  macro_rules! declare_asm_dist_fn {
-    ($(($name: ident, $T: ident)),+) => (
-      $(
-        extern { fn $name (
-          src: *const $T, src_stride: isize, dst: *const $T, dst_stride: isize
-        ) -> u32; }
-      )+
-    )
-  }
-
-  declare_asm_dist_fn![
-    (rav1e_satd_4x4_avx2, u8),
-    (rav1e_satd_8x8_avx2, u8),
-    (rav1e_satd_16x16_avx2, u8),
-    (rav1e_satd_32x32_avx2, u8),
-    (rav1e_satd_64x64_avx2, u8),
-    (rav1e_satd_128x128_avx2, u8),
-    (rav1e_satd_4x8_avx2, u8),
-    (rav1e_satd_8x4_avx2, u8),
-    (rav1e_satd_8x16_avx2, u8),
-    (rav1e_satd_16x8_avx2, u8),
-    (rav1e_satd_16x32_avx2, u8),
-    (rav1e_satd_32x16_avx2, u8),
-    (rav1e_satd_32x64_avx2, u8),
-    (rav1e_satd_64x32_avx2, u8),
-    (rav1e_satd_64x128_avx2, u8),
-    (rav1e_satd_128x64_avx2, u8),
-    (rav1e_satd_4x16_avx2, u8),
-    (rav1e_satd_16x4_avx2, u8),
-    (rav1e_satd_8x32_avx2, u8),
-    (rav1e_satd_32x8_avx2, u8),
-    (rav1e_satd_16x64_avx2, u8),
-    (rav1e_satd_64x16_avx2, u8)
-  ];
-
-  #[target_feature(enable = "avx2")]
-  unsafe fn satd_avx2(
-    plane_org: &PlaneRegion<'_, u8>, plane_ref: &PlaneRegion<'_, u8>,
-    bsize: BlockSize,
-  ) -> u32 {
-    let org_ptr = plane_org.data_ptr();
-    let ref_ptr = plane_ref.data_ptr();
-    let org_stride = plane_org.plane_cfg.stride as isize;
-    let ref_stride = plane_ref.plane_cfg.stride as isize;
-
-    use BlockSize::*;
-    let func = match bsize {
-      BLOCK_4X4 => rav1e_satd_4x4_avx2,
-      BLOCK_8X8 => rav1e_satd_8x8_avx2,
-      BLOCK_16X16 => rav1e_satd_16x16_avx2,
-      BLOCK_32X32 => rav1e_satd_32x32_avx2,
-      BLOCK_64X64 => rav1e_satd_64x64_avx2,
-      BLOCK_128X128 => rav1e_satd_128x128_avx2,
-
-      BLOCK_4X8 => rav1e_satd_4x8_avx2,
-      BLOCK_8X4 => rav1e_satd_8x4_avx2,
-      BLOCK_8X16 => rav1e_satd_8x16_avx2,
-      BLOCK_16X8 => rav1e_satd_16x8_avx2,
-      BLOCK_16X32 => rav1e_satd_16x32_avx2,
-      BLOCK_32X16 => rav1e_satd_32x16_avx2,
-      BLOCK_32X64 => rav1e_satd_32x64_avx2,
-      BLOCK_64X32 => rav1e_satd_64x32_avx2,
-      BLOCK_64X128 => rav1e_satd_64x128_avx2,
-      BLOCK_128X64 => rav1e_satd_128x64_avx2,
-
-      BLOCK_4X16 => rav1e_satd_4x16_avx2,
-      BLOCK_16X4 => rav1e_satd_16x4_avx2,
-      BLOCK_8X32 => rav1e_satd_8x32_avx2,
-      BLOCK_32X8 => rav1e_satd_32x8_avx2,
-      BLOCK_16X64 => rav1e_satd_16x64_avx2,
-      BLOCK_64X16 => rav1e_satd_64x16_avx2,
-
-      _ => unreachable!(),
-    };
-    func(org_ptr, org_stride, ref_ptr, ref_stride)
-  }
-
-  #[inline(always)]
-  pub fn get_satd<T: Pixel>(
-    plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
-    bsize: BlockSize, bit_depth: usize,
-  ) -> u32 {
-    #[cfg(all(target_arch = "x86_64", feature = "nasm"))]
-    {
-      if mem::size_of::<T>() == 1 && is_x86_feature_detected!("avx2") {
-        return unsafe {
-          let plane_org =
-            &*(plane_org as *const _ as *const PlaneRegion<'_, u8>);
-          let plane_ref =
-            &*(plane_ref as *const _ as *const PlaneRegion<'_, u8>);
-          satd_avx2(plane_org, plane_ref, bsize)
-        };
-      }
-    }
-    super::native::get_satd(plane_org, plane_ref, bsize, bit_depth)
-  }
-}
+pub use crate::asm::dist::*;
 
 pub(crate) mod native {
+  use crate::cpu_features::CpuFeatureLevel;
   use crate::partition::BlockSize;
   use crate::tiling::*;
   use crate::util::*;
-  use crate::cpu_features::CpuFeatureLevel;
 
-  #[inline(always)]
   pub fn get_sad<T: Pixel>(
     plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
-    bsize: BlockSize, _bit_depth: usize, _cpu: CpuFeatureLevel
+    bsize: BlockSize, _bit_depth: usize, _cpu: CpuFeatureLevel,
   ) -> u32 {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
@@ -229,7 +118,7 @@ pub(crate) mod native {
   #[inline(always)]
   pub fn get_satd<T: Pixel>(
     plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
-    bsize: BlockSize, _bit_depth: usize,
+    bsize: BlockSize, _bit_depth: usize, _cpu: CpuFeatureLevel,
   ) -> u32 {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
@@ -283,12 +172,12 @@ pub(crate) mod native {
 #[cfg(test)]
 pub mod test {
   use super::*;
+  use crate::cpu_features::CpuFeatureLevel;
   use crate::frame::*;
   use crate::partition::BlockSize;
   use crate::partition::BlockSize::*;
   use crate::tiling::Area;
   use crate::util::Pixel;
-  use crate::cpu_features::CpuFeatureLevel;
 
   // Generate plane data for get_sad_same()
   fn setup_planes<T: Pixel>() -> (Plane<T>, Plane<T>) {
@@ -366,7 +255,14 @@ pub mod test {
 
       assert_eq!(
         block.1,
-        get_sad(&mut input_region, &mut rec_region, bsw, bsh, bit_depth, CpuFeatureLevel::default())
+        get_sad(
+          &mut input_region,
+          &mut rec_region,
+          bsw,
+          bsh,
+          bit_depth,
+          CpuFeatureLevel::default()
+        )
       );
     }
   }

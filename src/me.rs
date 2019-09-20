@@ -843,7 +843,7 @@ fn compute_mv_rd_cost<T: Pixel>(
   plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
 ) -> u64 {
   let sad = if use_satd {
-    get_satd(&plane_org, &plane_ref, bsize, bit_depth)
+    get_satd(&plane_org, &plane_ref, bsize, bit_depth, fi.cpu_feature_level)
   } else {
     get_sad(&plane_org, &plane_ref, bsize, bit_depth, fi.cpu_feature_level)
   };
@@ -941,10 +941,11 @@ fn telescopic_subpel_search<T: Pixel>(
 }
 
 fn full_search<T: Pixel>(
-  fi: &FrameInvariants<T>, x_lo: isize, x_hi: isize, y_lo: isize, y_hi: isize, bsize: BlockSize,
-  p_org: &Plane<T>, p_ref: &Plane<T>, best_mv: &mut MotionVector,
-  lowest_cost: &mut u64, po: PlaneOffset, step: usize,
-  lambda: u32, pmv: [MotionVector; 2], allow_high_precision_mv: bool,
+  fi: &FrameInvariants<T>, x_lo: isize, x_hi: isize, y_lo: isize, y_hi: isize,
+  bsize: BlockSize, p_org: &Plane<T>, p_ref: &Plane<T>,
+  best_mv: &mut MotionVector, lowest_cost: &mut u64, po: PlaneOffset,
+  step: usize, lambda: u32, pmv: [MotionVector; 2],
+  allow_high_precision_mv: bool,
 ) {
   let bit_depth = fi.sequence.bit_depth;
   let blk_w = bsize.width();
@@ -960,7 +961,13 @@ fn full_search<T: Pixel>(
   // Select rectangular regions within search region with vert+horz windows
   for vert_window in search_region.vert_windows(blk_h).step_by(step) {
     for ref_window in vert_window.horz_windows(blk_w).step_by(step) {
-      let sad = get_sad(&plane_org, &ref_window, bsize, bit_depth, fi.cpu_feature_level);
+      let sad = get_sad(
+        &plane_org,
+        &ref_window,
+        bsize,
+        bit_depth,
+        fi.cpu_feature_level,
+      );
 
       let &Rect { x, y, .. } = ref_window.rect();
 

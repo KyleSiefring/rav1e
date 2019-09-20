@@ -1016,7 +1016,7 @@ pub fn rdo_mode_decision<T: Pixel>(
                 &plane_ref,
                 tx_size.block_size(),
                 fi.sequence.bit_depth,
-                fi.cpu_feature_level
+                fi.cpu_feature_level,
               ),
             )
           })
