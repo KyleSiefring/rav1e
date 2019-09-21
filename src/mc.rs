@@ -201,6 +201,7 @@ pub(crate) mod native {
     SUBPEL_FILTERS[filter_idx][frac as usize]
   }
 
+  #[cold]
   pub fn put_8tap<T: Pixel>(
     dst: &mut PlaneRegionMut<'_, T>, src: PlaneSlice<'_, T>, width: usize,
     height: usize, col_frac: i32, row_frac: i32, mode_x: FilterMode,
@@ -297,6 +298,7 @@ pub(crate) mod native {
     }
   }
 
+  #[cold]
   pub fn prep_8tap<T: Pixel>(
     tmp: &mut [i16], src: PlaneSlice<'_, T>, width: usize, height: usize,
     col_frac: i32, row_frac: i32, mode_x: FilterMode, mode_y: FilterMode,
@@ -376,6 +378,7 @@ pub(crate) mod native {
     }
   }
 
+  #[cold]
   pub fn mc_avg<T: Pixel>(
     dst: &mut PlaneRegionMut<'_, T>, tmp1: &[i16], tmp2: &[i16], width: usize,
     height: usize, bit_depth: usize, _cpu: CpuFeatureLevel,

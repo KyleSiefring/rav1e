@@ -142,6 +142,7 @@ pub(crate) mod native {
     }
   }
 
+  #[cold]
   #[allow(clippy::erasing_op, clippy::identity_op, clippy::neg_multiply)]
   pub(crate) unsafe fn cdef_filter_block<T: Pixel>(
     dst: &mut PlaneRegionMut<'_, T>, input: *const u16, istride: isize,
