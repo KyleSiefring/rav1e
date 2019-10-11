@@ -1915,7 +1915,67 @@ impl Txfm2DFlipCfg {
   }
 }
 
+#[target_feature(enable = "avx2")]
+unsafe fn transpose_8x8_avx2(
+  input: (I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8),
+) -> (I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8) {
+  let stage1 = (
+    _mm256_unpacklo_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpackhi_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpacklo_epi32(input.2.vec(), input.3.vec()),
+    _mm256_unpackhi_epi32(input.2.vec(), input.3.vec()),
+    _mm256_unpacklo_epi32(input.4.vec(), input.5.vec()),
+    _mm256_unpackhi_epi32(input.4.vec(), input.5.vec()),
+    _mm256_unpacklo_epi32(input.6.vec(), input.7.vec()),
+    _mm256_unpackhi_epi32(input.6.vec(), input.7.vec()),
+  );
 
+  let stage2 = (
+    _mm256_unpacklo_epi64(stage1.0, stage1.2),
+    _mm256_unpackhi_epi64(stage1.0, stage1.2),
+    _mm256_unpacklo_epi64(stage1.1, stage1.3),
+    _mm256_unpackhi_epi64(stage1.1, stage1.3),
+    _mm256_unpacklo_epi64(stage1.4, stage1.6),
+    _mm256_unpackhi_epi64(stage1.4, stage1.6),
+    _mm256_unpacklo_epi64(stage1.5, stage1.7),
+    _mm256_unpackhi_epi64(stage1.5, stage1.7),
+  );
+
+  const LO: i32 = (2 << 4) | 0;
+  const HI: i32 = (3 << 4) | 1;
+  (
+    I32X8::new(_mm256_permute2x128_si256(stage2.0, stage2.4, LO)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.1, stage2.5, LO)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.2, stage2.6, LO)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.3, stage2.7, LO)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.0, stage2.4, HI)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.1, stage2.5, HI)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.2, stage2.6, HI)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.3, stage2.7, HI)),
+  )
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn round_shift_array_avx2(arr: &mut [I32X8], size: usize, bit: i8) {
+  if bit == 0 {
+    return;
+  }
+  if bit > 0 {
+    let add = _mm256_set1_epi32(1 << (bit as i32) >> 1);
+    let shift = _mm256_set1_epi32(bit as i32);
+    for i in 0..size {
+      arr[i] = I32X8::new(_mm256_srav_epi32(
+        _mm256_add_epi32(arr[i].vec(), add),
+        shift,
+      ));
+    }
+  } else {
+    let shift = _mm256_set1_epi32(-bit as i32);
+    for i in 0..size {
+      arr[i] = I32X8::new(_mm256_sllv_epi32(arr[i].vec(), shift));
+    }
+  }
+}
 
 trait FwdTxfm2D: Dim {
   fn fwd_txfm2d_daala(
@@ -1932,24 +1992,6 @@ trait FwdTxfm2D: Dim {
     input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
     bd: usize,
   ) {
-    #[target_feature(enable = "avx2")]
-    unsafe fn round_shift_array_avx2(arr: &mut [I32X8], size: usize, bit: i8) {
-      if bit == 0 {
-        return;
-      }
-      if bit > 0 {
-        let add = _mm256_set1_epi32(1 << (bit as i32) >> 1);
-        let shift = _mm256_set1_epi32(bit as i32);
-        for i in 0..size {
-          arr[i] = I32X8::new(_mm256_srav_epi32(_mm256_add_epi32(arr[i].vec(), add), shift));
-        }
-      } else {
-        let shift = _mm256_set1_epi32(-bit as i32);
-        for i in 0..size {
-          arr[i] = I32X8::new(_mm256_sllv_epi32(arr[i].vec(), shift));
-        }
-      }
-    }
     //let mut tmp: AlignedArray<[i32; 64 * 64]> = AlignedArray::uninitialized();
     //let buf = &mut tmp.array[..Self::W * Self::H];
     let mut tmp: AlignedArray<[I32X8; 64 * 64 / 8]> =
@@ -1998,9 +2040,10 @@ trait FwdTxfm2D: Dim {
         }
       } else {
         for r in 0..txfm_size_row {
-          for c in 0..txfm_size_col.min(8) {
+          /*for c in 0..txfm_size_col.min(8) {
             temp_out[r].data[c] = (input[r * stride + c + cg]).into();
-          }
+          }*/
+          temp_out[r] = I32X8::new(_mm256_cvtepi16_epi32(_mm_loadu_si128(input[r * stride + cg..].as_ptr() as *const _)));
         }
       }
       //av1_round_shift_array(output, txfm_size_row, -cfg.shift[0]);
@@ -2019,7 +2062,11 @@ trait FwdTxfm2D: Dim {
       /*for r in 0..txfm_size_row {
         output[r + txfm_size_row] = get1(temp_out[r + txfm_size_row]);
       }*/
-      round_shift_array_avx2(&mut temp_out[txfm_size_row..], txfm_size_row, -cfg.shift[1]);
+      round_shift_array_avx2(
+        &mut temp_out[txfm_size_row..],
+        txfm_size_row,
+        -cfg.shift[1],
+      );
       /*av1_round_shift_array(
         &mut output[txfm_size_row..],
         txfm_size_row,
@@ -2047,10 +2094,28 @@ trait FwdTxfm2D: Dim {
         }
       } else {
         for rg in (0..txfm_size_row).step_by(8) {
-          for c in 0..txfm_size_col.min(8) {
-            for r in 0..txfm_size_row.min(8) {
-              buf[(rg / 8 * txfm_size_col) + c + cg].data[r] =
-                temp_out[txfm_size_row + r + rg].data[c];
+          if txfm_size_row >= 8 && txfm_size_col >= 8 {
+            let buf = &mut buf[(rg / 8 * txfm_size_col) + cg..];
+            let input = &temp_out[txfm_size_row + rg..];
+            let transposed = transpose_8x8_avx2((
+              input[0], input[1], input[2], input[3], input[4], input[5],
+              input[6], input[7],
+            ));
+
+            buf[0] = transposed.0;
+            buf[1] = transposed.1;
+            buf[2] = transposed.2;
+            buf[3] = transposed.3;
+            buf[4] = transposed.4;
+            buf[5] = transposed.5;
+            buf[6] = transposed.6;
+            buf[7] = transposed.7;
+          } else {
+            for c in 0..txfm_size_col.min(8) {
+              for r in 0..txfm_size_row.min(8) {
+                buf[(rg / 8 * txfm_size_col) + c + cg].data[r] =
+                  temp_out[txfm_size_row + r + rg].data[c];
+              }
             }
           }
         }
@@ -2082,11 +2147,73 @@ trait FwdTxfm2D: Dim {
         &mut temp_out[..],
       );
       round_shift_array_avx2(temp_out, txfm_size_col, -cfg.shift[2]);
-      for r in 0..txfm_size_row.min(8) {
+      /*for r in 0..txfm_size_row.min(8) {
         for c in 0..txfm_size_col {
           output[(r + rg) * txfm_size_col + c] = temp_out[c].data[r];
         }
+      }*/
+      for cg in (0..txfm_size_col).step_by(8) {
+        if txfm_size_row >= 8 && txfm_size_col >= 8 {
+          let output = &mut output[rg * txfm_size_col + cg..];
+          let input = &temp_out[cg..];
+          let transposed = transpose_8x8_avx2((
+            input[0], input[1], input[2], input[3], input[4], input[5],
+            input[6], input[7],
+          ));
+          /*for r in 0..txfm_size_row.min(8) {
+            for c in 0..txfm_size_col.min(8) {
+              output[(r + rg) * txfm_size_col + c + cg] =
+                temp_out[c + cg].data[r];
+            }
+          }*/
+
+          _mm256_storeu_si256(
+            output[0 * txfm_size_col..].as_mut_ptr() as *mut __m256i,
+            transposed.0.vec(),
+          );
+          _mm256_storeu_si256(
+            output[1 * txfm_size_col..].as_mut_ptr() as *mut __m256i,
+            transposed.1.vec(),
+          );
+          _mm256_storeu_si256(
+            output[2 * txfm_size_col..].as_mut_ptr() as *mut __m256i,
+            transposed.2.vec(),
+          );
+          _mm256_storeu_si256(
+            output[3 * txfm_size_col..].as_mut_ptr() as *mut __m256i,
+            transposed.3.vec(),
+          );
+          _mm256_storeu_si256(
+            output[4 * txfm_size_col..].as_mut_ptr() as *mut __m256i,
+            transposed.4.vec(),
+          );
+          _mm256_storeu_si256(
+            output[5 * txfm_size_col..].as_mut_ptr() as *mut __m256i,
+            transposed.5.vec(),
+          );
+          _mm256_storeu_si256(
+            output[6 * txfm_size_col..].as_mut_ptr() as *mut __m256i,
+            transposed.6.vec(),
+          );
+          _mm256_storeu_si256(
+            output[7 * txfm_size_col..].as_mut_ptr() as *mut __m256i,
+            transposed.7.vec(),
+          );
+        } else {
+          for r in 0..txfm_size_row.min(8) {
+            for c in 0..txfm_size_col.min(8) {
+              output[(r + rg) * txfm_size_col + c + cg] =
+                temp_out[c + cg].data[r];
+            }
+          }
+        }
       }
+      /*for r in 0..txfm_size_row.min(8) {
+        for c in 0..txfm_size_col {
+          print!("{} {}", output[(r + rg) * txfm_size_col + c], temp_out[c].data[r]);
+          //output[(r + rg) * txfm_size_col + c] = temp_out[c].data[r];
+        }
+      }*/
     }
   }
 }
