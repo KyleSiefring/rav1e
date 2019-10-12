@@ -1638,7 +1638,11 @@ macro_rules! impl_1d_tx {
     let mut half: [T; 32] = [T::default(); 32];
     // +/- Butterflies with asymmetric output.
     {
-      let mut butterfly_pair = |i: usize| {
+      #[$m]
+      #[inline]
+      $($s)* fn butterfly_pair<T: TxOperations>(
+        half: &mut [T; 32], asym: &mut [(T, T); 32], input: &[T], i: usize
+      ) {
         let j = i * 2;
         let (ah, c) = butterfly_neg(input[j], input[63 - j]);
         let (b, dh) = butterfly_add(input[j + 1], input[63 - j - 1]);
@@ -1646,23 +1650,23 @@ macro_rules! impl_1d_tx {
         half[31 - i] = dh;
         asym[i] = b;
         asym[31 - i] = c;
-      };
-      butterfly_pair(0);
-      butterfly_pair(1);
-      butterfly_pair(2);
-      butterfly_pair(3);
-      butterfly_pair(4);
-      butterfly_pair(5);
-      butterfly_pair(6);
-      butterfly_pair(7);
-      butterfly_pair(8);
-      butterfly_pair(9);
-      butterfly_pair(10);
-      butterfly_pair(11);
-      butterfly_pair(12);
-      butterfly_pair(13);
-      butterfly_pair(14);
-      butterfly_pair(15);
+      }
+      butterfly_pair(&mut half, &mut asym, input, 0);
+      butterfly_pair(&mut half, &mut asym, input, 1);
+      butterfly_pair(&mut half, &mut asym, input, 2);
+      butterfly_pair(&mut half, &mut asym, input, 3);
+      butterfly_pair(&mut half, &mut asym, input, 4);
+      butterfly_pair(&mut half, &mut asym, input, 5);
+      butterfly_pair(&mut half, &mut asym, input, 6);
+      butterfly_pair(&mut half, &mut asym, input, 7);
+      butterfly_pair(&mut half, &mut asym, input, 8);
+      butterfly_pair(&mut half, &mut asym, input, 9);
+      butterfly_pair(&mut half, &mut asym, input, 10);
+      butterfly_pair(&mut half, &mut asym, input, 11);
+      butterfly_pair(&mut half, &mut asym, input, 12);
+      butterfly_pair(&mut half, &mut asym, input, 13);
+      butterfly_pair(&mut half, &mut asym, input, 14);
+      butterfly_pair(&mut half, &mut asym, input, 15);
     }
 
     let mut temp_out: [T; 64] = [T::default(); 64];
@@ -1740,29 +1744,33 @@ macro_rules! impl_1d_tx {
     temp_out[32..64].reverse();
 
     // Store a reordered version of output in temp_out
-    let mut reorder_4 = |i: usize, j: usize| {
-      output[0 + i * 4] = temp_out[0 + j];
-      output[1 + i * 4] = temp_out[32 + j];
-      output[2 + i * 4] = temp_out[16 + j];
-      output[3 + i * 4] = temp_out[48 + j];
-    };
-    reorder_4(0, 0);
-    reorder_4(1, 8);
-    reorder_4(2, 4);
-    reorder_4(3, 12);
-    reorder_4(4, 2);
-    reorder_4(5, 10);
-    reorder_4(6, 6);
-    reorder_4(7, 14);
+    #[$m]
+    #[inline]
+    $($s)* fn reorder_4<T: TxOperations>(
+      output: &mut [T], i: usize, tmp: [T; 64], j: usize
+    ) {
+      output[0 + i * 4] = tmp[0 + j];
+      output[1 + i * 4] = tmp[32 + j];
+      output[2 + i * 4] = tmp[16 + j];
+      output[3 + i * 4] = tmp[48 + j];
+    }
+    reorder_4(output, 0, temp_out, 0);
+    reorder_4(output, 1, temp_out, 8);
+    reorder_4(output, 2, temp_out, 4);
+    reorder_4(output, 3, temp_out, 12);
+    reorder_4(output, 4, temp_out, 2);
+    reorder_4(output, 5, temp_out, 10);
+    reorder_4(output, 6, temp_out, 6);
+    reorder_4(output, 7, temp_out, 14);
 
-    reorder_4(8, 1);
-    reorder_4(9, 9);
-    reorder_4(10, 5);
-    reorder_4(11, 13);
-    reorder_4(12, 3);
-    reorder_4(13, 11);
-    reorder_4(14, 7);
-    reorder_4(15, 15);
+    reorder_4(output, 8, temp_out, 1);
+    reorder_4(output, 9, temp_out, 9);
+    reorder_4(output, 10, temp_out, 5);
+    reorder_4(output, 11, temp_out, 13);
+    reorder_4(output, 12, temp_out, 3);
+    reorder_4(output, 13, temp_out, 11);
+    reorder_4(output, 14, temp_out, 7);
+    reorder_4(output, 15, temp_out, 15);
   }
 
   #[$m]
