@@ -1606,16 +1606,15 @@ pub(crate) mod native {
       // perform inv txfm on every row
       let range = bd + 8;
       let txfm_fn = INV_TXFM_FNS[tx_types_1d.1 as usize][Self::W.ilog() - 3];
-      for (input_slice, buffer_slice) in
+      for (r, buffer_slice) in
         // 64 point transforms only signal 32 coeffs. We only take chunks of 32
         //   and skip over the last 32 transforms here.
-        input.chunks(Self::W.min(32)).take(Self::H.min(32)).
-          zip(buffer.chunks_mut(Self::W))
+        (0..Self::H.min(32)).zip(buffer.chunks_mut(Self::W))
       {
         // For 64 point transforms, rely on the last 32 elements being
         //   initialized to zero for filling out the missing coeffs.
         let mut temp_in: [i32; 64] = [0; 64];
-        for (raw, clamped) in input_slice.iter().zip(temp_in.iter_mut()) {
+        for (raw, clamped) in input[r..].iter().step_by(Self::H.min(32)).zip(temp_in.iter_mut()) {
           let val = if rect_type.abs() == 1 {
             round_shift(*raw * INV_SQRT2, SQRT2_BITS)
           } else {

@@ -59,13 +59,10 @@ pub trait InvTxfm2D: native::InvTxfm2D {
     let mut coeff16: AlignedArray<[i16; 32 * 32]> =
       AlignedArray::uninitialized();
 
-    // Transpose the input.
-    // TODO: should be possible to remove changing how coeffs are written
-    assert!(input.len() >= coeff_w * coeff_h);
-    for j in 0..coeff_h {
-      for i in 0..coeff_w {
-        coeff16.array[i * coeff_h + j] = input[j * coeff_w + i] as i16;
-      }
+    // Convert input to 16-bits.
+    // TODO: Remove by changing coeff types for 8 bits
+    for (c16, c32) in coeff16.array.iter_mut().zip(input) {
+      *c16 = *c32 as i16;
     }
 
     let stride = output.plane_cfg.stride as isize;

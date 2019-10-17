@@ -101,9 +101,11 @@ pub mod native {
       input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
       bd: usize, _cpu: CpuFeatureLevel,
     ) {
-      let mut tmp: AlignedArray<[i32; 64 * 64]> =
-        AlignedArray::uninitialized();
-      let buf = &mut tmp.array[..Self::W * Self::H];
+      let mut tmp1: AlignedArray<[i32; 64 * 64]> = AlignedArray::uninitialized();
+      let mut tmp2: AlignedArray<[i32; 64 * 64]> = AlignedArray::uninitialized();
+      let buf1 = &mut tmp1.array[..Self::W * Self::H];
+      let buf2 = &mut tmp2.array[..Self::W * Self::H];
+
       let cfg =
         Txfm2DFlipCfg::fwd(tx_type, TxSize::by_dims(Self::W, Self::H), bd);
 
@@ -142,11 +144,11 @@ pub mod native {
         if cfg.lr_flip {
           for r in 0..txfm_size_row {
             // flip from left to right
-            buf[r * txfm_size_col + (txfm_size_col - c - 1)] = output[r];
+            buf1[r * txfm_size_col + (txfm_size_col - c - 1)] = output[r];
           }
         } else {
           for r in 0..txfm_size_row {
-            buf[r * txfm_size_col + c] = output[r];
+            buf1[r * txfm_size_col + c] = output[r];
           }
         }
       }
@@ -154,14 +156,17 @@ pub mod native {
       // Rows
       for r in 0..txfm_size_row {
         txfm_func_row(
-          &buf[r * txfm_size_col..],
-          &mut output[r * txfm_size_col..],
+          &buf1[r * txfm_size_col..],
+          &mut buf2[r * txfm_size_col..],
         );
         av1_round_shift_array(
-          &mut output[r * txfm_size_col..],
+          &mut buf2[r * txfm_size_col..],
           txfm_size_col,
           -cfg.shift[2],
         );
+        for c in 0..txfm_size_col {
+          output[c * txfm_size_row + r] = buf2[r * txfm_size_col + c];
+        }
       }
     }
   }
