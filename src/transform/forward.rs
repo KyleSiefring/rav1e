@@ -62,7 +62,7 @@ type TxfmFuncI32X8 = unsafe fn(&[I32X8], &mut [I32X8]);
 
 use std::ops::*;
 
-pub trait TxOperations: Copy {
+/*pub trait TxOperations: Copy {
   fn zero() -> Self;
 
   fn tx_mul(self, _: (i32, i32)) -> Self;
@@ -105,98 +105,98 @@ impl TxOperations for i32 {
   fn sub_avg(self, b: Self) -> Self {
     (self - b) >> 1
   }
-}
+}*/
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+pub trait TxOperations: Copy {
+  unsafe fn zero() -> Self;
+
+  unsafe fn tx_mul(self, _: (i32, i32)) -> Self;
+  unsafe fn rshift1(self) -> Self;
+  unsafe fn add(self, b: Self) -> Self;
+  unsafe fn sub(self, b: Self) -> Self;
+  unsafe fn add_avg(self, b: Self) -> Self;
+  unsafe fn sub_avg(self, b: Self) -> Self;
+
+  unsafe fn copy_fn(self) -> Self {
+    self
+  }
+}
+
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[derive(Copy, Clone)]
 struct I32X8 {
-  data: [i32; 8], //__m256i
+  vec: __m256i
 }
 
 impl I32X8 {
+  unsafe fn as_array(self) -> [i32; 8] {
+    std::mem::transmute(self.vec)
+  }
+
   #[target_feature(enable = "avx2")]
-  unsafe fn vec(self) -> __m256i {
-    std::mem::transmute(self.data)
+  unsafe fn set(self, i: usize, val: i32) {
+    self.as_array()[i] = val;
+  }
+
+  #[target_feature(enable = "avx2")]
+  unsafe fn get(self, i: usize) -> i32 {
+    self.as_array()[i]
   }
 
   #[target_feature(enable = "avx2")]
   unsafe fn new(a: __m256i) -> I32X8 {
-    I32X8 { data: std::mem::transmute(a) }
+    I32X8 { vec: a }
   }
 }
 
 impl TxOperations for I32X8 {
-  fn zero() -> Self {
-    #[target_feature(enable = "avx2")]
-    unsafe fn get_zero() -> I32X8 {
-      I32X8::new(_mm256_setzero_si256())
-    }
-    unsafe { get_zero() }
+  #[target_feature(enable = "avx2")]
+  unsafe fn zero() -> Self {
+    I32X8::new(_mm256_setzero_si256())
   }
 
-  fn tx_mul(self, mul: (i32, i32)) -> Self {
-    #[target_feature(enable = "avx2")]
-    unsafe fn do_operation(a: I32X8, mul: (i32, i32)) -> I32X8 {
+  #[target_feature(enable = "avx2")]
+  unsafe fn tx_mul(self, mul: (i32, i32)) -> Self {
       I32X8::new(_mm256_srav_epi32(
         _mm256_add_epi32(
-          _mm256_mullo_epi32(a.vec(), _mm256_set1_epi32(mul.0)),
+          _mm256_mullo_epi32(self.vec, _mm256_set1_epi32(mul.0)),
           _mm256_set1_epi32(1 << mul.1 >> 1),
         ),
         _mm256_set1_epi32(mul.1),
       ))
-    }
-    unsafe { do_operation(self, mul) }
   }
 
-  fn rshift1(self) -> Self {
-    #[target_feature(enable = "avx2")]
-    unsafe fn do_operation(a: I32X8) -> I32X8 {
+  #[target_feature(enable = "avx2")]
+  unsafe fn rshift1(self) -> Self {
       I32X8::new(_mm256_srai_epi32(
         _mm256_sub_epi32(
-          a.vec(),
-          _mm256_cmpgt_epi32(_mm256_setzero_si256(), a.vec()),
+          self.vec,
+          _mm256_cmpgt_epi32(_mm256_setzero_si256(), self.vec),
         ),
         1,
       ))
-    }
-    unsafe { do_operation(self) }
   }
 
- fn add(self, b: Self) -> Self {
-    #[target_feature(enable = "avx2")]
-    unsafe fn do_operation(lhs: I32X8, rhs: I32X8) -> I32X8 {
-      I32X8::new(_mm256_add_epi32(lhs.vec(), rhs.vec()))
-    }
-    unsafe { do_operation(self, b) }
+  unsafe fn add(self, b: Self) -> Self {
+    I32X8::new(_mm256_add_epi32(self.vec, b.vec))
   }
 
-  fn sub(self, b: Self) -> Self {
-    #[target_feature(enable = "avx2")]
-    unsafe fn do_operation(lhs: I32X8, rhs: I32X8) -> I32X8 {
-      I32X8::new(_mm256_sub_epi32(lhs.vec(), rhs.vec()))
-    }
-    unsafe { do_operation(self, b) }
+  unsafe fn sub(self, b: Self) -> Self {
+    I32X8::new(_mm256_sub_epi32(self.vec, b.vec))
   }
 
-  fn add_avg(self, b: Self) -> Self {
-    #[target_feature(enable = "avx2")]
-    unsafe fn do_operation(a: I32X8, b: I32X8) -> I32X8 {
-      I32X8::new(_mm256_srai_epi32(_mm256_add_epi32(a.vec(), b.vec()), 1))
-    }
-    unsafe { do_operation(self, b) }
+  #[target_feature(enable = "avx2")]
+  unsafe fn add_avg(self, b: Self) -> Self {
+    I32X8::new(_mm256_srai_epi32(_mm256_add_epi32(self.vec, b.vec), 1))
   }
 
-  fn sub_avg(self, b: Self) -> Self {
-    #[target_feature(enable = "avx2")]
-    unsafe fn do_operation(a: I32X8, b: I32X8) -> I32X8 {
-      I32X8::new(_mm256_srai_epi32(_mm256_sub_epi32(a.vec(), b.vec()), 1))
-    }
-    unsafe { do_operation(self, b) }
+  unsafe fn sub_avg(self, b: Self) -> Self {
+    I32X8::new(_mm256_srai_epi32(_mm256_sub_epi32(self.vec, b.vec), 1))
   }
 }
 
@@ -219,8 +219,8 @@ macro_rules! impl_1d_tx {
 
 ($m:meta, $($s:ident),*) => {
   trait RotateKernelPi4<T: TxOperations> {
-    const ADD: fn(T, T) -> T;
-    const SUB: fn(T, T) -> T;
+    const ADD: $($s)* fn(T, T) -> T;
+    const SUB: $($s)* fn(T, T) -> T;
 
     #[$m]
     $($s)* fn kernel(p0: T, p1: T, m: ((i32, i32), (i32, i32))) -> (T, T) {
@@ -237,29 +237,29 @@ macro_rules! impl_1d_tx {
   struct RotatePi4SubAvg;
 
   impl<T: TxOperations> RotateKernelPi4<T> for RotatePi4Add {
-    const ADD: fn(T, T) -> T = T::add;
-    const SUB: fn(T, T) -> T = T::sub;
+    const ADD: $($s)* fn(T, T) -> T = T::add;
+    const SUB: $($s)* fn(T, T) -> T = T::sub;
   }
 
   impl<T: TxOperations> RotateKernelPi4<T> for RotatePi4AddAvg {
-    const ADD: fn(T, T) -> T = T::add_avg;
-    const SUB: fn(T, T) -> T = T::sub;
+    const ADD: $($s)* fn(T, T) -> T = T::add_avg;
+    const SUB: $($s)* fn(T, T) -> T = T::sub;
   }
 
   impl<T: TxOperations> RotateKernelPi4<T> for RotatePi4Sub {
-    const ADD: fn(T, T) -> T = T::sub;
-    const SUB: fn(T, T) -> T = T::add;
+    const ADD: $($s)* fn(T, T) -> T = T::sub;
+    const SUB: $($s)* fn(T, T) -> T = T::add;
   }
 
   impl<T: TxOperations> RotateKernelPi4<T> for RotatePi4SubAvg {
-    const ADD: fn(T, T) -> T = T::sub_avg;
-    const SUB: fn(T, T) -> T = T::add;
+    const ADD: $($s)* fn(T, T) -> T = T::sub_avg;
+    const SUB: $($s)* fn(T, T) -> T = T::add;
   }
 
   trait RotateKernel<T: TxOperations> {
-    const ADD: fn(T, T) -> T;
-    const SUB: fn(T, T) -> T;
-    const SHIFT: fn(T) -> T;
+    const ADD: $($s)* fn(T, T) -> T;
+    const SUB: $($s)* fn(T, T) -> T;
+    const SHIFT: $($s)* fn(T) -> T;
 
     #[$m]
     $($s)* fn half_kernel(
@@ -280,7 +280,7 @@ macro_rules! impl_1d_tx {
   }
 
   trait RotateKernelNeg<T: TxOperations> {
-    const ADD: fn(T, T) -> T;
+    const ADD: $($s)* fn(T, T) -> T;
 
     #[$m]
     $($s)* fn kernel(p0: T, p1: T, m: ((i32, i32), (i32, i32), (i32, i32))) -> (T, T) {
@@ -302,47 +302,47 @@ macro_rules! impl_1d_tx {
   struct RotateNegAvg;
 
   impl<T: TxOperations> RotateKernel<T> for RotateAdd {
-    const ADD: fn(T, T) -> T = T::add;
-    const SUB: fn(T, T) -> T = T::sub;
-    const SHIFT: fn(T) -> T = T::copy_fn;
+    const ADD: $($s)* fn(T, T) -> T = T::add;
+    const SUB: $($s)* fn(T, T) -> T = T::sub;
+    const SHIFT: $($s)* fn(T) -> T = T::copy_fn;
   }
 
   impl<T: TxOperations> RotateKernel<T> for RotateAddAvg {
-    const ADD: fn(T, T) -> T = T::add_avg;
-    const SUB: fn(T, T) -> T = T::sub;
-    const SHIFT: fn(T) -> T = T::copy_fn;
+    const ADD: $($s)* fn(T, T) -> T = T::add_avg;
+    const SUB: $($s)* fn(T, T) -> T = T::sub;
+    const SHIFT: $($s)* fn(T) -> T = T::copy_fn;
   }
 
   impl<T: TxOperations> RotateKernel<T> for RotateAddShift {
-    const ADD: fn(T, T) -> T = T::add;
-    const SUB: fn(T, T) -> T = T::sub;
-    const SHIFT: fn(T) -> T = T::rshift1;
+    const ADD: $($s)* fn(T, T) -> T = T::add;
+    const SUB: $($s)* fn(T, T) -> T = T::sub;
+    const SHIFT: $($s)* fn(T) -> T = T::rshift1;
   }
 
   impl<T: TxOperations> RotateKernel<T> for RotateSub {
-    const ADD: fn(T, T) -> T = T::sub;
-    const SUB: fn(T, T) -> T = T::add;
-    const SHIFT: fn(T) -> T = T::copy_fn;
+    const ADD: $($s)* fn(T, T) -> T = T::sub;
+    const SUB: $($s)* fn(T, T) -> T = T::add;
+    const SHIFT: $($s)* fn(T) -> T = T::copy_fn;
   }
 
   impl<T: TxOperations> RotateKernel<T> for RotateSubAvg {
-    const ADD: fn(T, T) -> T = T::sub_avg;
-    const SUB: fn(T, T) -> T = T::add;
-    const SHIFT: fn(T) -> T = T::copy_fn;
+    const ADD: $($s)* fn(T, T) -> T = T::sub_avg;
+    const SUB: $($s)* fn(T, T) -> T = T::add;
+    const SHIFT: $($s)* fn(T) -> T = T::copy_fn;
   }
 
   impl<T: TxOperations> RotateKernel<T> for RotateSubShift {
-    const ADD: fn(T, T) -> T = T::sub;
-    const SUB: fn(T, T) -> T = T::add;
-    const SHIFT: fn(T) -> T = T::rshift1;
+    const ADD: $($s)* fn(T, T) -> T = T::sub;
+    const SUB: $($s)* fn(T, T) -> T = T::add;
+    const SHIFT: $($s)* fn(T) -> T = T::rshift1;
   }
 
   impl<T: TxOperations> RotateKernelNeg<T> for RotateNeg {
-    const ADD: fn(T, T) -> T = T::sub;
+    const ADD: $($s)* fn(T, T) -> T = T::sub;
   }
 
   impl<T: TxOperations> RotateKernelNeg<T> for RotateNegAvg {
-    const ADD: fn(T, T) -> T = T::sub_avg;
+    const ADD: $($s)* fn(T, T) -> T = T::sub_avg;
   }
 
   #[inline]
@@ -1935,14 +1935,14 @@ unsafe fn transpose_8x8_avx2(
   input: (I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8),
 ) -> (I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8) {
   let stage1 = (
-    _mm256_unpacklo_epi32(input.0.vec(), input.1.vec()),
-    _mm256_unpackhi_epi32(input.0.vec(), input.1.vec()),
-    _mm256_unpacklo_epi32(input.2.vec(), input.3.vec()),
-    _mm256_unpackhi_epi32(input.2.vec(), input.3.vec()),
-    _mm256_unpacklo_epi32(input.4.vec(), input.5.vec()),
-    _mm256_unpackhi_epi32(input.4.vec(), input.5.vec()),
-    _mm256_unpacklo_epi32(input.6.vec(), input.7.vec()),
-    _mm256_unpackhi_epi32(input.6.vec(), input.7.vec()),
+    _mm256_unpacklo_epi32(input.0.vec, input.1.vec),
+    _mm256_unpackhi_epi32(input.0.vec, input.1.vec),
+    _mm256_unpacklo_epi32(input.2.vec, input.3.vec),
+    _mm256_unpackhi_epi32(input.2.vec, input.3.vec),
+    _mm256_unpacklo_epi32(input.4.vec, input.5.vec),
+    _mm256_unpackhi_epi32(input.4.vec, input.5.vec),
+    _mm256_unpacklo_epi32(input.6.vec, input.7.vec),
+    _mm256_unpackhi_epi32(input.6.vec, input.7.vec),
   );
 
   let stage2 = (
@@ -1973,14 +1973,14 @@ unsafe fn transpose_8x8_avx2(
 #[target_feature(enable = "avx2")]
 #[inline]
 unsafe fn shift_left(a: I32X8, shift: u8) -> I32X8 {
-  I32X8::new(_mm256_sllv_epi32(a.vec(), _mm256_set1_epi32(shift as i32)))
+  I32X8::new(_mm256_sllv_epi32(a.vec, _mm256_set1_epi32(shift as i32)))
 }
 
 #[target_feature(enable = "avx2")]
 #[inline]
 unsafe fn shift_right(a: I32X8, shift: u8) -> I32X8 {
   I32X8::new(_mm256_srav_epi32(
-    _mm256_add_epi32(a.vec(), _mm256_set1_epi32(1 << (shift as i32) >> 1)),
+    _mm256_add_epi32(a.vec, _mm256_set1_epi32(1 << (shift as i32) >> 1)),
     _mm256_set1_epi32(shift as i32),
   ))
 }
@@ -2078,8 +2078,8 @@ trait FwdTxfm2D: Dim {
         // flip upside down
         for r in 0..txfm_size_row {
           for c in 0..txfm_size_col.min(8) {
-            temp_out[r].data[c] =
-              (input[(txfm_size_row - r - 1) * stride + c + cg]).into();
+            temp_out[r].set(c,
+              input[(txfm_size_row - r - 1) * stride + c + cg].into());
           }
         }
       } else {
@@ -2138,7 +2138,7 @@ trait FwdTxfm2D: Dim {
           for c in 0..txfm_size_col.min(8) {
             for r in 0..txfm_size_row.min(8) {
               buf[(rg / 8 * txfm_size_col) + (txfm_size_col - (c + cg) - 1)]
-                .data[r] = temp_out[txfm_size_row + r + rg].data[c];
+                .set(r, temp_out[txfm_size_row + r + rg].get(c));
             }
           }
         }
@@ -2165,8 +2165,7 @@ trait FwdTxfm2D: Dim {
           } else {
             for c in 0..txfm_size_col.min(8) {
               for r in 0..txfm_size_row.min(8) {
-                buf[(rg / 8 * txfm_size_col) + c + cg].data[r] =
-                  temp_out[txfm_size_row + r + rg].data[c];
+                buf[(rg / 8 * txfm_size_col) + c + cg].set(r, temp_out[txfm_size_row + r + rg].get(c));
               }
             }
           }
@@ -2221,41 +2220,40 @@ trait FwdTxfm2D: Dim {
 
           _mm256_storeu_si256(
             output_ptr.add(0 * txfm_size_col) as *mut _,
-            transposed.0.vec(),
+            transposed.0.vec,
           );
           _mm256_storeu_si256(
             output_ptr.add(1 * txfm_size_col) as *mut _,
-            transposed.1.vec(),
+            transposed.1.vec,
           );
           _mm256_storeu_si256(
             output_ptr.add(2 * txfm_size_col) as *mut _,
-            transposed.2.vec(),
+            transposed.2.vec,
           );
           _mm256_storeu_si256(
             output_ptr.add(3 * txfm_size_col) as *mut _,
-            transposed.3.vec(),
+            transposed.3.vec,
           );
           _mm256_storeu_si256(
             output_ptr.add(4 * txfm_size_col) as *mut _,
-            transposed.4.vec(),
+            transposed.4.vec,
           );
           _mm256_storeu_si256(
             output_ptr.add(5 * txfm_size_col) as *mut _,
-            transposed.5.vec(),
+            transposed.5.vec,
           );
           _mm256_storeu_si256(
             output_ptr.add(6 * txfm_size_col) as *mut _,
-            transposed.6.vec(),
+            transposed.6.vec,
           );
           _mm256_storeu_si256(
             output_ptr.add(7 * txfm_size_col) as *mut _,
-            transposed.7.vec(),
+            transposed.7.vec,
           );
         } else {
           for r in 0..txfm_size_row.min(8) {
             for c in 0..txfm_size_col.min(8) {
-              output[(r + rg) * txfm_size_col + c + cg] =
-                temp_out[c + cg].data[r];
+              output[(r + rg) * txfm_size_col + c + cg] = temp_out[c + cg].get(r);
             }
           }
         }
