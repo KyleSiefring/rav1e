@@ -10,7 +10,11 @@
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 
+#[macro_use]
+mod forward_macro;
+
 pub use self::forward::*;
+pub use self::forward_macro::*;
 pub use self::inverse::*;
 
 use crate::context::*;
