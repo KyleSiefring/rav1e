@@ -130,27 +130,28 @@ pub trait TxOperations: Copy {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[derive(Copy, Clone)]
 struct I32X8 {
-  vec: __m256i
+  data: [i32; 8],
 }
 
 impl I32X8 {
-  unsafe fn as_array(self) -> [i32; 8] {
-    std::mem::transmute(self.vec)
+  #[target_feature(enable = "avx2")]
+  unsafe fn vec(self) -> __m256i {
+    std::mem::transmute(self.data)
   }
 
   #[target_feature(enable = "avx2")]
-  unsafe fn set(self, i: usize, val: i32) {
-    self.as_array()[i] = val;
+  unsafe fn set(&mut self, i: usize, val: i32) {
+    self.data[i] = val;
   }
 
   #[target_feature(enable = "avx2")]
   unsafe fn get(self, i: usize) -> i32 {
-    self.as_array()[i]
+    self.data[i]
   }
 
   #[target_feature(enable = "avx2")]
   unsafe fn new(a: __m256i) -> I32X8 {
-    I32X8 { vec: a }
+    I32X8 { data: std::mem::transmute(a) }
   }
 }
 
@@ -164,7 +165,7 @@ impl TxOperations for I32X8 {
   unsafe fn tx_mul(self, mul: (i32, i32)) -> Self {
       I32X8::new(_mm256_srav_epi32(
         _mm256_add_epi32(
-          _mm256_mullo_epi32(self.vec, _mm256_set1_epi32(mul.0)),
+          _mm256_mullo_epi32(self.vec(), _mm256_set1_epi32(mul.0)),
           _mm256_set1_epi32(1 << mul.1 >> 1),
         ),
         _mm256_set1_epi32(mul.1),
@@ -175,28 +176,28 @@ impl TxOperations for I32X8 {
   unsafe fn rshift1(self) -> Self {
       I32X8::new(_mm256_srai_epi32(
         _mm256_sub_epi32(
-          self.vec,
-          _mm256_cmpgt_epi32(_mm256_setzero_si256(), self.vec),
+          self.vec(),
+          _mm256_cmpgt_epi32(_mm256_setzero_si256(), self.vec()),
         ),
         1,
       ))
   }
 
   unsafe fn add(self, b: Self) -> Self {
-    I32X8::new(_mm256_add_epi32(self.vec, b.vec))
+    I32X8::new(_mm256_add_epi32(self.vec(), b.vec()))
   }
 
   unsafe fn sub(self, b: Self) -> Self {
-    I32X8::new(_mm256_sub_epi32(self.vec, b.vec))
+    I32X8::new(_mm256_sub_epi32(self.vec(), b.vec()))
   }
 
   #[target_feature(enable = "avx2")]
   unsafe fn add_avg(self, b: Self) -> Self {
-    I32X8::new(_mm256_srai_epi32(_mm256_add_epi32(self.vec, b.vec), 1))
+    I32X8::new(_mm256_srai_epi32(_mm256_add_epi32(self.vec(), b.vec()), 1))
   }
 
   unsafe fn sub_avg(self, b: Self) -> Self {
-    I32X8::new(_mm256_srai_epi32(_mm256_sub_epi32(self.vec, b.vec), 1))
+    I32X8::new(_mm256_srai_epi32(_mm256_sub_epi32(self.vec(), b.vec()), 1))
   }
 }
 
@@ -332,14 +333,14 @@ unsafe fn transpose_8x8_avx2(
   input: (I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8),
 ) -> (I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8) {
   let stage1 = (
-    _mm256_unpacklo_epi32(input.0.vec, input.1.vec),
-    _mm256_unpackhi_epi32(input.0.vec, input.1.vec),
-    _mm256_unpacklo_epi32(input.2.vec, input.3.vec),
-    _mm256_unpackhi_epi32(input.2.vec, input.3.vec),
-    _mm256_unpacklo_epi32(input.4.vec, input.5.vec),
-    _mm256_unpackhi_epi32(input.4.vec, input.5.vec),
-    _mm256_unpacklo_epi32(input.6.vec, input.7.vec),
-    _mm256_unpackhi_epi32(input.6.vec, input.7.vec),
+    _mm256_unpacklo_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpackhi_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpacklo_epi32(input.2.vec(), input.3.vec()),
+    _mm256_unpackhi_epi32(input.2.vec(), input.3.vec()),
+    _mm256_unpacklo_epi32(input.4.vec(), input.5.vec()),
+    _mm256_unpackhi_epi32(input.4.vec(), input.5.vec()),
+    _mm256_unpacklo_epi32(input.6.vec(), input.7.vec()),
+    _mm256_unpackhi_epi32(input.6.vec(), input.7.vec()),
   );
 
   let stage2 = (
@@ -370,14 +371,14 @@ unsafe fn transpose_8x8_avx2(
 #[target_feature(enable = "avx2")]
 #[inline]
 unsafe fn shift_left(a: I32X8, shift: u8) -> I32X8 {
-  I32X8::new(_mm256_sllv_epi32(a.vec, _mm256_set1_epi32(shift as i32)))
+  I32X8::new(_mm256_sllv_epi32(a.vec(), _mm256_set1_epi32(shift as i32)))
 }
 
 #[target_feature(enable = "avx2")]
 #[inline]
 unsafe fn shift_right(a: I32X8, shift: u8) -> I32X8 {
   I32X8::new(_mm256_srav_epi32(
-    _mm256_add_epi32(a.vec, _mm256_set1_epi32(1 << (shift as i32) >> 1)),
+    _mm256_add_epi32(a.vec(), _mm256_set1_epi32(1 << (shift as i32) >> 1)),
     _mm256_set1_epi32(shift as i32),
   ))
 }
@@ -617,35 +618,35 @@ trait FwdTxfm2D: Dim {
 
           _mm256_storeu_si256(
             output_ptr.add(0 * txfm_size_col) as *mut _,
-            transposed.0.vec,
+            transposed.0.vec(),
           );
           _mm256_storeu_si256(
             output_ptr.add(1 * txfm_size_col) as *mut _,
-            transposed.1.vec,
+            transposed.1.vec(),
           );
           _mm256_storeu_si256(
             output_ptr.add(2 * txfm_size_col) as *mut _,
-            transposed.2.vec,
+            transposed.2.vec(),
           );
           _mm256_storeu_si256(
             output_ptr.add(3 * txfm_size_col) as *mut _,
-            transposed.3.vec,
+            transposed.3.vec(),
           );
           _mm256_storeu_si256(
             output_ptr.add(4 * txfm_size_col) as *mut _,
-            transposed.4.vec,
+            transposed.4.vec(),
           );
           _mm256_storeu_si256(
             output_ptr.add(5 * txfm_size_col) as *mut _,
-            transposed.5.vec,
+            transposed.5.vec(),
           );
           _mm256_storeu_si256(
             output_ptr.add(6 * txfm_size_col) as *mut _,
-            transposed.6.vec,
+            transposed.6.vec(),
           );
           _mm256_storeu_si256(
             output_ptr.add(7 * txfm_size_col) as *mut _,
-            transposed.7.vec,
+            transposed.7.vec(),
           );
         } else {
           for r in 0..txfm_size_row.min(8) {
