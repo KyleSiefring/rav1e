@@ -535,6 +535,8 @@ mod test {
       (TX_8X8, ADST_DCT, 1),
       (TX_8X8, DCT_ADST, 1),
       (TX_8X8, ADST_ADST, 1),
+      (TX_8X8, FLIPADST_DCT, 1),
+      (TX_8X8, DCT_FLIPADST, 1),
       (TX_8X8, IDTX, 0),
       (TX_8X8, V_DCT, 0),
       (TX_8X8, H_DCT, 0),

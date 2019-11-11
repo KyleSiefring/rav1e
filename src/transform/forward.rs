@@ -369,6 +369,97 @@ unsafe fn transpose_8x8_avx2(
 }
 
 #[target_feature(enable = "avx2")]
+unsafe fn transpose_8x4_avx2(
+  input: (I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8),
+) -> (I32X8, I32X8, I32X8, I32X8) {
+  // Last 8 are empty
+  let stage1 = (
+    //0101
+    _mm256_unpacklo_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpackhi_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpacklo_epi32(input.2.vec(), input.3.vec()),
+    _mm256_unpackhi_epi32(input.2.vec(), input.3.vec()),
+    _mm256_unpacklo_epi32(input.4.vec(), input.5.vec()),
+    _mm256_unpackhi_epi32(input.4.vec(), input.5.vec()),
+    _mm256_unpacklo_epi32(input.6.vec(), input.7.vec()),
+    _mm256_unpackhi_epi32(input.6.vec(), input.7.vec()),
+  );
+
+  let stage2 = (
+    _mm256_unpacklo_epi64(stage1.0, stage1.2),
+    _mm256_unpackhi_epi64(stage1.0, stage1.2),
+    _mm256_unpacklo_epi64(stage1.1, stage1.3),
+    _mm256_unpackhi_epi64(stage1.1, stage1.3),
+    _mm256_unpacklo_epi64(stage1.4, stage1.6),
+    _mm256_unpackhi_epi64(stage1.4, stage1.6),
+    _mm256_unpacklo_epi64(stage1.5, stage1.7),
+    _mm256_unpackhi_epi64(stage1.5, stage1.7),
+  );
+
+  const LO: i32 = (2 << 4) | 0;
+  (
+    I32X8::new(_mm256_permute2x128_si256(stage2.0, stage2.4, LO)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.1, stage2.5, LO)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.2, stage2.6, LO)),
+    I32X8::new(_mm256_permute2x128_si256(stage2.3, stage2.7, LO)),
+  )
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn transpose_4x8_avx2(
+  input: (I32X8, I32X8, I32X8, I32X8),
+) -> (I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8, I32X8) {
+  let stage1 = (
+    // 0101
+    _mm256_unpacklo_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpackhi_epi32(input.0.vec(), input.1.vec()),
+    // 2323
+    _mm256_unpacklo_epi32(input.2.vec(), input.3.vec()),
+    _mm256_unpackhi_epi32(input.2.vec(), input.3.vec()),
+  );
+
+  let stage2 = (
+    // 01234567
+    _mm256_unpacklo_epi64(stage1.0, stage1.2),
+    _mm256_unpackhi_epi64(stage1.0, stage1.2),
+    _mm256_unpacklo_epi64(stage1.1, stage1.3),
+    _mm256_unpackhi_epi64(stage1.1, stage1.3),
+  );
+
+  const LO: i32 = (2 << 4) | 0;
+  const HI: i32 = (3 << 4) | 1;
+  (
+    I32X8::new(stage2.0),
+    I32X8::new(stage2.1),
+    I32X8::new(stage2.2),
+    I32X8::new(stage2.3),
+    I32X8::new(_mm256_castsi128_si256(_mm256_extractf128_si256(stage2.0, 1))),
+    I32X8::new(_mm256_castsi128_si256(_mm256_extractf128_si256(stage2.1, 1))),
+    I32X8::new(_mm256_castsi128_si256(_mm256_extractf128_si256(stage2.2, 1))),
+    I32X8::new(_mm256_castsi128_si256(_mm256_extractf128_si256(stage2.3, 1))),
+  )
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn transpose_4x4_avx2(
+  input: (I32X8, I32X8, I32X8, I32X8),
+) -> (I32X8, I32X8, I32X8, I32X8) {
+  let stage1 = (
+    _mm256_unpacklo_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpackhi_epi32(input.0.vec(), input.1.vec()),
+    _mm256_unpacklo_epi32(input.2.vec(), input.3.vec()),
+    _mm256_unpackhi_epi32(input.2.vec(), input.3.vec()),
+  );
+
+  (
+    I32X8::new(_mm256_unpacklo_epi64(stage1.0, stage1.2)),
+    I32X8::new(_mm256_unpackhi_epi64(stage1.0, stage1.2)),
+    I32X8::new(_mm256_unpacklo_epi64(stage1.1, stage1.3)),
+    I32X8::new(_mm256_unpackhi_epi64(stage1.1, stage1.3)),
+  )
+}
+
+#[target_feature(enable = "avx2")]
 #[inline]
 unsafe fn shift_left(a: I32X8, shift: u8) -> I32X8 {
   I32X8::new(_mm256_sllv_epi32(a.vec(), _mm256_set1_epi32(shift as i32)))
@@ -475,10 +566,8 @@ trait FwdTxfm2D: Dim {
       if cfg.ud_flip {
         // flip upside down
         for r in 0..txfm_size_row {
-          for c in 0..txfm_size_col.min(8) {
-            temp_out[r].set(c,
-              input[(txfm_size_row - r - 1) * stride + c + cg].into());
-          }
+          let input_ptr = input[(txfm_size_row - r - 1) * stride + cg..].as_ptr();
+          temp_out[r] = load_columns(input_ptr, shift);
         }
       } else {
         // TODO: load less of x4
@@ -560,12 +649,50 @@ trait FwdTxfm2D: Dim {
             buf[5] = transposed.5;
             buf[6] = transposed.6;
             buf[7] = transposed.7;
-          } else {
-            for c in 0..txfm_size_col.min(8) {
-              for r in 0..txfm_size_row.min(8) {
-                buf[(rg / 8 * txfm_size_col) + c + cg].set(r, temp_out[txfm_size_row + r + rg].get(c));
-              }
-            }
+          } else if txfm_size_row >= 8 && txfm_size_col == 4 {
+            let buf = &mut buf[(rg / 8 * txfm_size_col) + cg..];
+            let buf = &mut buf[..4];
+            let input = &temp_out[txfm_size_row + rg..];
+            let input = &input[..8];
+            let transposed = transpose_8x4_avx2((
+              input[0], input[1], input[2], input[3], input[4], input[5],
+              input[6], input[7],
+            ));
+
+            buf[0] = transposed.0;
+            buf[1] = transposed.1;
+            buf[2] = transposed.2;
+            buf[3] = transposed.3;
+          } else if txfm_size_row == 4 && txfm_size_col >= 8 {
+            let buf = &mut buf[(rg / 8 * txfm_size_col) + cg..];
+            let buf = &mut buf[..8];
+            let input = &temp_out[txfm_size_row + rg..];
+            let input = &input[..8];
+            let transposed = transpose_4x8_avx2(
+              (input[0], input[1], input[2], input[3])
+            );
+
+            buf[0] = transposed.0;
+            buf[1] = transposed.1;
+            buf[2] = transposed.2;
+            buf[3] = transposed.3;
+            buf[4] = transposed.4;
+            buf[5] = transposed.5;
+            buf[6] = transposed.6;
+            buf[7] = transposed.7;
+          } else if txfm_size_row == 4 && txfm_size_col == 4 {
+            let buf = &mut buf[(rg / 8 * txfm_size_col) + cg..];
+            let buf = &mut buf[..4];
+            let input = &temp_out[txfm_size_row + rg..];
+            let input = &input[..4];
+            let transposed = transpose_4x4_avx2((
+              input[0], input[1], input[2], input[3]
+            ));
+
+            buf[0] = transposed.0;
+            buf[1] = transposed.1;
+            buf[2] = transposed.2;
+            buf[3] = transposed.3;
           }
         }
       }
@@ -603,6 +730,137 @@ trait FwdTxfm2D: Dim {
       }*/
       for cg in (0..txfm_size_col).step_by(8) {
         if txfm_size_row >= 8 && txfm_size_col >= 8 {
+          let output_ptr = output[rg * txfm_size_col + cg..].as_mut_ptr();
+          let input = &temp_out[cg..];
+
+          let transposed = transpose_8x8_avx2((
+            input[0], input[1], input[2], input[3], input[4], input[5],
+            input[6], input[7],
+          ));
+
+          _mm256_storeu_si256(
+            output_ptr.add(0 * txfm_size_col) as *mut _,
+            transposed.0.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(1 * txfm_size_col) as *mut _,
+            transposed.1.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(2 * txfm_size_col) as *mut _,
+            transposed.2.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(3 * txfm_size_col) as *mut _,
+            transposed.3.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(4 * txfm_size_col) as *mut _,
+            transposed.4.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(5 * txfm_size_col) as *mut _,
+            transposed.5.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(6 * txfm_size_col) as *mut _,
+            transposed.6.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(7 * txfm_size_col) as *mut _,
+            transposed.7.vec(),
+          );
+        } else if txfm_size_row == 4 && txfm_size_col >= 8 {
+          let output_ptr = output[rg * txfm_size_col + cg..].as_mut_ptr();
+          let input = &temp_out[cg..];
+
+          let transposed = transpose_8x4_avx2((
+            input[0], input[1], input[2], input[3], input[4], input[5],
+            input[6], input[7],
+          ));
+
+          _mm256_storeu_si256(
+            output_ptr.add(0 * txfm_size_col) as *mut _,
+            transposed.0.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(1 * txfm_size_col) as *mut _,
+            transposed.1.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(2 * txfm_size_col) as *mut _,
+            transposed.2.vec(),
+          );
+          _mm256_storeu_si256(
+            output_ptr.add(3 * txfm_size_col) as *mut _,
+            transposed.3.vec(),
+          );
+        } else if txfm_size_row >= 8 && txfm_size_col == 4 {
+          let output_ptr = output[rg * txfm_size_col + cg..].as_mut_ptr();
+          let input = &temp_out[cg..];
+
+          let transposed = transpose_4x8_avx2(
+            (input[0], input[1], input[2], input[3])
+          );
+
+          _mm_storeu_si128(
+            output_ptr.add(0 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.0.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(1 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.1.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(2 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.2.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(3 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.3.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(4 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.4.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(5 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.5.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(6 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.6.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(7 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.7.vec()),
+          );
+        } else if txfm_size_row == 4 && txfm_size_col == 4 {
+          let output_ptr = output[rg * txfm_size_col + cg..].as_mut_ptr();
+          let input = &temp_out[cg..];
+
+          let transposed = transpose_4x4_avx2((
+            input[0], input[1], input[2], input[3]
+          ));
+
+          _mm_storeu_si128(
+            output_ptr.add(0 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.0.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(1 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.1.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(2 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.2.vec()),
+          );
+          _mm_storeu_si128(
+            output_ptr.add(3 * txfm_size_col) as *mut _,
+            _mm256_castsi256_si128(transposed.3.vec()),
+          );
+        }
+        /*if txfm_size_row >= 8 && txfm_size_col >= 8 {
           let output_ptr = output[rg * txfm_size_col + cg..].as_mut_ptr();
           let input = &temp_out[cg..];
           let transposed = transpose_8x8_avx2((
@@ -654,7 +912,7 @@ trait FwdTxfm2D: Dim {
               output[(r + rg) * txfm_size_col + c + cg] = temp_out[c + cg].get(r);
             }
           }
-        }
+        }*/
       }
       /*for r in 0..txfm_size_row.min(8) {
         for c in 0..txfm_size_col {
