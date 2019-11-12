@@ -860,59 +860,6 @@ trait FwdTxfm2D: Dim {
             _mm256_castsi256_si128(transposed.3.vec()),
           );
         }
-        /*if txfm_size_row >= 8 && txfm_size_col >= 8 {
-          let output_ptr = output[rg * txfm_size_col + cg..].as_mut_ptr();
-          let input = &temp_out[cg..];
-          let transposed = transpose_8x8_avx2((
-            input[0], input[1], input[2], input[3], input[4], input[5],
-            input[6], input[7],
-          ));
-          /*for r in 0..txfm_size_row.min(8) {
-            for c in 0..txfm_size_col.min(8) {
-              output[(r + rg) * txfm_size_col + c + cg] =
-                temp_out[c + cg].data[r];
-            }
-          }*/
-
-          _mm256_storeu_si256(
-            output_ptr.add(0 * txfm_size_col) as *mut _,
-            transposed.0.vec(),
-          );
-          _mm256_storeu_si256(
-            output_ptr.add(1 * txfm_size_col) as *mut _,
-            transposed.1.vec(),
-          );
-          _mm256_storeu_si256(
-            output_ptr.add(2 * txfm_size_col) as *mut _,
-            transposed.2.vec(),
-          );
-          _mm256_storeu_si256(
-            output_ptr.add(3 * txfm_size_col) as *mut _,
-            transposed.3.vec(),
-          );
-          _mm256_storeu_si256(
-            output_ptr.add(4 * txfm_size_col) as *mut _,
-            transposed.4.vec(),
-          );
-          _mm256_storeu_si256(
-            output_ptr.add(5 * txfm_size_col) as *mut _,
-            transposed.5.vec(),
-          );
-          _mm256_storeu_si256(
-            output_ptr.add(6 * txfm_size_col) as *mut _,
-            transposed.6.vec(),
-          );
-          _mm256_storeu_si256(
-            output_ptr.add(7 * txfm_size_col) as *mut _,
-            transposed.7.vec(),
-          );
-        } else {
-          for r in 0..txfm_size_row.min(8) {
-            for c in 0..txfm_size_col.min(8) {
-              output[(r + rg) * txfm_size_col + c + cg] = temp_out[c + cg].get(r);
-            }
-          }
-        }*/
       }
       /*for r in 0..txfm_size_row.min(8) {
         for c in 0..txfm_size_col {
