@@ -139,6 +139,7 @@ impl I32X8 {
     std::mem::transmute(self.data)
   }
 
+  /*
   #[target_feature(enable = "avx2")]
   unsafe fn set(&mut self, i: usize, val: i32) {
     self.data[i] = val;
@@ -148,6 +149,7 @@ impl I32X8 {
   unsafe fn get(self, i: usize) -> i32 {
     self.data[i]
   }
+  */
 
   #[target_feature(enable = "avx2")]
   unsafe fn new(a: __m256i) -> I32X8 {
@@ -620,7 +622,7 @@ trait FwdTxfm2D: Dim {
           buf[r * txfm_size_col + c] = output[txfm_size_row + r];
         }
       }*/
-      if cfg.lr_flip {
+      /*if cfg.lr_flip {
         for rg in (0..txfm_size_row).step_by(8) {
           for c in 0..txfm_size_col.min(8) {
             for r in 0..txfm_size_row.min(8) {
@@ -629,7 +631,7 @@ trait FwdTxfm2D: Dim {
             }
           }
         }
-      } else {
+      } else {*/
         for rg in (0..txfm_size_row).step_by(8) {
           if txfm_size_row >= 8 && txfm_size_col >= 8 {
             let buf = &mut buf[(rg / 8 * txfm_size_col) + cg..];
@@ -695,7 +697,10 @@ trait FwdTxfm2D: Dim {
             buf[3] = transposed.3;
           }
         }
+      if cfg.lr_flip {
+        buf[cg..][..txfm_size_col.min(8)].reverse();
       }
+      //}
     }
 
     // Rows
