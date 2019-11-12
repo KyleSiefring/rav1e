@@ -130,13 +130,13 @@ pub trait TxOperations: Copy {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[derive(Copy, Clone)]
 struct I32X8 {
-  data: [i32; 8],
+  data: __m256i,
 }
 
 impl I32X8 {
   #[target_feature(enable = "avx2")]
   unsafe fn vec(self) -> __m256i {
-    std::mem::transmute(self.data)
+    self.data
   }
 
   /*#[target_feature(enable = "avx2")]
@@ -151,7 +151,7 @@ impl I32X8 {
 
   #[target_feature(enable = "avx2")]
   unsafe fn new(a: __m256i) -> I32X8 {
-    I32X8 { data: std::mem::transmute(a) }
+    I32X8 { data: a }
   }
 }
 
