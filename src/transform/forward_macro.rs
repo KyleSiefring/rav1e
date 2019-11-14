@@ -1599,5 +1599,6 @@ $($s)* fn fidentity32<T: TxOperations>(input: &[T], output: &mut [T]) {
   output[..32].copy_from_slice(&input[..32]);
 }
 
-  }
-  }
+}
+
+}
