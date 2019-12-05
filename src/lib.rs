@@ -75,6 +75,9 @@ mod hawktracer {
 #[cfg(any(cargo_c, feature = "capi"))]
 pub mod capi;
 
+#[macro_use]
+mod transform;
+
 mod activity;
 pub(crate) mod asm;
 mod cpu_features;
@@ -85,8 +88,6 @@ mod predict;
 mod quantize;
 mod rdo;
 mod rdo_tables;
-//#[macro_use]
-mod transform;
 #[macro_use]
 mod util;
 mod cdef;

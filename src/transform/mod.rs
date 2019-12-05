@@ -13,9 +13,8 @@
 #[macro_use]
 mod forward_macro;
 
-pub use self::forward::*;
-pub use self::forward_macro::*;
-pub use self::inverse::*;
+use self::forward::*;
+use self::inverse::*;
 
 use crate::context::MI_SIZE_LOG2;
 use crate::partition::{BlockSize, BlockSize::*};
@@ -25,8 +24,8 @@ use crate::util::*;
 use crate::cpu_features::CpuFeatureLevel;
 use TxSize::*;
 
-mod forward;
-mod inverse;
+pub mod forward;
+pub mod inverse;
 
 pub mod forward_data;
 
