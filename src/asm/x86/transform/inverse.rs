@@ -9,8 +9,8 @@
 
 use crate::cpu_features::CpuFeatureLevel;
 use crate::tiling::PlaneRegionMut;
-use crate::transform::*;
 use crate::transform::inverse::*;
+use crate::transform::*;
 use crate::util::AlignedArray;
 use crate::Pixel;
 

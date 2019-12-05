@@ -1,6 +1,6 @@
-use crate::util::*;
+use crate::transform::forward_shared::*;
 use crate::transform::*;
-use crate::transform::forward_data::*;
+use crate::util::*;
 
 use crate::predict::Dim;
 
@@ -91,10 +91,12 @@ impl TxOperations for I32X8 {
     ))
   }
 
+  #[target_feature(enable = "avx2")]
   unsafe fn add(self, b: Self) -> Self {
     I32X8::new(_mm256_add_epi32(self.vec(), b.vec()))
   }
 
+  #[target_feature(enable = "avx2")]
   unsafe fn sub(self, b: Self) -> Self {
     I32X8::new(_mm256_sub_epi32(self.vec(), b.vec()))
   }
@@ -104,6 +106,7 @@ impl TxOperations for I32X8 {
     I32X8::new(_mm256_srai_epi32(_mm256_add_epi32(self.vec(), b.vec()), 1))
   }
 
+  #[target_feature(enable = "avx2")]
   unsafe fn sub_avg(self, b: Self) -> Self {
     I32X8::new(_mm256_srai_epi32(_mm256_sub_epi32(self.vec(), b.vec()), 1))
   }
@@ -325,14 +328,17 @@ pub trait FwdTxfm2D: Dim /*native::FwdTxfm2D*/ {
       #[inline]
       unsafe fn load_columns(input_ptr: *const i16, shift: u8) -> I32X8 {
         shift_left(
-          I32X8::new(_mm256_cvtepi16_epi32(_mm_loadu_si128(input_ptr as *const _))),
-          shift
+          I32X8::new(_mm256_cvtepi16_epi32(_mm_loadu_si128(
+            input_ptr as *const _,
+          ))),
+          shift,
         )
       }
       if cfg.ud_flip {
         // flip upside down
         for r in 0..txfm_size_row {
-          let input_ptr = input[(txfm_size_row - r - 1) * stride + cg..].as_ptr();
+          let input_ptr =
+            input[(txfm_size_row - r - 1) * stride + cg..].as_ptr();
           temp_out[r] = load_columns(input_ptr, shift);
         }
       } else {
@@ -396,9 +402,8 @@ pub trait FwdTxfm2D: Dim /*native::FwdTxfm2D*/ {
           let buf = &mut buf[..8];
           let input = &temp_out[txfm_size_row + rg..];
           let input = &input[..8];
-          let transposed = transpose_4x8_avx2(
-            (input[0], input[1], input[2], input[3])
-          );
+          let transposed =
+            transpose_4x8_avx2((input[0], input[1], input[2], input[3]));
 
           buf[0] = transposed.0;
           buf[1] = transposed.1;
@@ -413,9 +418,8 @@ pub trait FwdTxfm2D: Dim /*native::FwdTxfm2D*/ {
           let buf = &mut buf[..4];
           let input = &temp_out[txfm_size_row + rg..];
           let input = &input[..4];
-          let transposed = transpose_4x4_avx2((
-            input[0], input[1], input[2], input[3]
-          ));
+          let transposed =
+            transpose_4x4_avx2((input[0], input[1], input[2], input[3]));
 
           buf[0] = transposed.0;
           buf[1] = transposed.1;
@@ -430,10 +434,7 @@ pub trait FwdTxfm2D: Dim /*native::FwdTxfm2D*/ {
       if cfg.lr_flip {
         buf[rg / 8 * txfm_size_col..][..txfm_size_col].reverse();
       }
-      txfm_func_row(
-        &buf[rg / 8 * txfm_size_col..],
-        &mut temp_out[..],
-      );
+      txfm_func_row(&buf[rg / 8 * txfm_size_col..], &mut temp_out[..]);
       round_shift_array_avx2(temp_out, txfm_size_col, -cfg.shift[2]);
       for cg in (0..txfm_size_col).step_by(8) {
         if txfm_size_row >= 8 && txfm_size_col >= 8 {
@@ -506,9 +507,8 @@ pub trait FwdTxfm2D: Dim /*native::FwdTxfm2D*/ {
           let output_ptr = output[rg * txfm_size_col + cg..].as_mut_ptr();
           let input = &temp_out[cg..];
 
-          let transposed = transpose_4x8_avx2(
-            (input[0], input[1], input[2], input[3])
-          );
+          let transposed =
+            transpose_4x8_avx2((input[0], input[1], input[2], input[3]));
 
           _mm_storeu_si128(
             output_ptr.add(0 * txfm_size_col) as *mut _,
@@ -546,9 +546,8 @@ pub trait FwdTxfm2D: Dim /*native::FwdTxfm2D*/ {
           let output_ptr = output[rg * txfm_size_col + cg..].as_mut_ptr();
           let input = &temp_out[cg..];
 
-          let transposed = transpose_4x4_avx2((
-            input[0], input[1], input[2], input[3]
-          ));
+          let transposed =
+            transpose_4x4_avx2((input[0], input[1], input[2], input[3]));
 
           _mm_storeu_si128(
             output_ptr.add(0 * txfm_size_col) as *mut _,

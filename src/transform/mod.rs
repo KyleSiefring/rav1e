@@ -11,7 +11,7 @@
 #![allow(dead_code)]
 
 #[macro_use]
-mod forward_macro;
+pub mod forward_shared;
 
 use self::forward::*;
 use self::inverse::*;
@@ -26,8 +26,6 @@ use TxSize::*;
 
 pub mod forward;
 pub mod inverse;
-
-pub mod forward_data;
 
 pub static RAV1E_TX_TYPES: &[TxType] = &[
   TxType::DCT_DCT,
