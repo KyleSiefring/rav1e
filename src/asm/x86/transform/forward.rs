@@ -1,8 +1,13 @@
+use crate::cpu_features::CpuFeatureLevel;
+use crate::transform::forward::native;
 use crate::transform::forward_shared::*;
 use crate::transform::*;
 use crate::util::*;
 
-use crate::predict::Dim;
+#[cfg(target_arch = "x86")]
+use std::arch::x86::*;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
 
 type TxfmFuncI32X8 = unsafe fn(&[I32X8], &mut [I32X8]);
 
@@ -24,11 +29,6 @@ fn get_func_i32x8(t: TxfmType) -> TxfmFuncI32X8 {
     _ => unreachable!(),
   }
 }
-
-#[cfg(target_arch = "x86")]
-use std::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
 
 pub trait TxOperations: Copy {
   unsafe fn zero() -> Self;
@@ -285,14 +285,20 @@ unsafe fn round_shift_array_avx2(arr: &mut [I32X8], size: usize, bit: i8) {
   }
 }
 
-pub trait FwdTxfm2D: Dim /*native::FwdTxfm2D*/ {
+pub trait FwdTxfm2D: native::FwdTxfm2D {
   fn fwd_txfm2d_daala(
     input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-    bd: usize,
+    bd: usize, cpu: CpuFeatureLevel,
   ) {
-    unsafe {
-      Self::fwd_txfm2d_daala_avx2(input, output, stride, tx_type, bd);
+    if cpu >= CpuFeatureLevel::AVX2 {
+      unsafe {
+        Self::fwd_txfm2d_daala_avx2(input, output, stride, tx_type, bd);
+      }
     }
+
+    <Self as native::FwdTxfm2D>::fwd_txfm2d_daala(
+      input, output, stride, tx_type, bd, cpu,
+    );
   }
 
   #[target_feature(enable = "avx2")]

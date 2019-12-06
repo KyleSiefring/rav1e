@@ -7,11 +7,9 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
-use crate::predict::Dim;
+use crate::cpu_features::CpuFeatureLevel;
 use crate::util::*;
 
-use super::forward_shared::*;
-use super::TxSize;
 use super::TxType;
 
 cfg_if::cfg_if! {
@@ -24,7 +22,11 @@ cfg_if::cfg_if! {
 
 pub(crate) mod native {
   use super::*;
+
+  use crate::predict::Dim;
   use crate::transform::av1_round_shift_array;
+  use crate::transform::forward_shared::*;
+  use crate::transform::TxSize;
 
   pub trait TxOperations: Copy {
     fn zero() -> Self;
@@ -97,7 +99,7 @@ pub(crate) mod native {
   pub trait FwdTxfm2D: Dim {
     fn fwd_txfm2d_daala(
       input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-      bd: usize,
+      bd: usize, _cpu: CpuFeatureLevel,
     ) {
       let mut tmp: AlignedArray<[i32; 64 * 64]> =
         AlignedArray::uninitialized();
@@ -169,42 +171,42 @@ pub(crate) mod native {
 
 pub fn fht4x4(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block4x4::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block4x4::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht8x8(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block8x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block8x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht16x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block16x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block16x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht32x32(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block32x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block32x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht64x64(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT);
   let mut aligned: AlignedArray<[i32; 4096]> = AlignedArray::uninitialized();
   let tmp = &mut aligned.array;
 
-  //Block64x64::fwd_txfm2d(input, &mut tmp, stride, tx_type, bit_depth);
-  Block64x64::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth);
+  //Block64x64::fwd_txfm2d(input, &mut tmp, stride, tx_type, bit_depth, cpu);
+  Block64x64::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth, cpu);
 
   for i in 0..2 {
     for (row_out, row_in) in
@@ -217,57 +219,57 @@ pub fn fht64x64(
 
 pub fn fht4x8(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block4x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block4x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht8x4(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block8x4::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block8x4::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht8x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block8x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block8x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht16x8(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block16x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block16x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht16x32(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
-  Block16x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block16x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht32x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
-  Block32x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block32x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht32x64(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT);
   let mut aligned: AlignedArray<[i32; 2048]> = AlignedArray::uninitialized();
   let tmp = &mut aligned.array;
 
-  Block32x64::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth);
+  Block32x64::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth, cpu);
 
   for (row_out, row_in) in output.chunks_mut(32).zip(tmp.chunks(32)).take(64) {
     row_out.copy_from_slice(&row_in[..32]);
@@ -276,13 +278,13 @@ pub fn fht32x64(
 
 pub fn fht64x32(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT);
   let mut aligned: AlignedArray<[i32; 2048]> = AlignedArray::uninitialized();
   let tmp = &mut aligned.array;
 
-  Block64x32::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth);
+  Block64x32::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth, cpu);
 
   for i in 0..2 {
     for (row_out, row_in) in
@@ -295,43 +297,43 @@ pub fn fht64x32(
 
 pub fn fht4x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block4x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block4x16::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht16x4(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
-  Block16x4::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block16x4::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht8x32(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
-  Block8x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block8x32::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht32x8(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT || tx_type == TxType::IDTX);
-  Block32x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth);
+  Block32x8::fwd_txfm2d_daala(input, output, stride, tx_type, bit_depth, cpu);
 }
 
 pub fn fht16x64(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT);
   let mut aligned: AlignedArray<[i32; 1024]> = AlignedArray::uninitialized();
   let tmp = &mut aligned.array;
 
-  Block16x64::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth);
+  Block16x64::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth, cpu);
 
   for (row_out, row_in) in output.chunks_mut(16).zip(tmp.chunks(16)).take(64) {
     row_out.copy_from_slice(&row_in[..16]);
@@ -340,13 +342,13 @@ pub fn fht16x64(
 
 pub fn fht64x16(
   input: &[i16], output: &mut [i32], stride: usize, tx_type: TxType,
-  bit_depth: usize,
+  bit_depth: usize, cpu: CpuFeatureLevel,
 ) {
   assert!(tx_type == TxType::DCT_DCT);
   let mut aligned: AlignedArray<[i32; 1024]> = AlignedArray::uninitialized();
   let tmp = &mut aligned.array;
 
-  Block64x16::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth);
+  Block64x16::fwd_txfm2d_daala(input, tmp, stride, tx_type, bit_depth, cpu);
 
   for i in 0..2 {
     for (row_out, row_in) in
