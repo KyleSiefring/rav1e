@@ -291,7 +291,7 @@ pub trait FwdTxfm2D: native::FwdTxfm2D {
     bd: usize, cpu: CpuFeatureLevel,
   ) {
     if cpu >= CpuFeatureLevel::AVX2 {
-      unsafe {
+      return unsafe {
         Self::fwd_txfm2d_daala_avx2(input, output, stride, tx_type, bd);
       }
     }
