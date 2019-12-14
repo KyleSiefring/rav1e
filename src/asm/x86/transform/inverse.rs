@@ -92,7 +92,8 @@ pub trait InvTxfm2D: native::InvTxfm2D {
 
     // Convert input to 16-bits.
     // TODO: Remove by changing coeff types for 8 bits
-    for (c16, c32) in coeff16.array[..coeff_w*coeff_h].iter_mut().zip(input) {
+    for (c16, c32) in coeff16.array[..coeff_w * coeff_h].iter_mut().zip(input)
+    {
       *c16 = *c32 as i16;
     }
 
