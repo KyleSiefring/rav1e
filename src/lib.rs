@@ -104,6 +104,7 @@ mod metrics;
 mod rate;
 mod recon_intra;
 mod scan_order;
+mod scan_order_b;
 mod scenechange;
 mod segmentation;
 mod stats;

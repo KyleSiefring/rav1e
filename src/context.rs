@@ -24,7 +24,7 @@ use crate::partition::RefType::*;
 use crate::partition::*;
 use crate::predict::PredictionMode;
 use crate::predict::PredictionMode::*;
-use crate::scan_order::*;
+use crate::scan_order_b::*;
 use crate::tiling::*;
 use crate::token_cdfs::*;
 use crate::transform::TxSize::*;
@@ -3974,6 +3974,19 @@ impl<'a> ContextWriter<'a> {
     let scan = scan_order.scan;
     let width = av1_get_coded_tx_size(tx_size).width();
     let height = av1_get_coded_tx_size(tx_size).height();
+
+    let mut t_coeffs_storage: AlignedArray<[i32; 32 * 32]> =
+      AlignedArray::uninitialized();
+    let t_coeffs = &mut t_coeffs_storage.array[..width*height];
+
+    for r in 0..height {
+      for c in 0..width {
+        t_coeffs[r * width + c] = coeffs_in[c * height + r];
+      }
+    }
+
+    let coeffs_in: &[i32] = t_coeffs;
+
     let mut coeffs_storage: AlignedArray<[i32; 32 * 32]> =
       AlignedArray::uninitialized();
     let coeffs = &mut coeffs_storage.array[..width * height];
