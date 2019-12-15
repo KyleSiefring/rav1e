@@ -24,7 +24,8 @@ use crate::partition::RefType::*;
 use crate::partition::*;
 use crate::predict::PredictionMode;
 use crate::predict::PredictionMode::*;
-use crate::scan_order_b::*;
+use crate::scan_order::*;
+//use crate::scan_order_b::*;
 use crate::tiling::*;
 use crate::token_cdfs::*;
 use crate::transform::TxSize::*;
@@ -3758,20 +3759,24 @@ impl<'a> ContextWriter<'a> {
   pub fn txb_init_levels(
     &self, coeffs: &[i32], width: usize, height: usize, levels_buf: &mut [u8],
   ) {
-    let mut offset = TX_PAD_TOP * (width + TX_PAD_HOR);
+    let mut offset = TX_PAD_TOP * (height + TX_PAD_HOR);
 
-    for y in 0..height {
-      let coeffs_row = &coeffs[(y * width)..][..width];
-      let levels_row = &mut levels_buf[offset..][..width];
-      for (coeff, level) in coeffs_row.iter().zip(levels_row.iter_mut()) {
+    for x in 0..width {
+      let coeffs_col = &coeffs[(x * height)..][..height];
+      let levels_col = &mut levels_buf[offset..][..height];
+      for (coeff, level) in coeffs_col.iter().zip(levels_col.iter_mut()) {
         *level = clamp(coeff.abs(), 0, 127) as u8;
       }
-      offset += width + TX_PAD_HOR;
+      offset += height + TX_PAD_HOR;
     }
   }
 
   pub fn get_txb_bwl(tx_size: TxSize) -> usize {
     av1_get_coded_tx_size(tx_size).width_log2()
+  }
+
+  pub fn get_txb_bhl(tx_size: TxSize) -> usize {
+    av1_get_coded_tx_size(tx_size).height_log2()
   }
 
   pub fn get_eob_pos_token(eob: usize, extra: &mut u32) -> u32 {
@@ -3787,24 +3792,24 @@ impl<'a> ContextWriter<'a> {
     t
   }
 
-  pub fn get_nz_mag(levels: &[u8], bwl: usize, tx_class: TxClass) -> usize {
+  pub fn get_nz_mag(levels: &[u8], bhl: usize, tx_class: TxClass) -> usize {
     // May version.
     // Note: AOMMIN(level, 3) is useless for decoder since level < 3.
-    let mut mag = clip_max3(levels[1]); // { 0, 1 }
-    mag += clip_max3(levels[(1 << bwl) + TX_PAD_HOR]); // { 1, 0 }
+    let mut mag = clip_max3(levels[1]); // { 1, 0 }
+    mag += clip_max3(levels[(1 << bhl) + TX_PAD_HOR]); // { 0, 1 }
 
     if tx_class == TX_CLASS_2D {
-      mag += clip_max3(levels[(1 << bwl) + TX_PAD_HOR + 1]); // { 1, 1 }
+      mag += clip_max3(levels[(1 << bhl) + TX_PAD_HOR + 1]); // { 1, 1 }
       mag += clip_max3(levels[2]); // { 0, 2 }
-      mag += clip_max3(levels[(2 << bwl) + (2 << TX_PAD_HOR_LOG2)]); // { 2, 0 }
+      mag += clip_max3(levels[(2 << bhl) + (2 << TX_PAD_HOR_LOG2)]); // { 2, 0 }
     } else if tx_class == TX_CLASS_VERT {
-      mag += clip_max3(levels[(2 << bwl) + (2 << TX_PAD_HOR_LOG2)]); // { 2, 0 }
-      mag += clip_max3(levels[(3 << bwl) + (3 << TX_PAD_HOR_LOG2)]); // { 3, 0 }
-      mag += clip_max3(levels[(4 << bwl) + (4 << TX_PAD_HOR_LOG2)]); // { 4, 0 }
-    } else {
       mag += clip_max3(levels[2]); // { 0, 2 }
       mag += clip_max3(levels[3]); // { 0, 3 }
       mag += clip_max3(levels[4]); // { 0, 4 }
+    } else {
+      mag += clip_max3(levels[(2 << bhl) + (2 << TX_PAD_HOR_LOG2)]); // { 2, 0 }
+      mag += clip_max3(levels[(3 << bhl) + (3 << TX_PAD_HOR_LOG2)]); // { 3, 0 }
+      mag += clip_max3(levels[(4 << bhl) + (4 << TX_PAD_HOR_LOG2)]); // { 4, 0 }
     }
 
     mag as usize
@@ -3813,15 +3818,15 @@ impl<'a> ContextWriter<'a> {
   pub fn get_nz_map_ctx_from_stats(
     stats: usize,
     coeff_idx: usize, // raster order
-    bwl: usize,
+    bhl: usize,
     tx_size: TxSize,
     tx_class: TxClass,
   ) -> usize {
     if (tx_class as u32 | coeff_idx as u32) == 0 {
       return 0;
     };
-    let row = coeff_idx >> bwl;
-    let col = coeff_idx - (row << bwl);
+    let col: usize = coeff_idx >> bhl;
+    let row: usize = coeff_idx - (col << bhl);
     let mut ctx = (stats + 1) >> 1;
     ctx = cmp::min(ctx, 4);
 
@@ -3843,52 +3848,53 @@ impl<'a> ContextWriter<'a> {
             [cmp::min(col, 4)] as usize
       }
       TX_CLASS_HORIZ => {
-        let row = coeff_idx >> bwl;
-        let col = coeff_idx - (row << bwl);
+        let col: usize = coeff_idx >> bhl;
         ctx + nz_map_ctx_offset_1d[col as usize]
       }
       TX_CLASS_VERT => {
-        let row = coeff_idx >> bwl;
+        let col: usize = coeff_idx >> bhl;
+        let row: usize = coeff_idx - (col << bhl);
         ctx + nz_map_ctx_offset_1d[row]
       }
     }
   }
 
   pub fn get_nz_map_ctx(
-    levels: &[u8], coeff_idx: usize, bwl: usize, height: usize,
+    levels: &[u8], coeff_idx: usize, bhl: usize, width: usize,
     scan_idx: usize, is_eob: bool, tx_size: TxSize, tx_class: TxClass,
   ) -> usize {
     if is_eob {
+      // width << bhl is area
       if scan_idx == 0 {
         return 0;
       }
-      if scan_idx <= (height << bwl) / 8 {
+      if scan_idx <= (width << bhl) / 8 {
         return 1;
       }
-      if scan_idx <= (height << bwl) / 4 {
+      if scan_idx <= (width << bhl) / 8 {
         return 2;
       }
       return 3;
     }
-    let padded_idx = coeff_idx + ((coeff_idx >> bwl) << TX_PAD_HOR_LOG2);
-    let stats = Self::get_nz_mag(&levels[padded_idx..], bwl, tx_class);
+    let padded_idx = coeff_idx + ((coeff_idx >> bhl) << TX_PAD_HOR_LOG2);
+    let stats = Self::get_nz_mag(&levels[padded_idx..], bhl, tx_class);
 
-    Self::get_nz_map_ctx_from_stats(stats, coeff_idx, bwl, tx_size, tx_class)
+    Self::get_nz_map_ctx_from_stats(stats, coeff_idx, bhl, tx_size, tx_class)
   }
 
   pub fn get_nz_map_contexts(
     &self, levels: &mut [u8], scan: &[u16], eob: u16, tx_size: TxSize,
     tx_class: TxClass, coeff_contexts: &mut [i8],
   ) {
-    let bwl = Self::get_txb_bwl(tx_size);
-    let height = av1_get_coded_tx_size(tx_size).height();
+    let bhl = Self::get_txb_bhl(tx_size);
+    let width = av1_get_coded_tx_size(tx_size).width();
     for i in 0..eob {
       let pos = scan[i as usize];
       coeff_contexts[pos as usize] = Self::get_nz_map_ctx(
         levels,
         pos as usize,
-        bwl,
-        height,
+        bhl,
+        width,
         i as usize,
         i == eob - 1,
         tx_size,
@@ -3900,13 +3906,13 @@ impl<'a> ContextWriter<'a> {
   pub fn get_br_ctx(
     levels: &[u8],
     c: usize, // raster order
-    bwl: usize,
+    bhl: usize,
     tx_class: TxClass,
   ) -> usize {
-    let row: usize = c >> bwl;
-    let col: usize = c - (row << bwl);
-    let stride: usize = (1 << bwl) + TX_PAD_HOR;
-    let pos: usize = row * stride + col;
+    let col: usize = c >> bhl;
+    let row: usize = c - (col << bhl);
+    let stride: usize = (1 << bhl) + TX_PAD_HOR;
+    let pos: usize = col * stride + row;
     let mut mag: usize = levels[pos + 1] as usize;
 
     mag += levels[pos + stride] as usize;
@@ -3923,7 +3929,7 @@ impl<'a> ContextWriter<'a> {
         }
       }
       TX_CLASS_HORIZ => {
-        mag += levels[pos + 2] as usize;
+        mag += levels[pos + (stride << 1)] as usize;
         mag = cmp::min((mag + 1) >> 1, 6);
         if c == 0 {
           return mag;
@@ -3933,7 +3939,7 @@ impl<'a> ContextWriter<'a> {
         }
       }
       TX_CLASS_VERT => {
-        mag += levels[pos + (stride << 1)] as usize;
+        mag += levels[pos + 2] as usize;
         mag = cmp::min((mag + 1) >> 1, 6);
         if c == 0 {
           return mag;
@@ -3947,6 +3953,7 @@ impl<'a> ContextWriter<'a> {
     mag + 14
   }
 
+  // Unused?
   pub fn get_level_mag_with_txclass(
     levels: &[u8], stride: usize, row: usize, col: usize, mag: &mut [usize],
     tx_class: TxClass,
@@ -3975,7 +3982,7 @@ impl<'a> ContextWriter<'a> {
     let width = av1_get_coded_tx_size(tx_size).width();
     let height = av1_get_coded_tx_size(tx_size).height();
 
-    let mut t_coeffs_storage: AlignedArray<[i32; 32 * 32]> =
+    /*let mut t_coeffs_storage: AlignedArray<[i32; 32 * 32]> =
       AlignedArray::uninitialized();
     let t_coeffs = &mut t_coeffs_storage.array[..width*height];
 
@@ -3985,7 +3992,7 @@ impl<'a> ContextWriter<'a> {
       }
     }
 
-    let coeffs_in: &[i32] = t_coeffs;
+    let coeffs_in: &[i32] = t_coeffs;*/
 
     let mut coeffs_storage: AlignedArray<[i32; 32 * 32]> =
       AlignedArray::uninitialized();
@@ -4121,7 +4128,7 @@ impl<'a> ContextWriter<'a> {
 
     let mut coeff_contexts: AlignedArray<[i8; MAX_TX_SQUARE]> =
       AlignedArray::uninitialized();
-    let levels = &mut levels_buf[TX_PAD_TOP * (width + TX_PAD_HOR)..];
+    let levels = &mut levels_buf[TX_PAD_TOP * (height + TX_PAD_HOR)..];
 
     self.get_nz_map_contexts(
       levels,
@@ -4132,7 +4139,7 @@ impl<'a> ContextWriter<'a> {
       &mut coeff_contexts.array,
     );
 
-    let bwl = Self::get_txb_bwl(tx_size);
+    let bhl = Self::get_txb_bhl(tx_size);
 
     for c in (0..eob).rev() {
       let pos = scan[c];
@@ -4167,7 +4174,7 @@ impl<'a> ContextWriter<'a> {
         }
 
         let base_range = level - 1 - NUM_BASE_LEVELS as u16;
-        let br_ctx = Self::get_br_ctx(levels, pos as usize, bwl, tx_class);
+        let br_ctx = Self::get_br_ctx(levels, pos as usize, bhl, tx_class);
         let mut idx = 0;
 
         loop {
