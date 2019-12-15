@@ -3871,7 +3871,7 @@ impl<'a> ContextWriter<'a> {
       if scan_idx <= (width << bhl) / 8 {
         return 1;
       }
-      if scan_idx <= (width << bhl) / 8 {
+      if scan_idx <= (width << bhl) / 4 {
         return 2;
       }
       return 3;
