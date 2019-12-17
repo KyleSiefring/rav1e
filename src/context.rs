@@ -3848,30 +3848,26 @@ impl<'a> ContextWriter<'a> {
             [cmp::min(col, 4)] as usize
       }
       TX_CLASS_HORIZ => {
-        let col: usize = coeff_idx >> bhl;
         ctx + nz_map_ctx_offset_1d[col as usize]
       }
       TX_CLASS_VERT => {
-        let col: usize = coeff_idx >> bhl;
-        let row: usize = coeff_idx - (col << bhl);
         ctx + nz_map_ctx_offset_1d[row]
       }
     }
   }
 
   pub fn get_nz_map_ctx(
-    levels: &[u8], coeff_idx: usize, bhl: usize, width: usize,
+    levels: &[u8], coeff_idx: usize, bhl: usize, area: usize,
     scan_idx: usize, is_eob: bool, tx_size: TxSize, tx_class: TxClass,
   ) -> usize {
     if is_eob {
-      // width << bhl is area
       if scan_idx == 0 {
         return 0;
       }
-      if scan_idx <= (width << bhl) / 8 {
+      if scan_idx <= area / 8 {
         return 1;
       }
-      if scan_idx <= (width << bhl) / 4 {
+      if scan_idx <= area / 4 {
         return 2;
       }
       return 3;
@@ -3889,14 +3885,14 @@ impl<'a> ContextWriter<'a> {
     tx_class: TxClass, coeff_contexts: &mut [i8],
   ) {
     let bhl = Self::get_txb_bhl(tx_size);
-    let width = av1_get_coded_tx_size(tx_size).width();
+    let area = av1_get_coded_tx_size(tx_size).area();
     for i in 0..eob {
       let pos = scan[i as usize];
       coeff_contexts[pos as usize] = Self::get_nz_map_ctx(
         levels,
         pos as usize,
         bhl,
-        width,
+        area,
         i as usize,
         i == eob - 1,
         tx_size,
@@ -3907,13 +3903,13 @@ impl<'a> ContextWriter<'a> {
 
   pub fn get_br_ctx(
     levels: &[u8],
-    c: usize, // raster order
+    coeff_idx: usize, // raster order
     bhl: usize,
     tx_class: TxClass,
   ) -> usize {
     // Coefficients and levels are transposed from how they work in the spec
-    let col: usize = c >> bhl;
-    let row: usize = c - (col << bhl);
+    let col: usize = coeff_idx >> bhl;
+    let row: usize = coeff_idx - (col << bhl);
     let stride: usize = (1 << bhl) + TX_PAD_HOR;
     let pos: usize = col * stride + row;
     let mut mag: usize = levels[pos + 1] as usize;
@@ -3924,7 +3920,7 @@ impl<'a> ContextWriter<'a> {
       TX_CLASS_2D => {
         mag += levels[pos + stride + 1] as usize;
         mag = cmp::min((mag + 1) >> 1, 6);
-        if c == 0 {
+        if coeff_idx == 0 {
           return mag;
         }
         if (row < 2) && (col < 2) {
@@ -3934,7 +3930,7 @@ impl<'a> ContextWriter<'a> {
       TX_CLASS_HORIZ => {
         mag += levels[pos + (stride << 1)] as usize;
         mag = cmp::min((mag + 1) >> 1, 6);
-        if c == 0 {
+        if coeff_idx == 0 {
           return mag;
         }
         if col == 0 {
@@ -3944,7 +3940,7 @@ impl<'a> ContextWriter<'a> {
       TX_CLASS_VERT => {
         mag += levels[pos + 2] as usize;
         mag = cmp::min((mag + 1) >> 1, 6);
-        if c == 0 {
+        if coeff_idx == 0 {
           return mag;
         }
         if row == 0 {
@@ -4037,64 +4033,20 @@ impl<'a> ContextWriter<'a> {
     let eob_multi_size: usize = tx_size.area_log2() - 4;
     let eob_multi_ctx: usize = if tx_class == TX_CLASS_2D { 0 } else { 1 };
 
-    match eob_multi_size {
-      0 => {
-        symbol_with_update!(
-          self,
-          w,
-          eob_pt - 1,
-          &mut self.fc.eob_flag_cdf16[plane_type][eob_multi_ctx]
-        );
+    symbol_with_update!(
+      self,
+      w,
+      eob_pt - 1,
+      match eob_multi_size {
+        0 => &mut self.fc.eob_flag_cdf16[plane_type][eob_multi_ctx],
+        1 => &mut self.fc.eob_flag_cdf32[plane_type][eob_multi_ctx],
+        2 => &mut self.fc.eob_flag_cdf64[plane_type][eob_multi_ctx],
+        3 => &mut self.fc.eob_flag_cdf128[plane_type][eob_multi_ctx],
+        4 => &mut self.fc.eob_flag_cdf256[plane_type][eob_multi_ctx],
+        5 => &mut self.fc.eob_flag_cdf512[plane_type][eob_multi_ctx],
+        _ => &mut self.fc.eob_flag_cdf1024[plane_type][eob_multi_ctx]
       }
-      1 => {
-        symbol_with_update!(
-          self,
-          w,
-          eob_pt - 1,
-          &mut self.fc.eob_flag_cdf32[plane_type][eob_multi_ctx]
-        );
-      }
-      2 => {
-        symbol_with_update!(
-          self,
-          w,
-          eob_pt - 1,
-          &mut self.fc.eob_flag_cdf64[plane_type][eob_multi_ctx]
-        );
-      }
-      3 => {
-        symbol_with_update!(
-          self,
-          w,
-          eob_pt - 1,
-          &mut self.fc.eob_flag_cdf128[plane_type][eob_multi_ctx]
-        );
-      }
-      4 => {
-        symbol_with_update!(
-          self,
-          w,
-          eob_pt - 1,
-          &mut self.fc.eob_flag_cdf256[plane_type][eob_multi_ctx]
-        );
-      }
-      5 => {
-        symbol_with_update!(
-          self,
-          w,
-          eob_pt - 1,
-          &mut self.fc.eob_flag_cdf512[plane_type][eob_multi_ctx]
-        );
-      }
-      _ => {
-        symbol_with_update!(
-          self,
-          w,
-          eob_pt - 1,
-          &mut self.fc.eob_flag_cdf1024[plane_type][eob_multi_ctx]
-        );
-      }
-    }
+    );
 
     let eob_offset_bits = k_eob_offset_bits[eob_pt as usize];
 
@@ -4131,9 +4083,9 @@ impl<'a> ContextWriter<'a> {
     let bhl = Self::get_txb_bhl(tx_size);
 
     for c in (0..eob).rev() {
-      let pos = scan[c];
-      let coeff_ctx = coeff_contexts.array[pos as usize];
-      let v = coeffs_in[pos as usize];
+      let pos = scan[c] as usize;
+      let coeff_ctx = coeff_contexts.array[pos];
+      let v = coeffs[c];
       let level: u32 = v.abs() as u32;
 
       if c == eob - 1 {
@@ -4154,16 +4106,14 @@ impl<'a> ContextWriter<'a> {
       }
 
       if level > NUM_BASE_LEVELS as u32 {
-        let pos = scan[c as usize];
-        let v = coeffs_in[pos as usize];
-        let level = v.abs() as u16;
+        let level = level as u16;
 
         if level <= NUM_BASE_LEVELS as u16 {
           continue;
         }
 
         let base_range = level - 1 - NUM_BASE_LEVELS as u16;
-        let br_ctx = Self::get_br_ctx(levels, pos as usize, bhl, tx_class);
+        let br_ctx = Self::get_br_ctx(levels, pos, bhl, tx_class);
         let mut idx = 0;
 
         loop {
@@ -4190,7 +4140,7 @@ impl<'a> ContextWriter<'a> {
     // Loop to code all signs in the transform block,
     // starting with the sign of DC (if applicable)
     for c in 0..eob {
-      let v = coeffs_in[scan[c] as usize];
+      let v = coeffs[c];
       let level = v.abs() as u32;
       if level == 0 {
         continue;
@@ -4209,9 +4159,8 @@ impl<'a> ContextWriter<'a> {
       }
       // save extra golomb codes for separate loop
       if level > (COEFF_BASE_RANGE + NUM_BASE_LEVELS) as u32 {
-        let pos = scan[c];
         w.write_golomb(
-          coeffs_in[pos as usize].abs() as u16
+          level as u16
             - COEFF_BASE_RANGE as u16
             - 1
             - NUM_BASE_LEVELS as u16,
