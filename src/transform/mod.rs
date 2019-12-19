@@ -27,6 +27,35 @@ use TxSize::*;
 pub mod forward;
 pub mod inverse;
 
+// TODO: Remove Dim entirely. Has already been removed from predict.
+pub trait Dim {
+  const W: usize;
+  const H: usize;
+}
+
+macro_rules! blocks_dimension {
+  ($(($W:expr, $H:expr)),+) => {
+    paste::item! {
+      $(
+        pub struct [<Block $W x $H>];
+
+        impl Dim for [<Block $W x $H>] {
+          const W: usize = $W;
+          const H: usize = $H;
+        }
+      )*
+    }
+  };
+}
+
+blocks_dimension! {
+  (4, 4), (8, 8), (16, 16), (32, 32), (64, 64),
+  (4, 8), (8, 16), (16, 32), (32, 64),
+  (8, 4), (16, 8), (32, 16), (64, 32),
+  (4, 16), (8, 32), (16, 64),
+  (16, 4), (32, 8), (64, 16)
+}
+
 pub static RAV1E_TX_TYPES: &[TxType] = &[
   TxType::DCT_DCT,
   TxType::ADST_DCT,
