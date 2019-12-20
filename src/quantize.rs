@@ -13,23 +13,8 @@ use crate::transform::{TxSize, TxType};
 use crate::util::*;
 
 use crate::scan_order::av1_scan_orders;
-use num_traits::*;
 use std::convert::Into;
 use std::mem;
-use std::ops::AddAssign;
-
-pub trait Coefficient:
-  PrimInt
-  + Into<i32>
-  + AsPrimitive<i32>
-  + CastFromPrimitive<i32>
-  + AddAssign
-  + Signed
-  + 'static
-{
-}
-impl Coefficient for i16 {}
-impl Coefficient for i32 {}
 
 pub fn get_log_tx_scale(tx_size: TxSize) -> usize {
   let num_pixels = tx_size.area();
@@ -271,7 +256,7 @@ impl QuantizationContext {
     let eob = {
       let eob_minus_one = scan[1..]
         .iter()
-        .rposition(|&i| coeffs[i as usize].as_().abs() >= deadzone);
+        .rposition(|&i| i32::cast_from(coeffs[i as usize].abs()) >= deadzone);
       // We skip the DC coefficient since it has its own quantizer index.
       eob_minus_one.map(|n| n + 1).unwrap_or(1)
     };
