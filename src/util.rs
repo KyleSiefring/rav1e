@@ -10,6 +10,7 @@
 use num_traits::*;
 use std::fmt::{Debug, Display};
 use std::mem::{size_of, MaybeUninit};
+use std::ops::AddAssign;
 
 //TODO: Nice to have (although I wasn't able to find a way to do it yet in rust): zero-fill arrays that are
 // shorter than required.  Need const fn (Rust Issue #24111) or const generics (Rust RFC #2000)
@@ -117,27 +118,16 @@ macro_rules! impl_cast_from_primitive {
 // casts to { u8, u16 } are implemented separately using Pixel, so that the
 // compiler understands that CastFromPrimitive<T: Pixel> is always implemented
 impl_cast_from_primitive!(u8 => { u32, u64, usize });
-impl_cast_from_primitive!(u8 => { i8, i16, i32, i64, isize });
+impl_cast_from_primitive!(u8 => { i8, i64, isize });
 impl_cast_from_primitive!(u16 => { u32, u64, usize });
-impl_cast_from_primitive!(u16 => { i8, i16, i32, i64, isize });
+impl_cast_from_primitive!(u16 => { i8, i64, isize });
 impl_cast_from_primitive!(i16 => { u32, u64, usize });
-impl_cast_from_primitive!(i16 => { i8, i16, i32, i64, isize });
+impl_cast_from_primitive!(i16 => { i8, i64, isize });
 impl_cast_from_primitive!(i32 => { u32, u64, usize });
-impl_cast_from_primitive!(i32 => { i8, i16, i32, i64, isize });
+impl_cast_from_primitive!(i32 => { i8, i64, isize });
 
-/// Types that can be used as pixel types.
-pub enum PixelType {
-  /// 8 bits per pixel, stored in a `u8`.
-  U8,
-  /// 10 or 12 bits per pixel, stored in a `u16`.
-  U16,
-}
-
-/// A type that can be used as a pixel type.
-pub trait Pixel:
+pub trait RegisteredPrimitive:
   PrimInt
-  + Into<u32>
-  + Into<i32>
   + AsPrimitive<u8>
   + AsPrimitive<i16>
   + AsPrimitive<u16>
@@ -150,6 +140,44 @@ pub trait Pixel:
   + CastFromPrimitive<i32>
   + CastFromPrimitive<u32>
   + CastFromPrimitive<usize>
+{
+}
+
+impl RegisteredPrimitive for u8 {}
+impl RegisteredPrimitive for u16 {}
+impl RegisteredPrimitive for i16 {}
+impl RegisteredPrimitive for i32 {}
+
+macro_rules! impl_cast_from_pixel_to_primitive {
+  ( $T:ty ) => {
+    impl<T: RegisteredPrimitive> CastFromPrimitive<T> for $T {
+      #[inline(always)]
+      fn cast_from(v: T) -> Self {
+        v.as_()
+      }
+    }
+  };
+}
+
+impl_cast_from_pixel_to_primitive!(u8);
+impl_cast_from_pixel_to_primitive!(i16);
+impl_cast_from_pixel_to_primitive!(u16);
+impl_cast_from_pixel_to_primitive!(i32);
+impl_cast_from_pixel_to_primitive!(u32);
+
+/// Types that can be used as pixel types.
+pub enum PixelType {
+  /// 8 bits per pixel, stored in a `u8`.
+  U8,
+  /// 10 or 12 bits per pixel, stored in a `u16`.
+  U16,
+}
+
+/// A type that can be used as a pixel type.
+pub trait Pixel:
+  RegisteredPrimitive
+  + Into<u32>
+  + Into<i32>
   + Debug
   + Display
   + Send
@@ -179,22 +207,13 @@ impl Pixel for u16 {
   }
 }
 
-macro_rules! impl_cast_from_pixel_to_primitive {
-  ( $T:ty ) => {
-    impl<T: Pixel> CastFromPrimitive<T> for $T {
-      #[inline(always)]
-      fn cast_from(v: T) -> Self {
-        v.as_()
-      }
-    }
-  };
+pub trait Coefficient:
+  RegisteredPrimitive + Into<i32> + AddAssign + Signed + 'static
+{
 }
 
-impl_cast_from_pixel_to_primitive!(u8);
-impl_cast_from_pixel_to_primitive!(i16);
-impl_cast_from_pixel_to_primitive!(u16);
-impl_cast_from_pixel_to_primitive!(i32);
-impl_cast_from_pixel_to_primitive!(u32);
+impl Coefficient for i16 {}
+impl Coefficient for i32 {}
 
 pub trait ILog: PrimInt {
   // Integer binary logarithm of an integer value.
