@@ -8,4 +8,4 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 //pub mod forward;
-//pub mod inverse;
+pub mod inverse;

@@ -58,13 +58,13 @@ pub trait InvTxfm2D: native::InvTxfm2D {
     // Only use at most 32 columns and 32 rows of input coefficients.
     let input: &[T::Coeff] = &input[..coeff_w * coeff_h];
 
-    let mut coeff16: AlignedArray<[i16; 32 * 32]> =
+    let mut cloned: AlignedArray<[T::Coeff; 32 * 32]> =
       AlignedArray::uninitialized();
 
     // Convert input to 16-bits.
     // TODO: Remove by changing coeff to 16-bits for 8-bit output
-    for (c16, c32) in coeff16.array.iter_mut().zip(input) {
-      *c16 = i16::cast_from(*c32);
+    for (a, b) in cloned.array.iter_mut().zip(input) {
+      *a = *b;
     }
 
     let stride = output.plane_cfg.stride as isize;
@@ -73,7 +73,7 @@ pub trait InvTxfm2D: native::InvTxfm2D {
     Self::match_tx_type_avx2(tx_type)(
       output.data_ptr_mut() as *mut _,
       stride,
-      coeff16.array.as_ptr(),
+      cloned.array.as_ptr() as *const _,
       (coeff_w * coeff_h) as i32,
     );
   }
@@ -95,13 +95,13 @@ pub trait InvTxfm2D: native::InvTxfm2D {
     // Only use at most 32 columns and 32 rows of input coefficients.
     let input: &[T::Coeff] = &input[..coeff_w * coeff_h];
 
-    let mut coeff16: AlignedArray<[i16; 32 * 32]> =
+    let mut cloned: AlignedArray<[T::Coeff; 32 * 32]> =
       AlignedArray::uninitialized();
 
     // Convert input to 16-bits.
     // TODO: Remove by changing coeff to 16-bits for 8-bit output
-    for (c16, c32) in coeff16.array.iter_mut().zip(input) {
-      *c16 = i16::cast_from(*c32);
+    for (a, b) in cloned.array.iter_mut().zip(input) {
+      *a = *b;
     }
 
     let stride = output.plane_cfg.stride as isize;
@@ -110,7 +110,7 @@ pub trait InvTxfm2D: native::InvTxfm2D {
     Self::match_tx_type_ssse3(tx_type)(
       output.data_ptr_mut() as *mut _,
       stride,
-      coeff16.array.as_ptr(),
+      cloned.array.as_ptr() as *const _,
       (coeff_w * coeff_h) as i32,
     );
   }
@@ -248,10 +248,12 @@ mod test {
             let mut src_storage = [0u8; 64 * 64];
             let src = &mut src_storage[..tx_size.area()];
             let mut dst = Plane::wrap(vec![0u8; tx_size.area()], tx_size.width());
-            let mut res_storage = [0i16; 64 * 64];
-            let res = &mut res_storage[..tx_size.area()];
-            let mut freq_storage = [0i32; 64 * 64];
-            let freq = &mut freq_storage[..tx_size.area()];
+            let mut res_storage: AlignedArray<[i16; 64 * 64]> =
+              AlignedArray::uninitialized();
+            let res = &mut res_storage.array[..tx_size.area()];
+            let mut freq_storage: AlignedArray<[i16; 64 * 64]> =
+              AlignedArray::uninitialized();
+            let freq = &mut freq_storage.array[..tx_size.area()];
             for ((r, s), d) in
               res.iter_mut().zip(src.iter_mut()).zip(dst.data.iter_mut())
             {
