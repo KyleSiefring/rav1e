@@ -46,6 +46,8 @@ use arrayvec::*;
 use std;
 use std::vec::Vec;
 
+use itertools::izip;
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum RDOType {
   PixelDistRealRate,
@@ -131,7 +133,6 @@ pub fn estimate_rate(qindex: u8, ts: TxSize, fast_distortion: u64) -> u64 {
   (y0 + (((fast_distortion as i64 - x0) * slope) >> 8)).max(0) as u64
 }
 
-#[inline(always)]
 fn cdef_dist_wxh_8x8<T: Pixel>(
   src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, bit_depth: usize,
 ) -> RawDistortion {
@@ -142,24 +143,34 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
 
   let coeff_shift = bit_depth - 8;
 
-  let mut sum_s: i32 = 0;
-  let mut sum_d: i32 = 0;
-  let mut sum_s2: i64 = 0;
-  let mut sum_d2: i64 = 0;
-  let mut sum_sd: i64 = 0;
+  let mut sum_s_cols: [i16; 8] = [0; 8];
+  let mut sum_d_cols: [i16; 8] = [0; 8];
+  let mut sum_s2_cols: [i32; 8] = [0; 8];
+  let mut sum_d2_cols: [i32; 8] = [0; 8];
+  let mut sum_sd_cols: [i32; 8] = [0; 8];
+
   for j in 0..8 {
     let row1 = &src1[j][0..8];
     let row2 = &src2[j][0..8];
-    for (s, d) in row1.iter().zip(row2) {
-      let s: i32 = s.as_();
-      let d: i32 = d.as_();
-      sum_s += s;
-      sum_d += d;
-      sum_s2 += (s * s) as i64;
-      sum_d2 += (d * d) as i64;
-      sum_sd += (s * d) as i64;
+    for (sum_s, sum_d, sum_s2, sum_d2, sum_sd, s, d) in izip!(&mut sum_s_cols, &mut sum_d_cols, &mut sum_s2_cols, &mut sum_d2_cols, &mut sum_sd_cols, row1, row2) {
+      let s: i16 = s.as_();
+      let d: i16 = d.as_();
+      *sum_s += s;
+      *sum_d += d;
+      let s: i32 = s as i32;
+      let d: i32 = d as i32;
+      *sum_s2 += s * s;
+      *sum_d2 += d * d;
+      *sum_sd += s * d;
     }
   }
+
+  let sum_s: i32 = sum_s_cols.iter().map(|&a|i32::cast_from(a)).sum();
+  let sum_d: i32 = sum_d_cols.iter().map(|&a|i32::cast_from(a)).sum();
+  let sum_s2: i64 = sum_s2_cols.iter().sum::<i32>() as i64;
+  let sum_d2: i64 = sum_d2_cols.iter().sum::<i32>() as i64;
+  let sum_sd: i64 = sum_sd_cols.iter().sum::<i32>() as i64;
+
   let svar = (sum_s2 - ((sum_s as i64 * sum_s as i64 + 32) >> 6)) as f64;
   let dvar = (sum_d2 - ((sum_d as i64 * sum_d as i64 + 32) >> 6)) as f64;
   let sse = (sum_d2 + sum_s2 - 2 * sum_sd) as f64;
