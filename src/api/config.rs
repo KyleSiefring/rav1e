@@ -385,7 +385,7 @@ impl SpeedSettings {
     } else if speed <= 8 {
       (BlockSize::BLOCK_8X8, BlockSize::BLOCK_64X64)
     } else if speed <= 9 {
-      (BlockSize::BLOCK_32X32, BlockSize::BLOCK_64X64)
+      (BlockSize::BLOCK_16X16, BlockSize::BLOCK_32X32)
     } else {
       (BlockSize::BLOCK_32X32, BlockSize::BLOCK_32X32)
     };
