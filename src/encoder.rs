@@ -2214,7 +2214,8 @@ fn encode_partition_bottomup<T: Pixel, W: Writer>(
   // Always split if the current partition is too large, i.e. right or bottom tile border
   let must_split = (tile_bo.0.x + bsw as usize > ts.mi_width
     || tile_bo.0.y + bsh as usize > ts.mi_height
-    || bsize > BlockSize::BLOCK_64X64)
+    || bsize > BlockSize::BLOCK_64X64
+    || bsize > fi.partition_size_range.1)
     && is_square;
 
   // must_split overrides the minimum partition size when applicable
@@ -2498,7 +2499,8 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
   // Always split if the current partition is too large, i.e. right or bottom tile border
   let must_split = (tile_bo.0.x + bsw as usize > ts.mi_width
     || tile_bo.0.y + bsh as usize > ts.mi_height
-    || bsize > BlockSize::BLOCK_64X64)
+    || bsize > BlockSize::BLOCK_64X64
+    || bsize > fi.partition_size_range.1)
     && is_square;
 
   let mut rdo_output =
@@ -3304,7 +3306,7 @@ fn encode_tile<'a, T: Pixel>(
           &mut cw,
           &mut sbs_qe.w_pre_cdef,
           &mut sbs_qe.w_post_cdef,
-          fi.partition_size_range.1,
+          BlockSize::BLOCK_64X64,
           tile_bo,
           pmv_idx,
           std::f64::MAX,
@@ -3317,7 +3319,7 @@ fn encode_tile<'a, T: Pixel>(
           &mut cw,
           &mut sbs_qe.w_pre_cdef,
           &mut sbs_qe.w_post_cdef,
-          fi.partition_size_range.1,
+          BlockSize::BLOCK_64X64,
           tile_bo,
           &None,
           pmv_idx,
