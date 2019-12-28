@@ -58,15 +58,15 @@ pub const SGRPROJ_SGR_BITS: u8 = 8;
 pub const SGRPROJ_RECIP_BITS: u8 = 12;
 pub const SGRPROJ_RST_BITS: u8 = 4;
 pub const SGRPROJ_PARAMS_S: [[u32; 2]; 1 << SGRPROJ_PARAMS_BITS] = [
-  [140, 3236],
+  [140, 3236],//0
   [112, 2158],
-  [93, 1618],
+  [93, 1618],//2
   [80, 1438],
-  [70, 1295],
+  [70, 1295],//4
   [58, 1177],
-  [47, 1079],
+  [47, 1079],//6
   [37, 996],
-  [30, 925],
+  [30, 925],//8
   [25, 863],
   [0, 2589],
   [0, 1618],
