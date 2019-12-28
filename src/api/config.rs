@@ -387,7 +387,7 @@ impl SpeedSettings {
     } else if speed <= 9 {
       (BlockSize::BLOCK_32X32, BlockSize::BLOCK_64X64)
     } else {
-      (BlockSize::BLOCK_64X64, BlockSize::BLOCK_64X64)
+      (BlockSize::BLOCK_32X32, BlockSize::BLOCK_32X32)
     };
 
     // Topdown search checks min_block_size for PARTITION_SPLIT only, so min_block_size must be square.
