@@ -487,7 +487,7 @@ pub struct FrameInvariants<T: Pixel> {
   pub use_reduced_tx_set: bool,
   pub reference_mode: ReferenceMode,
   pub use_prev_frame_mvs: bool,
-  pub min_partition_size: BlockSize,
+  pub partition_size_range: (BlockSize, BlockSize),
   pub globalmv_transformation_type: [GlobalMVMode; INTER_REFS_PER_FRAME],
   pub num_tg: usize,
   pub large_scale_tile: bool,
@@ -577,8 +577,9 @@ impl<T: Pixel> FrameInvariants<T> {
       sequence.bit_depth <= mem::size_of::<T>() * 8,
       "bit depth cannot fit into u8"
     );
-    let min_partition_size = config.speed_settings.min_block_size;
-    assert!(min_partition_size.is_sqr());
+    let partition_size_range = config.speed_settings.block_size_range;
+    assert!(partition_size_range.0.is_sqr());
+    assert!(partition_size_range.1.is_sqr());
     let use_reduced_tx_set = config.speed_settings.reduced_tx_set;
     let use_tx_domain_distortion =
       config.tune == Tune::Psnr && config.speed_settings.tx_domain_distortion;
@@ -653,7 +654,7 @@ impl<T: Pixel> FrameInvariants<T> {
       use_reduced_tx_set,
       reference_mode: ReferenceMode::SINGLE,
       use_prev_frame_mvs: false,
-      min_partition_size,
+      partition_size_range,
       globalmv_transformation_type: [GlobalMVMode::IDENTITY;
         INTER_REFS_PER_FRAME],
       num_tg: 1,
@@ -2223,7 +2224,7 @@ fn encode_partition_bottomup<T: Pixel, W: Writer>(
     bsize <= BlockSize::BLOCK_8X8 {
     false
   } else {
-    (bsize > fi.min_partition_size && is_square) || must_split
+    (bsize > fi.partition_size_range.0 && is_square) || must_split
   };
   let mut best_partition = PartitionType::PARTITION_INVALID;
 
@@ -2527,7 +2528,7 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
   if must_split && (!split_vert && !split_horz) {
     // Oversized blocks are split automatically
     partition = PartitionType::PARTITION_SPLIT;
-  } else if (must_split || (bsize > fi.min_partition_size && is_square))
+  } else if (must_split || (bsize > fi.partition_size_range.0 && is_square))
     && (
       // FIXME: sub-8x8 inter blocks not supported for non-4:2:0 sampling
       !fi.frame_type.has_inter()
@@ -3303,7 +3304,7 @@ fn encode_tile<'a, T: Pixel>(
           &mut cw,
           &mut sbs_qe.w_pre_cdef,
           &mut sbs_qe.w_post_cdef,
-          BlockSize::BLOCK_64X64,
+          fi.partition_size_range.1,
           tile_bo,
           pmv_idx,
           std::f64::MAX,
@@ -3316,7 +3317,7 @@ fn encode_tile<'a, T: Pixel>(
           &mut cw,
           &mut sbs_qe.w_pre_cdef,
           &mut sbs_qe.w_post_cdef,
-          BlockSize::BLOCK_64X64,
+          fi.partition_size_range.1,
           tile_bo,
           &None,
           pmv_idx,

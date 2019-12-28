@@ -222,7 +222,8 @@ impl fmt::Display for EncoderConfig {
       ("low_latency", self.low_latency.to_string()),
       ("tune", self.tune.to_string()),
       ("rdo_lookahead_frames", self.rdo_lookahead_frames.to_string()),
-      ("min_block_size", self.speed_settings.min_block_size.to_string()),
+      ("min_block_size", self.speed_settings.block_size_range.0.to_string()),
+      ("max_block_size", self.speed_settings.block_size_range.1.to_string()),
       (
         "multiref",
         (!self.low_latency || self.speed_settings.multiref).to_string(),
@@ -265,7 +266,7 @@ pub struct SpeedSettings {
   /// Minimum block size. Smaller is slower.
   ///
   /// Must be a square block size, so e.g. 8×4 isn't allowed here.
-  pub min_block_size: BlockSize,
+  pub block_size_range: (BlockSize, BlockSize),
   /// Enables inter-frames to have multiple reference frames.
   ///
   /// Enabled is slower.
@@ -332,7 +333,7 @@ impl Default for SpeedSettings {
   /// It is set to the slowest settings possible.
   fn default() -> Self {
     SpeedSettings {
-      min_block_size: BlockSize::BLOCK_4X4,
+      block_size_range: (BlockSize::BLOCK_4X4, BlockSize::BLOCK_64X64),
       multiref: true,
       fast_deblock: false,
       reduced_tx_set: false,
@@ -372,7 +373,7 @@ impl SpeedSettings {
   /// - 0 (slowest): min block size 4x4, complex pred modes, RDO TX decision, include near MVs, bottom-up encoding with non-square partitions everywhere
   pub fn from_preset(speed: usize) -> Self {
     SpeedSettings {
-      min_block_size: Self::min_block_size_preset(speed),
+      block_size_range: Self::block_size_range_preset(speed),
       multiref: Self::multiref_preset(speed),
       fast_deblock: Self::fast_deblock_preset(speed),
       reduced_tx_set: Self::reduced_tx_set_preset(speed),
@@ -396,20 +397,21 @@ impl SpeedSettings {
 
   /// This preset is set this way because 8x8 with reduced TX set is faster but with equivalent
   /// or better quality compared to 16x16 (to which reduced TX set does not apply).
-  fn min_block_size_preset(speed: usize) -> BlockSize {
-    let min_block_size = if speed <= 2 {
-      BlockSize::BLOCK_4X4
+  fn block_size_range_preset(speed: usize) -> (BlockSize, BlockSize) {
+    let block_size_range: (BlockSize, BlockSize) = if speed <= 2 {
+      (BlockSize::BLOCK_4X4, BlockSize::BLOCK_64X64)
     } else if speed <= 8 {
-      BlockSize::BLOCK_8X8
+      (BlockSize::BLOCK_8X8, BlockSize::BLOCK_64X64)
     } else if speed <= 9 {
-      BlockSize::BLOCK_32X32
+      (BlockSize::BLOCK_32X32, BlockSize::BLOCK_64X64)
     } else {
-      BlockSize::BLOCK_64X64
+      (BlockSize::BLOCK_64X64, BlockSize::BLOCK_64X64)
     };
 
     // Topdown search checks min_block_size for PARTITION_SPLIT only, so min_block_size must be square.
-    assert!(min_block_size.is_sqr());
-    min_block_size
+    assert!(block_size_range.0.is_sqr());
+    assert!(block_size_range.1.is_sqr());
+    block_size_range
   }
 
   /// Multiref is enabled automatically if low_latency is false.
