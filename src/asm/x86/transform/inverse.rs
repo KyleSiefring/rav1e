@@ -56,25 +56,13 @@ pub trait InvTxfm2D: native::InvTxfm2D {
     let coeff_w = Self::W.min(32);
     let coeff_h = Self::H.min(32);
 
-    // Only use at most 32 columns and 32 rows of input coefficients.
-    let input: &[T::Coeff] = &input[..coeff_w * coeff_h];
-
-    let mut copied: AlignedArray<[T::Coeff; 32 * 32]> =
-      AlignedArray::uninitialized();
-
-    // Convert input to 16-bits.
-    // TODO: Remove by changing inverse assembly to not overwrite its input
-    for (a, b) in copied.array.iter_mut().zip(input) {
-      *a = *b;
-    }
-
     let stride = output.plane_cfg.stride as isize;
 
     // perform the inverse transform
     Self::match_tx_type_avx2(tx_type)(
       output.data_ptr_mut() as *mut _,
       stride,
-      copied.array.as_mut_ptr() as *mut _,
+      input.as_ptr() as *mut _,
       (coeff_w * coeff_h) as i32,
     );
   }
