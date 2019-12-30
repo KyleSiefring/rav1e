@@ -304,7 +304,7 @@ impl QuantizationContext {
 
       if level_mode != 0 && qcoeff == T::cast_from(0) {
         level_mode = 0;
-      } else if qcoeff > T::cast_from(1) {
+      } else if qcoeff.abs() > T::cast_from(1) {
         level_mode = 1;
       }
     }
