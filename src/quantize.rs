@@ -282,12 +282,13 @@ impl QuantizationContext {
     // coefficients, most bits will be spent on coding its magnitude.
     // To that end, we want to bias more toward rounding to zero for
     // that tail of zeroes and ones than we do for the larger coefficients.
+    let mut last_signum: T = T::cast_from(1);
     let mut level_mode = 1;
     for (i, &pos) in (1..).zip(scan[1..].iter().take(eob)) {
       let coeff = i32::cast_from(coeffs[pos as usize]) << self.log_tx_scale;
       let level0 =
         T::cast_from(divu_pair(i32::cast_from(coeff), self.ac_mul_add));
-      let offset = if level0.abs() > T::cast_from(1 - level_mode) {
+      let offset = if level0*last_signum > T::cast_from(1 - level_mode) {
         self.ac_offset1
       } else {
         self.ac_offset0
@@ -306,6 +307,7 @@ impl QuantizationContext {
         level_mode = 0;
       } else if qcoeff.abs() > T::cast_from(1) {
         level_mode = 1;
+        last_signum = qcoeff.signum();
       }
     }
 
