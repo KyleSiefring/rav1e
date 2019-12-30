@@ -287,7 +287,7 @@ impl QuantizationContext {
       let coeff = i32::cast_from(coeffs[pos as usize]) << self.log_tx_scale;
       let level0 =
         T::cast_from(divu_pair(i32::cast_from(coeff), self.ac_mul_add));
-      let offset = if level0 > T::cast_from(1 - level_mode) {
+      let offset = if level0.abs() > T::cast_from(1 - level_mode) {
         self.ac_offset1
       } else {
         self.ac_offset0
