@@ -2204,7 +2204,27 @@ pub fn rdo_loop_decision<T: Pixel>(
                 }
               }
 
-              for set in 10..16 {
+              let mut get_cost = |set: u8| -> f64 {
+                *costs[set as usize].get_or_insert_with(|| test_sgr_set(set).0)
+              };
+
+              let mut compare = |set1: u8, set2: u8| -> bool {
+                get_cost(set1) < get_cost(set2)
+              };
+
+              if compare(11, 12) { //12
+                get_cost(10); //3
+              } else {
+                get_cost(13); //3
+              }
+              //10
+              //11
+              //12
+              //13
+
+              //14
+              //15
+              for set in 14..16 {
                 // clip to encoded area
                 let (xqd0, xqd1) = sgrproj_solve(
                   set,
