@@ -2184,35 +2184,15 @@ pub fn rdo_loop_decision<T: Pixel>(
               //9
 
               if get_cost(3) < get_cost(6) { //12
-                if get_cost(1) < get_cost(3) { //3
-                  get_cost(0); //4
-                  get_cost(2); //5
-                } else if get_cost(5) < get_cost(3) { //4
-                  get_cost(4); //5
-                } else {
-                  get_cost(2); //5
-                  get_cost(4); //6
-                }
+                get_cost(0); //3
               } else {
-                if get_cost(8) < get_cost(6) { //3
-                  get_cost(9); //4
-                  get_cost(7); //5
-                } else if get_cost(4) < get_cost(6) { //4
-                  get_cost(5); //5
-                } else {
-                  get_cost(7); //5
-                  get_cost(5); //6
-                }
+                get_cost(9); //3
               }
 
-              if get_cost(11) < get_cost (12) { //12
-                get_cost(10); //3
-              } else {
-                get_cost(13); //3
-              }
+              get_cost(10); // 1
+              get_cost(12); // 2
 
               get_cost(14); //1
-              get_cost(15); //2
 
               if best_lrf[pli][lru_y * lru_w[pli] + lru_x]
                 .notequal(best_new_lrf)
