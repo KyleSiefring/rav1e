@@ -2111,7 +2111,7 @@ pub fn rdo_loop_decision<T: Pixel>(
               );
 
               for set in 0..16 {
-                if set < 10 && set % 2 == 1 {
+                if (set < 10 && set % 3 != 0) || (set >= 10 && set % 2 != 0) {
                   continue;
                 }
                 // clip to encoded area
