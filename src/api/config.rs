@@ -463,7 +463,7 @@ impl SpeedSettings {
   }
 
   const fn lrf_preset(_speed: usize) -> bool {
-    false
+    true
   }
 
   const fn use_satd_subpel(speed: usize) -> bool {
