@@ -2196,11 +2196,11 @@ pub fn rdo_loop_decision<T: Pixel>(
                 }
               } else {
                 if compare(8, 6) { //3
-                  compare(7, 8); //45
+                  compare(9, 7); //45
                 } else if compare(4, 6) { //4
                   get_cost(5);
                 } else {
-                  compare(7, 9);
+                  compare(7, 5);
                 }
               }
 
