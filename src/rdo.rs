@@ -2169,9 +2169,6 @@ pub fn rdo_loop_decision<T: Pixel>(
                 *costs[set as usize].get_or_insert_with(|| test_sgr_set(set).0)
               };
 
-              let mut compare = |set1: u8, set2: u8| -> bool {
-                get_cost(set1) < get_cost(set2)
-              };
               //0
               //1 --
               //2
@@ -2186,94 +2183,36 @@ pub fn rdo_loop_decision<T: Pixel>(
               //8 --
               //9
 
-              if compare(3, 6) { //12
-                if compare(1, 3) { //3
-                  compare(0, 2); //45
-                } else if compare(5, 3) { //4
+              if get_cost(3) < get_cost(6) { //12
+                if get_cost(1) < get_cost(3) { //3
+                  get_cost(0); //4
+                  get_cost(2); //5
+                } else if get_cost(5) < get_cost(3) { //4
                   get_cost(4); //5
                 } else {
-                  compare(2, 4); //56
+                  get_cost(2); //5
+                  get_cost(4); //6
                 }
               } else {
-                if compare(8, 6) { //3
-                  compare(9, 7); //45
-                } else if compare(4, 6) { //4
-                  get_cost(5);
+                if get_cost(8) < get_cost(6) { //3
+                  get_cost(9); //4
+                  get_cost(7); //5
+                } else if get_cost(4) < get_cost(6) { //4
+                  get_cost(5); //5
                 } else {
-                  compare(7, 5);
+                  get_cost(7); //5
+                  get_cost(5); //6
                 }
               }
 
-              let mut get_cost = |set: u8| -> f64 {
-                *costs[set as usize].get_or_insert_with(|| test_sgr_set(set).0)
-              };
-
-              let mut compare = |set1: u8, set2: u8| -> bool {
-                get_cost(set1) < get_cost(set2)
-              };
-
-              if compare(11, 12) { //12
+              if get_cost(11) < get_cost (12) { //12
                 get_cost(10); //3
               } else {
                 get_cost(13); //3
               }
-              //10
-              //11
-              //12
-              //13
 
-              //14
-              //15
-              for set in 14..16 {
-                // clip to encoded area
-                let (xqd0, xqd1) = sgrproj_solve(
-                  set,
-                  fi,
-                  &ts.integral_buffer,
-                  &ref_plane.slice(loop_tile_po),
-                  &lrf_in_plane.slice(loop_po),
-                  unit_width,
-                  unit_height,
-                );
-                let current_lrf =
-                  RestorationFilter::Sgrproj { set, xqd: [xqd0, xqd1] };
-                if let RestorationFilter::Sgrproj { set, xqd } = current_lrf {
-                  sgrproj_stripe_filter(
-                    set,
-                    xqd,
-                    fi,
-                    &ts.integral_buffer,
-                    SOLVE_IMAGE_STRIDE,
-                    unit_width,
-                    unit_height,
-                    &lrf_input.planes[pli].slice(loop_po),
-                    &mut lrf_output.planes[pli].mut_slice(loop_po),
-                  );
-                }
-                let err = rdo_loop_plane_error(
-                  loop_sbo,
-                  loop_tile_sbo,
-                  lru_sb_w,
-                  lru_sb_h,
-                  fi,
-                  ts,
-                  &cw.bc.blocks.as_const(),
-                  &lrf_output,
-                  pli,
-                );
-                let rate = cw.count_lrf_switchable(
-                  w,
-                  &ts.restoration.as_const(),
-                  current_lrf,
-                  pli,
-                );
-                let cost = compute_rd_cost(fi, rate, err);
-                if cost < best_cost {
-                  best_cost = cost;
-                  best_lrf_cost[pli][lru_y * lru_w[pli] + lru_x] = cost;
-                  best_new_lrf = current_lrf;
-                }
-              }
+              get_cost(14); //1
+              get_cost(15); //2
 
               if best_lrf[pli][lru_y * lru_w[pli] + lru_x]
                 .notequal(best_new_lrf)
