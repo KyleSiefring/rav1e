@@ -298,7 +298,7 @@ pub struct SpeedSettings {
   pub cdef: bool,
   /// Enables LRF.
   pub lrf: bool,
-  ///
+  /// The amount of search done for self guided restoration.
   pub sgr_complexity: SGRComplexityLevel,
   /// Use SATD instead of SAD for subpixel search.
   ///
@@ -471,7 +471,7 @@ impl SpeedSettings {
   }
 
   fn sgr_complexity_preset(speed: usize) -> SGRComplexityLevel {
-    if speed < 10 {
+    if speed <= 9 {
       SGRComplexityLevel::Full
     } else {
       SGRComplexityLevel::Reduced
