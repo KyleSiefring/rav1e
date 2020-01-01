@@ -87,8 +87,8 @@ const SGRPROJ_ALL_SETS: &[u8] =
 // parameters as non-zero. The other two are distinguishable by which of the
 // two parameters is zero. There are an even number of each of these groups and
 // the non-zero parameters grow as the indices increase. This array uses the
-// 2nd, 4th, ... smallest params of each group.
-const SGRPROJ_REDUCED_SETS: &[u8] = &[0, 2, 4, 6, 8, 10, 12, 14];
+// 1nd, 3rd, ... smallest params of each group.
+const SGRPROJ_REDUCED_SETS: &[u8] = &[1, 3, 5, 7, 9, 11, 13, 15];
 
 pub fn get_sgr_sets(complexity: SGRComplexityLevel) -> &'static [u8] {
   match complexity {
