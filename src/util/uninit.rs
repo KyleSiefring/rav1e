@@ -9,31 +9,23 @@
 
 use std::mem::MaybeUninit;
 
-pub fn init_slice_mut<'a, T: Copy>(
-  slice: &'a mut [MaybeUninit<T>], value: T,
-) -> &'a mut [T] {
-  for a in slice.iter_mut() {
-    *a = MaybeUninit::new(value);
-  }
+pub trait InitSlice<T: Copy> {
+  type Output;
 
-  unsafe {
-    std::mem::transmute::<&'a mut [MaybeUninit<T>], &'a mut [T]>(slice)
-  }
+  /// Initialize all entries in the slice to one value
+  fn init_repeat(self, value: T) -> Self::Output;
 }
 
-pub fn init_from_iter_mut<'a, I: Iterator>(
-  slice: &'a mut [MaybeUninit<I::Item>], iter: I,
-) -> &'a mut [I::Item]
-where
-  I::Item: Copy,
-{
-  for (a, val) in slice.iter_mut().zip(iter) {
-    *a = MaybeUninit::new(val);
-  }
+impl<'a, T: Copy> InitSlice<T> for &'a mut [MaybeUninit<T>] {
+  type Output = &'a mut [T];
 
-  unsafe {
-    std::mem::transmute::<&'a mut [MaybeUninit<I::Item>], &'a mut [I::Item]>(
-      slice,
-    )
+  fn init_repeat(self, value: T) -> Self::Output {
+    for a in self.iter_mut() {
+      *a = MaybeUninit::new(value);
+    }
+
+    unsafe {
+      std::mem::transmute::<&'a mut [MaybeUninit<T>], &'a mut [T]>(self)
+    }
   }
 }

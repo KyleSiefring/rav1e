@@ -34,6 +34,7 @@ use crate::util::*;
 
 use arrayvec::*;
 use std::default::Default;
+use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 use std::*;
 
@@ -3958,9 +3959,10 @@ impl<'a> ContextWriter<'a> {
       av1_scan_orders[tx_size as usize][tx_type as usize].scan;
     let width = av1_get_coded_tx_size(tx_size).width();
     let height = av1_get_coded_tx_size(tx_size).height();
-    let mut coeffs_storage: AlignedArray<[T; 32 * 32]> =
+    let mut coeffs_storage: AlignedArray<[MaybeUninit<T>; 32 * 32]> =
       AlignedArray::uninitialized();
-    let coeffs = &mut coeffs_storage.array[..width * height];
+    let coeffs = (&mut coeffs_storage.array[..width * height])
+      .init_repeat(T::cast_from(0));
 
     // Zero initialize
     for coeff in coeffs.iter_mut() {
