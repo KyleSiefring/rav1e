@@ -1204,7 +1204,10 @@ pub fn encode_tx_block<T: Pixel>(
     AlignedArray::uninitialized();
   let residual = &mut residual_storage.array[..tx_size.area()];
   let coeffs = &mut coeffs_storage.array[..tx_size.area()];
-  let qcoeffs = init_slice_mut(&mut qcoeffs_storage.array[..coded_tx_area], T::Coeff::cast_from(0));
+  let qcoeffs = init_slice_mut(
+    &mut qcoeffs_storage.array[..coded_tx_area],
+    T::Coeff::cast_from(0),
+  );
   let rcoeffs = &mut rcoeffs_storage.array[..coded_tx_area];
 
   diff(

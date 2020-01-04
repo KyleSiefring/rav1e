@@ -13,8 +13,10 @@ mod cdf;
 mod dim;
 mod math;
 mod pixel;
+mod uninit;
 
 pub use align::*;
 pub use dim::*;
 pub use math::*;
 pub use pixel::*;
+pub use uninit::*;
