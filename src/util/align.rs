@@ -36,6 +36,15 @@ impl<A> AlignedArray<A> {
   }
 }
 
+// FIXME: Move to different file
+pub fn init_slice_mut<'a, T: Copy>(slice: &'a mut [MaybeUninit<T>], value: T) -> &'a mut [T] {
+  for a in slice.iter_mut() {
+    *a = MaybeUninit::new(value);
+  }
+
+  unsafe { std::mem::transmute::<&'a mut [MaybeUninit<T>], &'a mut [T]>(slice) }
+}
+
 #[test]
 fn sanity() {
   fn is_aligned<T>(ptr: *const T, n: usize) -> bool {

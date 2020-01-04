@@ -49,6 +49,7 @@ use std::sync::Arc;
 use std::{fmt, io, mem};
 
 use crate::hawktracer::*;
+use std::mem::MaybeUninit;
 
 pub static TEMPORAL_DELIMITER: [u8; 2] = [0x12, 0x00];
 
@@ -1197,13 +1198,13 @@ pub fn encode_tx_block<T: Pixel>(
     AlignedArray::uninitialized();
   let mut coeffs_storage: AlignedArray<[T::Coeff; 64 * 64]> =
     AlignedArray::uninitialized();
-  let mut qcoeffs_storage =
-    AlignedArray::new([T::Coeff::cast_from(0); 32 * 32]);
+  let mut qcoeffs_storage: AlignedArray<[MaybeUninit<T::Coeff>; 32 * 32]> =
+    AlignedArray::uninitialized();
   let mut rcoeffs_storage: AlignedArray<[T::Coeff; 32 * 32]> =
     AlignedArray::uninitialized();
   let residual = &mut residual_storage.array[..tx_size.area()];
   let coeffs = &mut coeffs_storage.array[..tx_size.area()];
-  let qcoeffs = &mut qcoeffs_storage.array[..coded_tx_area];
+  let qcoeffs = init_slice_mut(&mut qcoeffs_storage.array[..coded_tx_area], T::Coeff::cast_from(0));
   let rcoeffs = &mut rcoeffs_storage.array[..coded_tx_area];
 
   diff(
