@@ -284,7 +284,7 @@ static SAD_FNS_AVX2: [Option<SadFn>; DIST_FNS_LENGTH] = {
 
   out[BLOCK_16X4 as usize] = Some(rav1e_sad16x4_avx2);
   out[BLOCK_16X8 as usize] = Some(rav1e_sad16x8_avx2);
-  out[BLOCK_16X16 as usize] = Some(rav1e_sad16x16_avx2);
+  out[BLOCK_16X16 as usize] = Some(rav1e_sad16x16_sse2);
   out[BLOCK_16X32 as usize] = Some(rav1e_sad16x32_avx2);
   out[BLOCK_16X64 as usize] = Some(rav1e_sad16x64_avx2);
 
