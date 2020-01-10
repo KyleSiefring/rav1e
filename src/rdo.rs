@@ -439,8 +439,8 @@ pub fn compute_distortion_scale<T: Pixel>(
   let x = frame_bo.0.x >> IMPORTANCE_BLOCK_TO_BLOCK_SHIFT;
   let y = frame_bo.0.y >> IMPORTANCE_BLOCK_TO_BLOCK_SHIFT;
 
-  let propagate_cost = fi.block_importances[y * fi.w_in_imp_b + x] as f64;
-  let intra_cost = fi.lookahead_intra_costs[y * fi.w_in_imp_b + x] as f64;
+  let propagate_cost = fi.block_importances[y * fi.w_in_imp_b + x] as f32;
+  let intra_cost = fi.lookahead_intra_costs[y * fi.w_in_imp_b + x] as f32;
 
   // The mbtree paper \cite{mbtree} uses the following formula:
   //
@@ -485,7 +485,7 @@ pub fn compute_distortion_scale<T: Pixel>(
 
   let strength = 1.0; // empirical, see comment above
   let frac = (intra_cost + propagate_cost) / intra_cost;
-  frac.powf(strength / 3.0)
+  frac.powf(strength / 3.0) as f64
 }
 
 #[repr(transparent)]
