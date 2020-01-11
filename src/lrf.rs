@@ -25,7 +25,7 @@ use crate::frame::PlaneConfig;
 use crate::frame::PlaneOffset;
 use crate::frame::PlaneSlice;
 use crate::hawktracer::*;
-use crate::tiling::{Area, PlaneRegionMut};
+use crate::tiling::{Area, PlaneRegionMut, Rect};
 use crate::util::clamp;
 use crate::util::CastFromPrimitive;
 use crate::util::ILog;
@@ -606,9 +606,9 @@ pub fn setup_integral_image<T: Pixel>(
 pub fn sgrproj_stripe_filter<T: Pixel>(
   set: u8, xqd: [i8; 2], fi: &FrameInvariants<T>,
   integral_image_buffer: &IntegralImageBuffer, integral_image_stride: usize,
-  stripe_w: usize, stripe_h: usize, cdeffed: &PlaneSlice<T>,
-  out: &mut PlaneRegionMut<T>,
+  cdeffed: &PlaneSlice<T>, out: &mut PlaneRegionMut<T>,
 ) {
+  let &Rect { width: stripe_w, height: stripe_h, .. } = out.rect();
   let bdm8 = fi.sequence.bit_depth - 8;
   let mut a_r2: [[u32; IMAGE_WIDTH_MAX + 2]; 2] =
     [[0; IMAGE_WIDTH_MAX + 2]; 2];
@@ -1521,8 +1521,6 @@ impl RestorationState {
                 fi,
                 &stripe_filter_buffer,
                 STRIPE_IMAGE_STRIDE,
-                size,
-                stripe_size,
                 &cdeffed.planes[pli]
                   .slice(PlaneOffset { x: x as isize, y: stripe_start_y }),
                 &mut out.planes[pli].region_mut(Area::Rect {

@@ -2014,8 +2014,6 @@ pub fn rdo_loop_decision<T: Pixel>(
                       fi,
                       &ts.integral_buffer,
                       SOLVE_IMAGE_STRIDE,
-                      width,
-                      height,
                       &lrf_input.planes[pli].slice(loop_po),
                       &mut lrf_output.planes[pli].region_mut(Area::Rect {
                         x: loop_po.x,
@@ -2194,8 +2192,6 @@ pub fn rdo_loop_decision<T: Pixel>(
                     fi,
                     &ts.integral_buffer,
                     SOLVE_IMAGE_STRIDE,
-                    unit_width,
-                    unit_height,
                     &lrf_input.planes[pli].slice(loop_po),
                     &mut lrf_output.planes[pli].region_mut(Area::Rect {
                       x: loop_po.x,
