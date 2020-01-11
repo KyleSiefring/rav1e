@@ -2017,7 +2017,12 @@ pub fn rdo_loop_decision<T: Pixel>(
                       width,
                       height,
                       &lrf_input.planes[pli].slice(loop_po),
-                      &mut lrf_output.planes[pli].mut_slice(loop_po),
+                      &mut lrf_output.planes[pli].region_mut(Area::Rect {
+                        x: loop_po.x,
+                        y: loop_po.y,
+                        width,
+                        height,
+                      }),
                     );
                     err += rdo_loop_plane_error(
                       loop_sbo,
@@ -2192,7 +2197,12 @@ pub fn rdo_loop_decision<T: Pixel>(
                     unit_width,
                     unit_height,
                     &lrf_input.planes[pli].slice(loop_po),
-                    &mut lrf_output.planes[pli].mut_slice(loop_po),
+                    &mut lrf_output.planes[pli].region_mut(Area::Rect {
+                      x: loop_po.x,
+                      y: loop_po.y,
+                      width: unit_width,
+                      height: unit_height,
+                    }),
                   );
                 }
                 let err = rdo_loop_plane_error(

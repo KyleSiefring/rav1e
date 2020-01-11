@@ -18,13 +18,14 @@ cfg_if::cfg_if! {
 use crate::context::PLANES;
 use crate::context::SB_SIZE;
 use crate::encoder::FrameInvariants;
+use crate::frame::AsRegion;
 use crate::frame::Frame;
 use crate::frame::Plane;
 use crate::frame::PlaneConfig;
-use crate::frame::PlaneMutSlice;
 use crate::frame::PlaneOffset;
 use crate::frame::PlaneSlice;
 use crate::hawktracer::*;
+use crate::tiling::{Area, PlaneRegionMut};
 use crate::util::clamp;
 use crate::util::CastFromPrimitive;
 use crate::util::ILog;
@@ -606,7 +607,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
   set: u8, xqd: [i8; 2], fi: &FrameInvariants<T>,
   integral_image_buffer: &IntegralImageBuffer, integral_image_stride: usize,
   stripe_w: usize, stripe_h: usize, cdeffed: &PlaneSlice<T>,
-  out: &mut PlaneMutSlice<T>,
+  out: &mut PlaneRegionMut<T>,
 ) {
   let bdm8 = fi.sequence.bit_depth - 8;
   let mut a_r2: [[u32; IMAGE_WIDTH_MAX + 2]; 2] =
@@ -1524,8 +1525,12 @@ impl RestorationState {
                 stripe_size,
                 &cdeffed.planes[pli]
                   .slice(PlaneOffset { x: x as isize, y: stripe_start_y }),
-                &mut out.planes[pli]
-                  .mut_slice(PlaneOffset { x: x as isize, y: stripe_start_y }),
+                &mut out.planes[pli].region_mut(Area::Rect {
+                  x: x as isize,
+                  y: stripe_start_y,
+                  width: size,
+                  height: stripe_size,
+                }),
               );
             }
             RestorationFilter::None => {
