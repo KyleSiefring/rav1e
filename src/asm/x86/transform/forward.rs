@@ -419,7 +419,7 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
         // Don't need to loop over rows
         let buf = &mut buf[cg..];
         let buf = &mut buf[..8];
-        let input = &tx_out[..8];
+        let input = &tx_out[..4];
         let transposed =
           transpose_4x8_avx2((input[0], input[1], input[2], input[3]));
 
