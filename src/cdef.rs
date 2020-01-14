@@ -26,108 +26,108 @@ cfg_if::cfg_if! {
   }
 }
 
-pub struct CdefDirections {
-  dir: [[u8; 8]; 8],
-  var: [[i32; 8]; 8],
-}
-
 pub const CDEF_VERY_LARGE: u16 = 0x8000;
 pub(crate) const CDEF_SEC_STRENGTHS: u8 = 4;
 
-// Instead of dividing by n between 2 and 8, we multiply by 3*5*7*8/n.
-// The output is then 840 times larger, but we don't care for finding
-// the max. */
-const CDEF_DIV_TABLE: [i32; 9] = [0, 840, 420, 280, 210, 168, 140, 120, 105];
-
-#[inline]
-/// Returns the position and value of the first instance of the max element in
-/// a slice as a tuple.
-///
-/// # Arguments
-///
-/// * `elems` - A non-empty slice of integers
-///
-/// # Panics
-///
-/// Panics if `elems` is empty
-fn first_max_element(elems: &[i32]) -> (usize, i32) {
-  // In case of a tie, the first element must be selected.
-  let (max_idx, max_value) =
-    elems.iter().enumerate().max_by_key(|&(i, v)| (v, -(i as isize))).unwrap();
-  (max_idx, *max_value)
-}
-
-// Detect direction. 0 means 45-degree up-right, 2 is horizontal, and so on.
-// The search minimizes the weighted variance along all the lines in a
-// particular direction, i.e. the squared error between the input and a
-// "predicted" block where each pixel is replaced by the average along a line
-// in a particular direction. Since each direction have the same sum(x^2) term,
-// that term is never computed. See Section 2, step 2, of:
-// http://jmvalin.ca/notes/intra_paint.pdf
-fn cdef_find_dir<T: Pixel>(
-  img: &PlaneSlice<'_, T>, var: &mut i32, coeff_shift: usize,
-) -> i32 {
-  let mut cost: [i32; 8] = [0; 8];
-  let mut partial: [[i32; 15]; 8] = [[0; 15]; 8];
-  for i in 0..8 {
-    for j in 0..8 {
-      let p: i32 = img[i][j].as_();
-      // We subtract 128 here to reduce the maximum range of the squared
-      // partial sums.
-      debug_assert!(p >> coeff_shift <= 255);
-      let x = (p >> coeff_shift) - 128;
-      partial[0][i + j] += x;
-      partial[1][i + j / 2] += x;
-      partial[2][i] += x;
-      partial[3][3 + i - j / 2] += x;
-      partial[4][7 + i - j] += x;
-      partial[5][3 - i / 2 + j] += x;
-      partial[6][j] += x;
-      partial[7][i / 2 + j] += x;
-    }
-  }
-  for i in 0..8 {
-    cost[2] += partial[2][i] * partial[2][i];
-    cost[6] += partial[6][i] * partial[6][i];
-  }
-  cost[2] *= CDEF_DIV_TABLE[8];
-  cost[6] *= CDEF_DIV_TABLE[8];
-  for i in 0..7 {
-    cost[0] += (partial[0][i] * partial[0][i]
-      + partial[0][14 - i] * partial[0][14 - i])
-      * CDEF_DIV_TABLE[i + 1];
-    cost[4] += (partial[4][i] * partial[4][i]
-      + partial[4][14 - i] * partial[4][14 - i])
-      * CDEF_DIV_TABLE[i + 1];
-  }
-  cost[0] += partial[0][7] * partial[0][7] * CDEF_DIV_TABLE[8];
-  cost[4] += partial[4][7] * partial[4][7] * CDEF_DIV_TABLE[8];
-  for i in (1..8).step_by(2) {
-    for j in 0..5 {
-      cost[i] += partial[i][3 + j] * partial[i][3 + j];
-    }
-    cost[i] *= CDEF_DIV_TABLE[8];
-    for j in 0..3 {
-      cost[i] += (partial[i][j] * partial[i][j]
-        + partial[i][10 - j] * partial[i][10 - j])
-        * CDEF_DIV_TABLE[2 * j + 2];
-    }
-  }
-
-  let (best_dir, best_cost) = first_max_element(&cost);
-  // Difference between the optimal variance and the variance along the
-  // orthogonal direction. Again, the sum(x^2) terms cancel out.
-  // We'd normally divide by 840, but dividing by 1024 is close enough
-  // for what we're going to do with this. */
-  *var = (best_cost - cost[(best_dir + 4) & 7]) >> 10;
-
-  best_dir as i32
+pub struct CdefDirections {
+  dir: [[u8; 8]; 8],
+  var: [[i32; 8]; 8],
 }
 
 pub(crate) mod native {
   use super::*;
 
   use simd_helpers::cold_for_target_arch;
+
+  // Instead of dividing by n between 2 and 8, we multiply by 3*5*7*8/n.
+  // The output is then 840 times larger, but we don't care for finding
+  // the max.
+  const CDEF_DIV_TABLE: [i32; 9] = [0, 840, 420, 280, 210, 168, 140, 120, 105];
+
+  /// Returns the position and value of the first instance of the max element in
+  /// a slice as a tuple.
+  ///
+  /// # Arguments
+  ///
+  /// * `elems` - A non-empty slice of integers
+  ///
+  /// # Panics
+  ///
+  /// Panics if `elems` is empty
+  #[inline]
+  fn first_max_element(elems: &[i32]) -> (usize, i32) {
+    // In case of a tie, the first element must be selected.
+    let (max_idx, max_value) =
+      elems.iter().enumerate().max_by_key(|&(i, v)| (v, -(i as isize))).unwrap();
+    (max_idx, *max_value)
+  }
+
+  // Detect direction. 0 means 45-degree up-right, 2 is horizontal, and so on.
+  // The search minimizes the weighted variance along all the lines in a
+  // particular direction, i.e. the squared error between the input and a
+  // "predicted" block where each pixel is replaced by the average along a line
+  // in a particular direction. Since each direction have the same sum(x^2) term,
+  // that term is never computed. See Section 2, step 2, of:
+  // http://jmvalin.ca/notes/intra_paint.pdf
+  pub fn cdef_find_dir<T: Pixel>(
+    img: &PlaneSlice<'_, u16>, var: &mut u32, coeff_shift: usize, _cpu: CpuFeatureLevel,
+  ) -> i32 {
+    let mut cost: [i32; 8] = [0; 8];
+    let mut partial: [[i32; 15]; 8] = [[0; 15]; 8];
+    for i in 0..8 {
+      for j in 0..8 {
+        let p: i32 = img[i][j] as i32;
+        // We subtract 128 here to reduce the maximum range of the squared
+        // partial sums.
+        debug_assert!(p >> coeff_shift <= 255);
+        let x = (p >> coeff_shift) - 128;
+        partial[0][i + j] += x;
+        partial[1][i + j / 2] += x;
+        partial[2][i] += x;
+        partial[3][3 + i - j / 2] += x;
+        partial[4][7 + i - j] += x;
+        partial[5][3 - i / 2 + j] += x;
+        partial[6][j] += x;
+        partial[7][i / 2 + j] += x;
+      }
+    }
+    for i in 0..8 {
+      cost[2] += partial[2][i] * partial[2][i];
+      cost[6] += partial[6][i] * partial[6][i];
+    }
+    cost[2] *= CDEF_DIV_TABLE[8];
+    cost[6] *= CDEF_DIV_TABLE[8];
+    for i in 0..7 {
+      cost[0] += (partial[0][i] * partial[0][i]
+        + partial[0][14 - i] * partial[0][14 - i])
+        * CDEF_DIV_TABLE[i + 1];
+      cost[4] += (partial[4][i] * partial[4][i]
+        + partial[4][14 - i] * partial[4][14 - i])
+        * CDEF_DIV_TABLE[i + 1];
+    }
+    cost[0] += partial[0][7] * partial[0][7] * CDEF_DIV_TABLE[8];
+    cost[4] += partial[4][7] * partial[4][7] * CDEF_DIV_TABLE[8];
+    for i in (1..8).step_by(2) {
+      for j in 0..5 {
+        cost[i] += partial[i][3 + j] * partial[i][3 + j];
+      }
+      cost[i] *= CDEF_DIV_TABLE[8];
+      for j in 0..3 {
+        cost[i] += (partial[i][j] * partial[i][j]
+          + partial[i][10 - j] * partial[i][10 - j])
+          * CDEF_DIV_TABLE[2 * j + 2];
+      }
+    }
+
+    let (best_dir, best_cost) = first_max_element(&cost);
+    // Difference between the optimal variance and the variance along the
+    // orthogonal direction. Again, the sum(x^2) terms cancel out.
+    // We'd normally divide by 840, but dividing by 1024 is close enough
+    // for what we're going to do with this. */
+    *var = ((best_cost - cost[(best_dir + 4) & 7]) >> 10) as u32;
+
+    best_dir as i32
+  }
 
   #[inline(always)]
   fn constrain(diff: i32, threshold: i32, damping: i32) -> i32 {
@@ -242,7 +242,7 @@ fn adjust_strength(strength: i32, var: i32) -> i32 {
 // boundaries (padding is untouched here).
 
 pub fn cdef_analyze_superblock_range<T: Pixel>(
-  in_frame: &Frame<T>, blocks: &TileBlocks<'_>, sbo: TileSuperBlockOffset,
+  fi: &FrameInvariants<T>, in_frame: &Frame<u16>, blocks: &TileBlocks<'_>, sbo: TileSuperBlockOffset,
   sbo_global: TileSuperBlockOffset, sb_w: usize, sb_h: usize,
   bit_depth: usize,
 ) -> Vec<Vec<CdefDirections>> {
@@ -259,6 +259,7 @@ pub fn cdef_analyze_superblock_range<T: Pixel>(
         y: sbo_global.0.y + sby,
       });
       ret[sby].push(cdef_analyze_superblock(
+        fi,
         in_frame,
         blocks,
         local_sbo,
@@ -275,7 +276,7 @@ pub fn cdef_analyze_superblock_range<T: Pixel>(
 // boundaries (padding is untouched here).
 
 pub fn cdef_analyze_superblock<T: Pixel>(
-  in_frame: &Frame<T>, blocks: &TileBlocks<'_>, sbo: TileSuperBlockOffset,
+  fi: &FrameInvariants<T>, in_frame: &Frame<u16>, blocks: &TileBlocks<'_>, sbo: TileSuperBlockOffset,
   sbo_global: TileSuperBlockOffset, bit_depth: usize,
 ) -> CdefDirections {
   let coeff_shift = bit_depth as usize - 8;
@@ -298,16 +299,17 @@ pub fn cdef_analyze_superblock<T: Pixel>(
           & blocks[sbo_global.block_offset(2 * bx + 1, 2 * by + 1)].skip;
 
         if !skip {
-          let mut var: i32 = 0;
+          let mut var: u32 = 0;
           let in_plane = &in_frame.planes[0];
           let in_po = sbo.plane_offset(&in_plane.cfg);
           let in_slice = in_plane.slice(in_po);
-          dir.dir[bx][by] = cdef_find_dir(
+          dir.dir[bx][by] = cdef_find_dir::<T>(
             &in_slice.reslice(8 * bx as isize, 8 * by as isize),
             &mut var,
             coeff_shift,
+            fi.cpu_feature_level
           ) as u8;
-          dir.var[bx][by] = var;
+          dir.var[bx][by] = var as i32;
         }
       }
     }
@@ -620,6 +622,7 @@ pub fn cdef_filter_frame<T: Pixel>(
       // frame as if it were one tile.
       let sbo = TileSuperBlockOffset(sbo.0);
       let cdef_dirs = cdef_analyze_superblock(
+        fi,
         &cdef_frame,
         &tb,
         sbo,
