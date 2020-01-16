@@ -27,10 +27,3 @@ pub unsafe fn assume_slice_init_mut<T: Copy>(
 ) -> &'_ mut [T] {
   &mut *(slice as *mut [std::mem::MaybeUninit<T>] as *mut [T])
 }
-
-/// Assume all the elements are initialized
-pub unsafe fn assume_slice_init<T: Copy>(
-  slice: &'_ [MaybeUninit<T>],
-) -> &'_ [T] {
-  &*(slice as *const [std::mem::MaybeUninit<T>] as *const [T])
-}

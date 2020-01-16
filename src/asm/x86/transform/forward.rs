@@ -19,7 +19,7 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-type TxfmFuncI32X8 = unsafe fn(&[I32X8], &mut [I32X8]);
+type TxfmFuncI32X8 = unsafe fn(&mut [I32X8]);
 
 fn get_func_i32x8(t: TxfmType) -> TxfmFuncI32X8 {
   use self::TxfmType::*;
@@ -376,13 +376,11 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
       }
     }
 
-    // TODO: Don't assume uninitialized values are initialized
-    let tx_out =
-      &mut MaybeUninit::<[I32X8; 64]>::uninit().assume_init()[..txfm_size_row];
+    let col_coeffs = assume_slice_init_mut(tx_in);
 
-    txfm_func_col(assume_slice_init(tx_in), tx_out);
+    txfm_func_col(col_coeffs);
 
-    round_shift_array_avx2(tx_out, txfm_size_row, -cfg.shift[1]);
+    round_shift_array_avx2(col_coeffs, txfm_size_row, -cfg.shift[1]);
 
     // Transpose the array. Select the appropriate method to do so.
     match (row_class, col_class) {
@@ -390,7 +388,7 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
         for rg in (0..txfm_size_row).step_by(8) {
           let buf = &mut buf[(rg / 8 * txfm_size_col) + cg..];
           let buf = &mut buf[..8];
-          let input = &tx_out[rg..];
+          let input = &col_coeffs[rg..];
           let input = &input[..8];
           let transposed = transpose_8x8_avx2((
             input[0], input[1], input[2], input[3], input[4], input[5],
@@ -411,7 +409,7 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
         for rg in (0..txfm_size_row).step_by(8) {
           let buf = &mut buf[(rg / 8 * txfm_size_col) + cg..];
           let buf = &mut buf[..4];
-          let input = &tx_out[rg..];
+          let input = &col_coeffs[rg..];
           let input = &input[..8];
           let transposed = transpose_8x4_avx2((
             input[0], input[1], input[2], input[3], input[4], input[5],
@@ -428,7 +426,7 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
         // Don't need to loop over rows
         let buf = &mut buf[cg..];
         let buf = &mut buf[..8];
-        let input = &tx_out[..4];
+        let input = &col_coeffs[..4];
         let transposed =
           transpose_4x8_avx2((input[0], input[1], input[2], input[3]));
 
@@ -444,7 +442,7 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
       (SizeClass1D::X4, SizeClass1D::X4) => {
         // Don't need to loop over rows
         let buf = &mut buf[..4];
-        let input = &tx_out[..4];
+        let input = &col_coeffs[..4];
         let transposed =
           transpose_4x4_avx2((input[0], input[1], input[2], input[3]));
 
@@ -463,11 +461,10 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
     }
 
     // TODO: Don't assume uninitialized values are initialized
-    let tx_out =
-      &mut MaybeUninit::<[I32X8; 64]>::uninit().assume_init()[..txfm_size_col];
+    let row_coeffs = &mut buf[rg / 8 * txfm_size_col..][..txfm_size_col];
 
-    txfm_func_row(&buf[rg / 8 * txfm_size_col..], tx_out);
-    round_shift_array_avx2(tx_out, txfm_size_col, -cfg.shift[2]);
+    txfm_func_row(row_coeffs);
+    round_shift_array_avx2(row_coeffs, txfm_size_col, -cfg.shift[2]);
 
     // Write out the coefficients using the correct method for transforms of
     // this size.
@@ -476,8 +473,8 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
         for c in 0..txfm_size_col {
           match T::Pixel::type_enum() {
             PixelType::U8 => {
-              let lo = _mm256_castsi256_si128(tx_out[c].vec());
-              let hi = _mm256_extracti128_si256(tx_out[c].vec(), 1);
+              let lo = _mm256_castsi256_si128(row_coeffs[c].vec());
+              let hi = _mm256_extracti128_si256(row_coeffs[c].vec(), 1);
               _mm_storeu_si128(
                 output[c * txfm_size_row + rg..].as_mut_ptr() as *mut _,
                 _mm_packs_epi32(lo, hi),
@@ -486,7 +483,7 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
             PixelType::U16 => {
               _mm256_storeu_si256(
                 output[c * txfm_size_row + rg..].as_mut_ptr() as *mut _,
-                tx_out[c].vec(),
+                row_coeffs[c].vec(),
               );
             }
           }
@@ -496,7 +493,7 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
         for c in 0..txfm_size_col {
           match T::Pixel::type_enum() {
             PixelType::U8 => {
-              let lo = _mm256_castsi256_si128(tx_out[c].vec());
+              let lo = _mm256_castsi256_si128(row_coeffs[c].vec());
               _mm_storel_epi64(
                 output[c * txfm_size_row + rg..].as_mut_ptr() as *mut _,
                 _mm_packs_epi32(lo, lo),
@@ -505,7 +502,7 @@ unsafe fn fwd_txfm2d_avx2<T: Coefficient>(
             PixelType::U16 => {
               _mm256_storeu_si256(
                 output[c * txfm_size_row + rg..].as_mut_ptr() as *mut _,
-                tx_out[c].vec(),
+                row_coeffs[c].vec(),
               );
             }
           }
