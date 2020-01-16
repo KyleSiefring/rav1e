@@ -487,7 +487,7 @@ pub struct FrameInvariants<T: Pixel> {
   pub use_reduced_tx_set: bool,
   pub reference_mode: ReferenceMode,
   pub use_prev_frame_mvs: bool,
-  pub partition_size_range: (BlockSize, BlockSize),
+  pub partition_range: PartitionRange,
   pub globalmv_transformation_type: [GlobalMVMode; INTER_REFS_PER_FRAME],
   pub num_tg: usize,
   pub large_scale_tile: bool,
@@ -577,9 +577,6 @@ impl<T: Pixel> FrameInvariants<T> {
       sequence.bit_depth <= mem::size_of::<T>() * 8,
       "bit depth cannot fit into u8"
     );
-    let partition_size_range = config.speed_settings.block_size_range;
-    assert!(partition_size_range.0.is_sqr());
-    assert!(partition_size_range.1.is_sqr());
     let use_reduced_tx_set = config.speed_settings.reduced_tx_set;
     let use_tx_domain_distortion =
       config.tune == Tune::Psnr && config.speed_settings.tx_domain_distortion;
@@ -654,7 +651,7 @@ impl<T: Pixel> FrameInvariants<T> {
       use_reduced_tx_set,
       reference_mode: ReferenceMode::SINGLE,
       use_prev_frame_mvs: false,
-      partition_size_range,
+      partition_range: config.speed_settings.partition_range,
       globalmv_transformation_type: [GlobalMVMode::IDENTITY;
         INTER_REFS_PER_FRAME],
       num_tg: 1,
@@ -2215,7 +2212,7 @@ fn encode_partition_bottomup<T: Pixel, W: Writer>(
   let must_split = (tile_bo.0.x + bsw as usize > ts.mi_width
     || tile_bo.0.y + bsh as usize > ts.mi_height
     || bsize > BlockSize::BLOCK_64X64
-    || bsize > fi.partition_size_range.1)
+    || bsize > fi.partition_range.max())
     && is_square;
 
   // must_split overrides the minimum partition size when applicable
@@ -2225,7 +2222,7 @@ fn encode_partition_bottomup<T: Pixel, W: Writer>(
     bsize <= BlockSize::BLOCK_8X8 {
     false
   } else {
-    (bsize > fi.partition_size_range.0 && is_square) || must_split
+    (bsize > fi.partition_range.min() && is_square) || must_split
   };
   let mut best_partition = PartitionType::PARTITION_INVALID;
 
@@ -2500,7 +2497,7 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
   let must_split = (tile_bo.0.x + bsw as usize > ts.mi_width
     || tile_bo.0.y + bsh as usize > ts.mi_height
     || bsize > BlockSize::BLOCK_64X64
-    || bsize > fi.partition_size_range.1)
+    || bsize > fi.partition_range.max())
     && is_square;
 
   let mut rdo_output =
@@ -2530,7 +2527,7 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
   if must_split && (!split_vert && !split_horz) {
     // Oversized blocks are split automatically
     partition = PartitionType::PARTITION_SPLIT;
-  } else if (must_split || (bsize > fi.partition_size_range.0 && is_square))
+  } else if (must_split || (bsize > fi.partition_range.min() && is_square))
     && (
       // FIXME: sub-8x8 inter blocks not supported for non-4:2:0 sampling
       !fi.frame_type.has_inter()

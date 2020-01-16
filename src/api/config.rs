@@ -222,8 +222,8 @@ impl fmt::Display for EncoderConfig {
       ("low_latency", self.low_latency.to_string()),
       ("tune", self.tune.to_string()),
       ("rdo_lookahead_frames", self.rdo_lookahead_frames.to_string()),
-      ("min_block_size", self.speed_settings.block_size_range.0.to_string()),
-      ("max_block_size", self.speed_settings.block_size_range.1.to_string()),
+      ("min_block_size", self.speed_settings.partition_range.min().to_string()),
+      ("max_block_size", self.speed_settings.partition_range.max().to_string()),
       (
         "multiref",
         (!self.low_latency || self.speed_settings.multiref).to_string(),
@@ -263,10 +263,10 @@ impl fmt::Display for EncoderConfig {
 /// Contains the speed settings.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct SpeedSettings {
-  /// Minimum block size. Smaller is slower.
+  /// Range of partition sizes that can be used.
   ///
-  /// Must be a square block size, so e.g. 8×4 isn't allowed here.
-  pub block_size_range: (BlockSize, BlockSize),
+  /// Must be based on square block sizes, so e.g. 8×4 isn't allowed here.
+  pub partition_range: PartitionRange,
   /// Enables inter-frames to have multiple reference frames.
   ///
   /// Enabled is slower.
@@ -333,7 +333,7 @@ impl Default for SpeedSettings {
   /// It is set to the slowest settings possible.
   fn default() -> Self {
     SpeedSettings {
-      block_size_range: (BlockSize::BLOCK_4X4, BlockSize::BLOCK_64X64),
+      partition_range: PartitionRange::new(BlockSize::BLOCK_4X4, BlockSize::BLOCK_64X64),
       multiref: true,
       fast_deblock: false,
       reduced_tx_set: false,
@@ -373,7 +373,7 @@ impl SpeedSettings {
   /// - 0 (slowest): min block size 4x4, complex pred modes, RDO TX decision, include near MVs, bottom-up encoding with non-square partitions everywhere
   pub fn from_preset(speed: usize) -> Self {
     SpeedSettings {
-      block_size_range: Self::block_size_range_preset(speed),
+      partition_range: Self::partition_range_preset(speed),
       multiref: Self::multiref_preset(speed),
       fast_deblock: Self::fast_deblock_preset(speed),
       reduced_tx_set: Self::reduced_tx_set_preset(speed),
@@ -397,21 +397,16 @@ impl SpeedSettings {
 
   /// This preset is set this way because 8x8 with reduced TX set is faster but with equivalent
   /// or better quality compared to 16x16 (to which reduced TX set does not apply).
-  fn block_size_range_preset(speed: usize) -> (BlockSize, BlockSize) {
-    let block_size_range: (BlockSize, BlockSize) = if speed <= 2 {
-      (BlockSize::BLOCK_4X4, BlockSize::BLOCK_64X64)
+  fn partition_range_preset(speed: usize) -> PartitionRange {
+    if speed <= 2 {
+      PartitionRange::new(BlockSize::BLOCK_4X4, BlockSize::BLOCK_64X64)
     } else if speed <= 8 {
-      (BlockSize::BLOCK_8X8, BlockSize::BLOCK_64X64)
+      PartitionRange::new(BlockSize::BLOCK_8X8, BlockSize::BLOCK_64X64)
     } else if speed <= 9 {
-      (BlockSize::BLOCK_32X32, BlockSize::BLOCK_64X64)
+      PartitionRange::new(BlockSize::BLOCK_32X32, BlockSize::BLOCK_64X64)
     } else {
-      (BlockSize::BLOCK_32X32, BlockSize::BLOCK_32X32)
-    };
-
-    // Topdown search checks min_block_size for PARTITION_SPLIT only, so min_block_size must be square.
-    assert!(block_size_range.0.is_sqr());
-    assert!(block_size_range.1.is_sqr());
-    block_size_range
+      PartitionRange::new(BlockSize::BLOCK_32X32, BlockSize::BLOCK_32X32)
+    }
   }
 
   /// Multiref is enabled automatically if low_latency is false.
@@ -507,6 +502,37 @@ impl SpeedSettings {
   // solution we should be able to enable segmentation at all speeds.
   const fn enable_segmentation_preset(speed: usize) -> bool {
     speed == 0
+  }
+}
+
+/// Range of block sizes to use.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct PartitionRange {
+  min: BlockSize,
+  max: BlockSize
+}
+
+impl PartitionRange {
+  /// Creates a new partition range with min and max partition sizes.
+  pub fn new(min: BlockSize, max: BlockSize) -> Self {
+    assert!(max >= min);
+    // Topdown search checks the min block size for PARTITION_SPLIT only, so
+    // the min block size must be square.
+    assert!(min.is_sqr());
+    // Rectangular max partition sizes have not been tested.
+    assert!(max.is_sqr());
+
+    Self {min, max}
+  }
+
+  /// Get the min partition size allowed.
+  pub fn min(self) -> BlockSize {
+    self.min
+  }
+
+  /// Get the max partition size allowed.
+  pub fn max(self) -> BlockSize {
+    self.min
   }
 }
 
