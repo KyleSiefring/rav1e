@@ -46,6 +46,7 @@ use arrayvec::*;
 use itertools::izip;
 use std;
 use std::vec::Vec;
+use std::fmt;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum RDOType {
@@ -202,7 +203,7 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
 }
 
 #[allow(unused)]
-pub fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> f64>(
+pub fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, w: usize, h: usize,
   bit_depth: usize, compute_bias: F,
 ) -> Distortion {
@@ -232,7 +233,7 @@ pub fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> f64>(
 }
 
 // Sum of Squared Error for a wxh block
-pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> f64>(
+pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, w: usize, h: usize,
   compute_bias: F,
 ) -> Distortion {
@@ -427,9 +428,9 @@ fn compute_tx_distortion<T: Pixel>(
 /// this factor is determined using temporal RDO.
 pub fn distortion_scale<T: Pixel>(
   fi: &FrameInvariants<T>, frame_bo: PlaneBlockOffset, bsize: BlockSize,
-) -> f64 {
+) -> DistortionScale {
   if !fi.config.temporal_rdo() {
-    return 1.;
+    return DistortionScale::default();
   }
   // EncoderConfig::temporal_rdo() should always return false in situations
   // where distortion is computed on > 8x8 blocks, so we should never hit this
@@ -442,7 +443,7 @@ pub fn distortion_scale<T: Pixel>(
   fi.distortion_scales[y * fi.w_in_imp_b + x]
 }
 
-pub fn distortion_scale_for(propagate_cost: f64, intra_cost: f64) -> f64 {
+pub fn distortion_scale_for(propagate_cost: f64, intra_cost: f64) -> DistortionScale {
   // The mbtree paper \cite{mbtree} uses the following formula:
   //
   //     QP_delta = -strength * log2(1 + (propagate_cost / intra_cost))
@@ -481,13 +482,17 @@ pub fn distortion_scale_for(propagate_cost: f64, intra_cost: f64) -> f64 {
   // }
 
   if intra_cost == 0. {
-    return 1.; // no scaling
+    return DistortionScale::default(); // no scaling
   }
 
   let strength = 1.0; // empirical, see comment above
   let frac = (intra_cost + propagate_cost) / intra_cost;
-  frac.powf(strength / 3.0)
+  DistortionScale::new(frac.powf(strength / 3.0))
 }
+
+#[repr(transparent)]
+#[derive(Copy, Clone)]
+pub struct DistortionScale(u32);
 
 #[repr(transparent)]
 pub struct RawDistortion(u64);
@@ -498,16 +503,42 @@ pub struct Distortion(u64);
 #[repr(transparent)]
 pub struct ScaledDistortion(u64);
 
+impl DistortionScale {
+  const SHIFT: u8 = 12;
+  const BITS: u8 = 24;
+
+  pub fn new(scale: f64) -> Self {
+    Self((scale * (1 << Self::SHIFT) as f64 + 0.5).min((1 << Self::BITS) as f64) as u32)
+  }
+
+  // Internal implementation, so don't use multiply trait
+  fn mul_u64(self, dist: u64) -> u64 {
+    (self.0 as u64 * dist + (1 << Self::SHIFT >> 1)) >> Self::SHIFT
+  }
+}
+
+impl Default for DistortionScale {
+  fn default() -> Self {
+    Self(1 << Self::SHIFT)
+  }
+}
+
+impl fmt::Debug for DistortionScale {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", self.0 as f64 / (1 << Self::SHIFT) as f64)
+  }
+}
+
 impl RawDistortion {
   pub fn new(dist: u64) -> Self {
     Self(dist)
   }
 }
 
-impl std::ops::Mul<f64> for RawDistortion {
+impl std::ops::Mul<DistortionScale> for RawDistortion {
   type Output = Distortion;
-  fn mul(self, rhs: f64) -> Distortion {
-    Distortion((self.0 as f64 * rhs) as u64)
+  fn mul(self, rhs: DistortionScale) -> Distortion {
+    Distortion(rhs.mul_u64(self.0))
   }
 }
 
@@ -1354,7 +1385,7 @@ pub fn rdo_cfl_alpha<T: Pixel>(
           &rec_region.as_const(),
           uv_tx_size.width(),
           uv_tx_size.height(),
-          |_, _| 1., // We're not doing RDO here.
+          |_, _| DistortionScale::default(), // We're not doing RDO here.
         )
         .0
       };
