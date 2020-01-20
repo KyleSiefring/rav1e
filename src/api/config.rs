@@ -493,7 +493,7 @@ impl SpeedSettings {
   }
 
   const fn use_satd_subpel(speed: usize) -> bool {
-    speed <= 9
+    true
   }
 
   const fn non_square_partition_preset(speed: usize) -> bool {
