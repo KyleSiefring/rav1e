@@ -612,6 +612,19 @@ pub fn rdo_tx_size_type<T: Pixel>(
     && fi.config.speed_settings.rdo_tx_decision
     && luma_mode.is_intra();
   let rdo_tx_depth = if do_rdo_tx_size { 2 } else { 0 };
+
+  if !do_rdo_tx_size {
+    let tx_set = get_tx_set(tx_size, is_inter, fi.use_reduced_tx_set);
+
+    let do_rdo_tx_type = tx_set > TxSet::TX_SET_DCTONLY
+      && fi.config.speed_settings.rdo_tx_decision
+      && !skip;
+
+    if !do_rdo_tx_size && !do_rdo_tx_type {
+      return (best_tx_size, best_tx_type);
+    }
+  }
+
   let cw_checkpoint = cw.checkpoint();
 
   for _ in 0..=rdo_tx_depth {
