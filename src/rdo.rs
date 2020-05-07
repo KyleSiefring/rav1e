@@ -1757,7 +1757,7 @@ pub fn rdo_partition_decision<T: Pixel, W: Writer>(
 
   for &partition in partition_types {
     // Do not re-encode results we already have
-    if partition == cached_block.part_type || (only_split && partition == PARTITION_SPLIT) {
+    if partition == cached_block.part_type || (only_split && partition != PARTITION_SPLIT) {
       continue;
     }
 
