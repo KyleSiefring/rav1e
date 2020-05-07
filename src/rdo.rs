@@ -1752,9 +1752,12 @@ pub fn rdo_partition_decision<T: Pixel, W: Writer>(
   let w_pre_checkpoint = w_pre_cdef.checkpoint();
   let w_post_checkpoint = w_post_cdef.checkpoint();
 
+  let only_split: bool = bsize == BlockSize::BLOCK_32X32 && partition_types.iter().any(
+    |&partition| partition == PARTITION_SPLIT);
+
   for &partition in partition_types {
     // Do not re-encode results we already have
-    if partition == cached_block.part_type {
+    if partition == cached_block.part_type || (only_split && partition == PARTITION_SPLIT) {
       continue;
     }
 
