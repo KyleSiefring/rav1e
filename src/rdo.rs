@@ -790,7 +790,7 @@ fn luma_chroma_mode_rdo<T: Pixel>(
   let zero_distortion =
     if !luma_mode_is_intra { chroma_rdo(true) } else { false };
   // early skip
-  if !zero_distortion {
+  if !zero_distortion && !(luma_mode_is_intra && bsize == BlockSize::BLOCK_64X64) {
     chroma_rdo(false);
   }
 }
