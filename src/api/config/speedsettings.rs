@@ -193,7 +193,7 @@ impl SpeedSettings {
   }
 
   const fn reduced_tx_set_preset(speed: usize) -> bool {
-    speed >= 5
+    speed >= 4
   }
 
   /// TX domain distortion is always faster, with no significant quality change
