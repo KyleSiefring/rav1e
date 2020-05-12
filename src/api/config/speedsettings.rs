@@ -276,7 +276,7 @@ impl SpeedSettings {
 
   // FIXME: With unknown reasons, inter_tx_split does not work if reduced_tx_set is false
   const fn enable_inter_tx_split_preset(speed: usize) -> bool {
-    speed >= 9
+    speed >= 10
   }
 
   fn fine_directional_intra_preset(speed: usize) -> bool {
