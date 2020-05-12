@@ -605,7 +605,7 @@ pub fn rdo_tx_size_type<T: Pixel>(
   let is_inter = !luma_mode.is_intra();
   let mut tx_size = max_txsize_rect_lookup[bsize as usize];
 
-  if bsize >= BLOCK_32X32 && fi.enable_inter_txfm_split && is_inter && !skip {
+  if bsize >= BLOCK_64X64 && fi.enable_inter_txfm_split && is_inter && !skip {
     tx_size = sub_tx_size_map[tx_size as usize]; // Always choose one level split size
   }
 
