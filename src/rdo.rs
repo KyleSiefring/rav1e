@@ -1363,7 +1363,7 @@ fn intra_frame_rdo_mode_decision<T: Pixel>(
   });
 
   if fi.config.speed_settings.fine_directional_intra
-    && bsize >= BlockSize::BLOCK_8X8
+    && bsize >= BlockSize::BLOCK_16X16
   {
     // Find the best angle delta for the current best prediction mode
     let luma_angle_delta_count = best.pred_mode_luma.angle_delta_count();
