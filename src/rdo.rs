@@ -45,6 +45,7 @@ use crate::partition::PartitionType::*;
 use arrayvec::*;
 use itertools::izip;
 use std::fmt;
+use crate::partition::BlockSize::{BLOCK_32X32, BLOCK_64X64};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum RDOType {
@@ -604,7 +605,7 @@ pub fn rdo_tx_size_type<T: Pixel>(
   let is_inter = !luma_mode.is_intra();
   let mut tx_size = max_txsize_rect_lookup[bsize as usize];
 
-  if bsize <= fi.partition_range.min && fi.enable_inter_txfm_split && is_inter && !skip {
+  if bsize >= BLOCK_64X64 && fi.enable_inter_txfm_split && is_inter && !skip {
     tx_size = sub_tx_size_map[tx_size as usize]; // Always choose one level split size
   }
 
