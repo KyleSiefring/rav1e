@@ -769,7 +769,7 @@ impl<T: Pixel> FrameInvariants<T> {
     fi.force_integer_mv = 0; // note: should be 1 if fi.intra_only is true
     fi.idx_in_group_output =
       inter_cfg.get_idx_in_group_output(output_frameno_in_gop);
-    fi.tx_mode_select = fi.enable_inter_txfm_split;
+    fi.tx_mode_select = fi.config.speed_settings.rdo_tx_decision;
 
     fi.order_hint =
       inter_cfg.get_order_hint(output_frameno_in_gop, fi.idx_in_group_output);
@@ -1744,8 +1744,7 @@ pub fn encode_block_post_cdef<T: Pixel>(
 
         //TODO: "&& tx_size.block_size() < bsize" will be replaced with tx-split info for a partition
         //  once it is available.
-        let txfm_split =
-          fi.enable_inter_txfm_split && tx_size.block_size() < bsize;
+        let txfm_split = tx_size.block_size() < bsize;
 
         // TODO: Revise write_tx_size_inter() for txfm_split = true
         cw.write_tx_size_inter(
