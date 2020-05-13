@@ -171,7 +171,7 @@ impl SpeedSettings {
     if speed <= 2 {
       PartitionRange::new(BlockSize::BLOCK_4X4, BlockSize::BLOCK_64X64)
     } else if speed <= 8 {
-      PartitionRange::new(BlockSize::BLOCK_16X16, BlockSize::BLOCK_64X64)
+      PartitionRange::new(BlockSize::BLOCK_8X8, BlockSize::BLOCK_64X64)
     } else if speed <= 9 {
       PartitionRange::new(BlockSize::BLOCK_32X32, BlockSize::BLOCK_64X64)
     } else {
