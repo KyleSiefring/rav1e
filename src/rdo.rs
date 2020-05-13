@@ -613,11 +613,13 @@ pub fn rdo_tx_size_type<T: Pixel>(
   let mut best_rd = std::f64::MAX;
 
   let do_rdo_tx_size =
-    fi.tx_mode_select && fi.config.speed_settings.rdo_tx_decision && (!is_inter || fi.partition_range.min == bsize);
+    fi.tx_mode_select && fi.config.speed_settings.rdo_tx_decision;
   let rdo_tx_depth = if do_rdo_tx_size { 2 } else { 0 };
   let mut cw_checkpoint = None;
 
   for _ in 0..=rdo_tx_depth {
+    let mut early_exit: bool = false;
+
     let tx_set = get_tx_set(tx_size, is_inter, fi.use_reduced_tx_set);
 
     let do_rdo_tx_type = tx_set > TxSet::TX_SET_DCTONLY
@@ -648,6 +650,7 @@ pub fn rdo_tx_size_type<T: Pixel>(
       best_tx_size = tx_size;
       best_tx_type = tx_type;
       best_rd = rd_cost;
+      early_exit = false;
     }
 
     debug_assert!(tx_size.width_log2() <= bsize.width_log2());
@@ -659,7 +662,7 @@ pub fn rdo_tx_size_type<T: Pixel>(
     let next_tx_size = sub_tx_size_map[tx_size as usize];
     cw.rollback(cw_checkpoint.as_ref().unwrap());
 
-    if next_tx_size == tx_size {
+    if next_tx_size == tx_size || early_exit {
       break;
     } else {
       tx_size = next_tx_size;
