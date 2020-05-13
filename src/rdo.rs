@@ -613,7 +613,7 @@ pub fn rdo_tx_size_type<T: Pixel>(
   let mut best_rd = std::f64::MAX;
 
   let do_rdo_tx_size =
-    fi.tx_mode_select && fi.config.speed_settings.rdo_tx_decision && !is_inter;
+    fi.tx_mode_select && fi.config.speed_settings.rdo_tx_decision && (!is_inter || fi.partition_range.min == bsize);
   let rdo_tx_depth = if do_rdo_tx_size { 2 } else { 0 };
   let mut cw_checkpoint = None;
 
