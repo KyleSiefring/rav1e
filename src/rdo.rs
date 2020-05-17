@@ -809,12 +809,15 @@ fn luma_chroma_mode_rdo<T: Pixel>(
 // RDO-based mode decision
 pub fn rdo_mode_decision<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
-  cw: &mut ContextWriter, bsize: BlockSize, tile_bo: TileBlockOffset,
-  pmv_idxs: (usize, usize), inter_cfg: &InterConfig,
+  cw: &mut ContextWriter, cw_checkpoint: &mut Option<ContextWriterCheckpoint>,
+  bsize: BlockSize, tile_bo: TileBlockOffset, pmv_idxs: (usize, usize),
+  inter_cfg: &InterConfig,
 ) -> PartitionParameters {
   let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
 
-  let cw_checkpoint = cw.checkpoint();
+  // Only run the first call
+  // Prevents creating multiple checkpoints for own version of cw
+  let cw_checkpoint = cw_checkpoint.get_or_insert_with(|| cw.checkpoint());
 
   let rdo_type = if fi.use_tx_domain_rate {
     RDOType::TxDistEstRate
@@ -833,7 +836,7 @@ pub fn rdo_mode_decision<T: Pixel>(
       tile_bo,
       pmv_idxs,
       inter_cfg,
-      &cw_checkpoint,
+      cw_checkpoint,
       rdo_type,
     )
   } else {
@@ -850,7 +853,7 @@ pub fn rdo_mode_decision<T: Pixel>(
       cw,
       bsize,
       tile_bo,
-      &cw_checkpoint,
+      cw_checkpoint,
       rdo_type,
       best,
       is_chroma_block,
@@ -1700,6 +1703,7 @@ fn rdo_partition_none<T: Pixel>(
     fi,
     ts,
     cw,
+    &mut None,
     bsize,
     tile_bo,
     (pmv_idx, pmv_inner_idx),
@@ -1776,11 +1780,13 @@ fn rdo_partition_simple<T: Pixel, W: Writer>(
 
   let mut rd_cost_sum = 0.0;
 
+  let mut cw_checkpoint: Option<ContextWriterCheckpoint> = None;
   for (&offset, pmv_inner_idx) in partitions.iter().zip(pmv_idxs) {
     let mode_decision = rdo_mode_decision(
       fi,
       ts,
       cw,
+      &mut cw_checkpoint,
       subsize,
       offset,
       (pmv_idx, pmv_inner_idx),
