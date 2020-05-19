@@ -20,24 +20,24 @@ pub type TxfmShifts = [TxfmShift; 3];
 // design of daala_tx
 // 8 bit 4x4 is an exception and only shifts by 3 in the first stage
 const FWD_SHIFT_4X4: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_8X8: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_16X16: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_32X32: TxfmShifts = [[4, -2, 0], [2, 0, 0], [0, 0, 2]];
-const FWD_SHIFT_64X64: TxfmShifts = [[4, -1, -2], [2, 0, -1], [0, 0, 1]];
-const FWD_SHIFT_4X8: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_8X4: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_8X16: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_16X8: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_16X32: TxfmShifts = [[4, -2, 0], [2, 0, 0], [0, 0, 2]];
-const FWD_SHIFT_32X16: TxfmShifts = [[4, -2, 0], [2, 0, 0], [0, 0, 2]];
-const FWD_SHIFT_32X64: TxfmShifts = [[4, -1, -2], [2, 0, -1], [0, 0, 1]];
-const FWD_SHIFT_64X32: TxfmShifts = [[4, -1, -2], [2, 0, -1], [0, 0, 1]];
-const FWD_SHIFT_4X16: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_16X4: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_8X32: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_32X8: TxfmShifts = [[4, -1, 0], [2, 0, 1], [0, 0, 3]];
-const FWD_SHIFT_16X64: TxfmShifts = [[4, -2, 0], [2, 0, 0], [0, 0, 2]];
-const FWD_SHIFT_64X16: TxfmShifts = [[4, -2, 0], [2, 0, 0], [0, 0, 2]];
+const FWD_SHIFT_8X8: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_16X16: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_32X32: TxfmShifts = [[2, 0, 0], [2, 0, 0], [0, 0, 2]];
+const FWD_SHIFT_64X64: TxfmShifts = [[3, 0, -2], [2, 0, -1], [0, 0, 1]];
+const FWD_SHIFT_4X8: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_8X4: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_8X16: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_16X8: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_16X32: TxfmShifts = [[2, 0, 0], [2, 0, 0], [0, 0, 2]];
+const FWD_SHIFT_32X16: TxfmShifts = [[2, 0, 0], [2, 0, 0], [0, 0, 2]];
+const FWD_SHIFT_32X64: TxfmShifts = [[3, 0, -2], [2, 0, -1], [0, 0, 1]];
+const FWD_SHIFT_64X32: TxfmShifts = [[3, 0, -2], [2, 0, -1], [0, 0, 1]];
+const FWD_SHIFT_4X16: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_16X4: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_8X32: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_32X8: TxfmShifts = [[3, 0, 0], [2, 0, 1], [0, 0, 3]];
+const FWD_SHIFT_16X64: TxfmShifts = [[2, 0, 0], [2, 0, 0], [0, 0, 2]];
+const FWD_SHIFT_64X16: TxfmShifts = [[2, 0, 0], [2, 0, 0], [0, 0, 2]];
 
 pub const FWD_TXFM_SHIFT_LS: [TxfmShifts; TxSize::TX_SIZES_ALL] = [
   FWD_SHIFT_4X4,
