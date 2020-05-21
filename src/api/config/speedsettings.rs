@@ -244,7 +244,7 @@ impl SpeedSettings {
   // There are a few outliers, such as the Wikipedia test clip.
   // TODO: Revisit this setting if full search quality improves in the future.
   const fn diamond_me_preset(_speed: usize) -> bool {
-    true
+    false
   }
 
   const fn cdef_preset(_speed: usize) -> bool {
