@@ -1018,8 +1018,8 @@ fn get_mv_rate(
   a: MotionVector, b: MotionVector, allow_high_precision_mv: bool,
 ) -> u32 {
   let diff =
-    ((a.row - b.row).abs() as u32 + 1) * ((a.col - b.col).abs() as u32 + 1);
-  let d = if allow_high_precision_mv { diff } else { diff >> 1 };
+    ((a.row - b.row).abs() as u32 + 2) * ((a.col - b.col).abs() as u32 + 2);
+  let d = if allow_high_precision_mv { diff } else { diff >> 2 };
   2 * (32 - d.leading_zeros())
 }
 
