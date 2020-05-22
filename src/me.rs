@@ -1017,10 +1017,18 @@ fn adjust_bo(
 fn get_mv_rate(
   a: MotionVector, b: MotionVector, allow_high_precision_mv: bool,
 ) -> u32 {
-  let diff =
-    ((a.row - b.row).abs() as u32 + 1) * ((a.col - b.col).abs() as u32 + 1);
-  let d = if allow_high_precision_mv { diff } else { diff >> 1 };
-  2 * (32 - d.leading_zeros())
+  #[inline(always)]
+  fn diff_to_rate(diff: i16, allow_high_precision_mv: bool) -> u32 {
+    let d = if allow_high_precision_mv { diff } else { diff >> 1 };
+    if d == 0 {
+      0
+    } else {
+      2 * (16 - d.abs().leading_zeros())
+    }
+  }
+
+  diff_to_rate(a.row - b.row, allow_high_precision_mv)
+    + diff_to_rate(a.col - b.col, allow_high_precision_mv)
 }
 
 pub fn estimate_motion_ss4<T: Pixel>(
