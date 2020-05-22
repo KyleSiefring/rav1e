@@ -864,7 +864,7 @@ fn compute_mv_rd_cost<T: Pixel>(
 
   let rate1 = get_mv_rate(cand_mv, pmv[0], fi.allow_high_precision_mv);
   let rate2 = get_mv_rate(cand_mv, pmv[1], fi.allow_high_precision_mv);
-  let rate = rate1.min(rate2 + 1);
+  let rate = rate1.min(rate2 + 1) + 1;
 
   256 * sad as u64 + rate as u64 * lambda as u64
 }
