@@ -225,6 +225,24 @@ pub struct RowsIterMut<'a, T> {
   phantom: PhantomData<&'a mut T>,
 }
 
+impl<'a, T> RowsIter<'a, T> {
+  #[inline(always)]
+  pub unsafe fn new(
+    data: *const T, stride: usize, width: usize, remaining: usize,
+  ) -> Self {
+    Self { data, stride, width, remaining, phantom: PhantomData }
+  }
+}
+
+impl<'a, T> RowsIterMut<'a, T> {
+  #[inline(always)]
+  pub unsafe fn new(
+    data: *mut T, stride: usize, width: usize, remaining: usize,
+  ) -> Self {
+    Self { data, stride, width, remaining, phantom: PhantomData }
+  }
+}
+
 impl<'a, T> Iterator for RowsIter<'a, T> {
   type Item = &'a [T];
 
