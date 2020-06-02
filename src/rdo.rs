@@ -444,7 +444,7 @@ pub fn distortion_scale<T: Pixel>(
   let x = frame_bo.0.x >> IMPORTANCE_BLOCK_TO_BLOCK_SHIFT;
   let y = frame_bo.0.y >> IMPORTANCE_BLOCK_TO_BLOCK_SHIFT;
 
-  fi.distortion_scales[y * fi.w_in_imp_b + x]
+  fi.distortion_scales[y][x]
 }
 
 pub fn distortion_scale_for(

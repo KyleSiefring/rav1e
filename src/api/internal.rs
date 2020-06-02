@@ -25,7 +25,7 @@ use crate::rate::{
 use crate::scenechange::SceneChangeDetector;
 use crate::stats::EncoderStats;
 use crate::tiling::Area;
-use crate::util::Pixel;
+use crate::util::{Data2D, Pixel};
 use arrayvec::ArrayVec;
 use log::Level::Info;
 use std::cmp;
@@ -777,8 +777,10 @@ impl<T: Pixel> ContextInner<T> {
     // First, initialize them all with zeros.
     for output_frameno in output_framenos.iter() {
       let fi = &mut self.frame_data.get_mut(output_frameno).unwrap().fi;
-      for x in fi.block_importances.iter_mut() {
-        *x = 0.;
+      for row in fi.block_importances.rows_iter_mut() {
+        for x in row.iter_mut() {
+          *x = 0.;
+        }
       }
     }
 
@@ -861,14 +863,14 @@ impl<T: Pixel> ContextInner<T> {
             fi: &FrameInvariants<T>, mvs: &crate::me::FrameMotionVectors,
             frame: &Frame<T>, reference_frame: &Frame<T>, bit_depth: usize,
             bsize: BlockSize, len: usize,
-            reference_frame_block_importances: &mut [f32],
+            reference_frame_block_importances: &mut Data2D<f32>,
           ) {
             let plane_org = &frame.planes[0];
             let plane_ref = &reference_frame.planes[0];
 
             (0..fi.h_in_imp_b)
-              .zip(fi.lookahead_intra_costs.chunks_exact(fi.w_in_imp_b))
-              .zip(fi.block_importances.chunks_exact(fi.w_in_imp_b))
+              .zip(fi.lookahead_intra_costs.rows_iter())
+              .zip(fi.block_importances.rows_iter())
               .for_each(|((y, lookahead_intra_costs), block_importances)| {
                 (0..fi.w_in_imp_b).for_each(|x| {
                   let mv = mvs[y * 2][x * 2];
@@ -929,9 +931,8 @@ impl<T: Pixel> ContextInner<T> {
                         && (x as usize) < fi.w_in_imp_b
                         && (y as usize) < fi.h_in_imp_b
                       {
-                        reference_frame_block_importances
-                          [y as usize * fi.w_in_imp_b + x as usize] +=
-                          propagate_amount * fraction;
+                        reference_frame_block_importances[y as usize]
+                          [x as usize] += propagate_amount * fraction;
                       }
                     };
 
@@ -1026,16 +1027,24 @@ impl<T: Pixel> ContextInner<T> {
 
     if !output_framenos.is_empty() {
       let fi = &mut self.frame_data.get_mut(&output_framenos[0]).unwrap().fi;
-      let block_importances = fi.block_importances.iter();
-      let lookahead_intra_costs = fi.lookahead_intra_costs.iter();
-      let distortion_scales = fi.distortion_scales.iter_mut();
-      for ((&propagate_cost, &intra_cost), distortion_scale) in
-        block_importances.zip(lookahead_intra_costs).zip(distortion_scales)
+
+      for ((propagate_costs_row, intra_costs_row), distortion_scales_row) in fi
+        .block_importances
+        .rows_iter()
+        .zip(fi.lookahead_intra_costs.rows_iter())
+        .zip(fi.distortion_scales.rows_iter_mut())
       {
-        *distortion_scale = crate::rdo::distortion_scale_for(
-          propagate_cost as f64,
-          intra_cost as f64,
-        );
+        for ((&propagate_cost, &intra_cost), distortion_scale) in
+          propagate_costs_row
+            .iter()
+            .zip(intra_costs_row)
+            .zip(distortion_scales_row)
+        {
+          *distortion_scale = crate::rdo::distortion_scale_for(
+            propagate_cost as f64,
+            intra_cost as f64,
+          );
+        }
       }
       #[cfg(feature = "dump_lookahead_data")]
       {

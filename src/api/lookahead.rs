@@ -17,6 +17,7 @@ use crate::predict::{IntraParam, PredictionMode};
 use crate::rayon::iter::*;
 use crate::tiling::{Area, TileRect, TileStateMut};
 use crate::transform::TxSize;
+use crate::util::Data2D;
 use crate::{Frame, Pixel};
 use std::sync::Arc;
 
@@ -28,7 +29,7 @@ pub(crate) const IMP_BLOCK_AREA_IN_MV_UNITS: i64 =
 
 pub(crate) fn estimate_intra_costs<T: Pixel>(
   frame: &Frame<T>, bit_depth: usize, cpu_feature_level: CpuFeatureLevel,
-) -> Box<[u32]> {
+) -> Data2D<u32> {
   let plane = &frame.planes[0];
   let mut plane_after_prediction = frame.planes[0].clone();
 
@@ -40,10 +41,10 @@ pub(crate) fn estimate_intra_costs<T: Pixel>(
 
   let h_in_imp_b = plane.cfg.height / IMPORTANCE_BLOCK_SIZE;
   let w_in_imp_b = plane.cfg.width / IMPORTANCE_BLOCK_SIZE;
-  let mut intra_costs = Vec::with_capacity(h_in_imp_b * w_in_imp_b);
+  let mut intra_costs: Data2D<u32> = Data2D::new(w_in_imp_b, h_in_imp_b);
 
-  for y in 0..h_in_imp_b {
-    for x in 0..w_in_imp_b {
+  for (y, row_costs) in intra_costs.rows_iter_mut().enumerate() {
+    for (x, intra_cost) in row_costs.iter_mut().enumerate() {
       let plane_org = plane.region(Area::Rect {
         x: (x * IMPORTANCE_BLOCK_SIZE) as isize,
         y: (y * IMPORTANCE_BLOCK_SIZE) as isize,
@@ -102,25 +103,23 @@ pub(crate) fn estimate_intra_costs<T: Pixel>(
           height: IMPORTANCE_BLOCK_SIZE,
         });
 
-      let intra_cost = get_satd(
+      *intra_cost = get_satd(
         &plane_org,
         &plane_after_prediction_region,
         bsize,
         bit_depth,
         cpu_feature_level,
       );
-
-      intra_costs.push(intra_cost);
     }
   }
 
-  intra_costs.into_boxed_slice()
+  intra_costs
 }
 
 pub(crate) fn estimate_inter_costs<T: Pixel>(
   frame: Arc<Frame<T>>, ref_frame: Arc<Frame<T>>, bit_depth: usize,
   mut config: EncoderConfig, sequence: Sequence,
-) -> Box<[u32]> {
+) -> Data2D<u32> {
   config.low_latency = true;
   config.speed_settings.multiref = false;
   let inter_cfg = InterConfig::new(&config);
@@ -137,14 +136,14 @@ pub(crate) fn estimate_inter_costs<T: Pixel>(
   let plane_ref = &ref_frame.planes[0];
   let h_in_imp_b = plane_org.cfg.height / IMPORTANCE_BLOCK_SIZE;
   let w_in_imp_b = plane_org.cfg.width / IMPORTANCE_BLOCK_SIZE;
-  let mut inter_costs = Vec::with_capacity(h_in_imp_b * w_in_imp_b);
+  let mut inter_costs = Data2D::new(w_in_imp_b, h_in_imp_b);
   let mvs = &fs.frame_mvs[0];
   let bsize = BlockSize::from_width_and_height(
     IMPORTANCE_BLOCK_SIZE,
     IMPORTANCE_BLOCK_SIZE,
   );
-  (0..h_in_imp_b).for_each(|y| {
-    (0..w_in_imp_b).for_each(|x| {
+  for (y, row_costs) in inter_costs.rows_iter_mut().enumerate() {
+    for (x, inter_cost) in row_costs.iter_mut().enumerate() {
       let mv = mvs[y * 2][x * 2];
 
       // Coordinates of the top-left corner of the reference block, in MV
@@ -166,16 +165,17 @@ pub(crate) fn estimate_inter_costs<T: Pixel>(
         height: IMPORTANCE_BLOCK_SIZE,
       });
 
-      inter_costs.push(get_satd(
+      *inter_cost = get_satd(
         &region_org,
         &region_ref,
         bsize,
         bit_depth,
         fi.cpu_feature_level,
-      ));
-    });
-  });
-  inter_costs.into_boxed_slice()
+      );
+    }
+  }
+
+  inter_costs
 }
 
 #[hawktracer(compute_motion_vectors_per_tile)]

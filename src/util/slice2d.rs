@@ -1,4 +1,4 @@
-// Copyright (c) 2019, The rav1e contributors. All rights reserved
+// Copyright (c) 2019-2020, The rav1e contributors. All rights reserved
 //
 // This source code is subject to the terms of the BSD 2 Clause License and
 // the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -223,6 +223,24 @@ pub struct RowsIterMut<'a, T> {
   width: usize,
   remaining: usize,
   phantom: PhantomData<&'a mut T>,
+}
+
+impl<'a, T> RowsIter<'a, T> {
+  #[inline(always)]
+  pub unsafe fn new(
+    data: *const T, stride: usize, width: usize, remaining: usize,
+  ) -> Self {
+    Self { data, stride, width, remaining, phantom: PhantomData }
+  }
+}
+
+impl<'a, T> RowsIterMut<'a, T> {
+  #[inline(always)]
+  pub unsafe fn new(
+    data: *mut T, stride: usize, width: usize, remaining: usize,
+  ) -> Self {
+    Self { data, stride, width, remaining, phantom: PhantomData }
+  }
 }
 
 impl<'a, T> Iterator for RowsIter<'a, T> {

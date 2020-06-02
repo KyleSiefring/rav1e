@@ -13,7 +13,7 @@ use crate::cpu_features::CpuFeatureLevel;
 use crate::encoder::Sequence;
 use crate::frame::*;
 use crate::hawktracer::*;
-use crate::util::{CastFromPrimitive, Pixel};
+use crate::util::{CastFromPrimitive, Pixel, Data2D};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -240,11 +240,12 @@ impl SceneChangeDetector {
         has_scenecut: delta >= threshold,
       }
     } else {
+      let sum_costs = |costs: Data2D<u32>| -> f64 {
+        costs.rows_iter().map(|row| row.iter().map(|&cost| cost as u64).sum::<u64>()).sum::<u64>() as f64 / (costs.width() * costs.height()) as f64
+      };
       let intra_costs =
         estimate_intra_costs(&*frame2, self.bit_depth, self.cpu_feature_level);
-      let intra_cost = intra_costs.iter().map(|&cost| cost as u64).sum::<u64>()
-        as f64
-        / intra_costs.len() as f64;
+      let intra_cost = sum_costs(intra_costs);
 
       let inter_costs = estimate_inter_costs(
         frame2,
@@ -253,9 +254,7 @@ impl SceneChangeDetector {
         self.encoder_config,
         self.sequence,
       );
-      let inter_cost = inter_costs.iter().map(|&cost| cost as u64).sum::<u64>()
-        as f64
-        / inter_costs.len() as f64;
+      let inter_cost = sum_costs(inter_costs);
 
       // Sliding scale, more likely to choose a keyframe
       // as we get farther from the last keyframe.

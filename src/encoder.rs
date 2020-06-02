@@ -556,13 +556,13 @@ pub struct FrameInvariants<T: Pixel> {
   /// Frame height in importance blocks.
   pub h_in_imp_b: usize,
   /// Intra prediction cost estimations for each importance block.
-  pub lookahead_intra_costs: Box<[u32]>,
+  pub lookahead_intra_costs: Data2D<u32>,
   /// Future importance values for each importance block. That is, a value
   /// indicating how much future frames depend on the block (for example, via
   /// inter-prediction).
-  pub block_importances: Box<[f32]>,
+  pub block_importances: Data2D<f32>,
   /// Pre-computed distortion_scale.
-  pub distortion_scales: Box<[DistortionScale]>,
+  pub distortion_scales: Data2D<DistortionScale>,
 
   /// Target CPU feature level.
   pub cpu_feature_level: crate::cpu_features::CpuFeatureLevel,
@@ -734,14 +734,10 @@ impl<T: Pixel> FrameInvariants<T> {
       w_in_imp_b,
       h_in_imp_b,
       // This is never used before it is assigned
-      lookahead_intra_costs: Box::new([]),
+      lookahead_intra_costs: Data2D::new(0, 0),
       // dynamic allocation: once per frame
-      block_importances: vec![0.; w_in_imp_b * h_in_imp_b].into_boxed_slice(),
-      distortion_scales: vec![
-        DistortionScale::default();
-        w_in_imp_b * h_in_imp_b
-      ]
-      .into_boxed_slice(),
+      block_importances: Data2D::new(w_in_imp_b, h_in_imp_b),
+      distortion_scales: Data2D::new(w_in_imp_b, h_in_imp_b),
       cpu_feature_level: Default::default(),
       activity_mask: Default::default(),
       enable_segmentation: config.speed_settings.enable_segmentation,
