@@ -60,7 +60,7 @@ macro_rules! tile_restoration_units_common {
         rows: usize,
       ) -> Self {
         Self {
-          data: if x < frame_units.cols && y < frame_units.rows {
+          data: if x < frame_units.cols() && y < frame_units.rows() {
             & $($opt_mut)? frame_units[y][x]
           } else {
             // on edges, a tile may contain no restoration units
@@ -70,7 +70,7 @@ macro_rules! tile_restoration_units_common {
           y,
           cols,
           rows,
-          stride: frame_units.cols,
+          stride: frame_units.cols(),
           phantom: PhantomData,
         }
       }
@@ -371,7 +371,8 @@ macro_rules! tile_restoration_state_common {
         let units_cols = sb_width + (1 << sb_h_shift) - 1 >> sb_h_shift;
         let units_rows = sb_height + (1 << sb_v_shift) - 1 >> sb_v_shift;
 
-        let FrameRestorationUnits { cols: rs_cols, rows: rs_rows, .. } = rs.planes[pli].units;
+        let rs_cols = rs.planes[pli].units.cols();
+        let rs_rows = rs.planes[pli].units.rows();
         // +1 because the last super-block may use the "stretched" restoration unit
         // from its neighbours
         // <https://github.com/xiph/rav1e/issues/631#issuecomment-454419152>

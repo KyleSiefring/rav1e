@@ -559,45 +559,17 @@ pub struct CandidateMV {
   pub weight: u32,
 }
 
-#[derive(Clone)]
-pub struct FrameBlocks {
-  blocks: Box<[Block]>,
-  pub cols: usize,
-  pub rows: usize,
-}
+pub type FrameBlocks = Data2D<Block>;
 
 impl FrameBlocks {
-  pub fn new(cols: usize, rows: usize) -> Self {
-    Self {
-      blocks: vec![Block::default(); cols * rows].into_boxed_slice(),
-      cols,
-      rows,
-    }
-  }
-
   #[inline(always)]
   pub fn as_tile_blocks(&self) -> TileBlocks<'_> {
-    TileBlocks::new(self, 0, 0, self.cols, self.rows)
+    TileBlocks::new(self, 0, 0, self.cols(), self.rows())
   }
 
   #[inline(always)]
   pub fn as_tile_blocks_mut(&mut self) -> TileBlocksMut<'_> {
-    TileBlocksMut::new(self, 0, 0, self.cols, self.rows)
-  }
-}
-
-impl Index<usize> for FrameBlocks {
-  type Output = [Block];
-  #[inline]
-  fn index(&self, index: usize) -> &Self::Output {
-    &self.blocks[index * self.cols..(index + 1) * self.cols]
-  }
-}
-
-impl IndexMut<usize> for FrameBlocks {
-  #[inline]
-  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-    &mut self.blocks[index * self.cols..(index + 1) * self.cols]
+    TileBlocksMut::new(self, 0, 0, self.cols(), self.rows())
   }
 }
 

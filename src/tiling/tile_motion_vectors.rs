@@ -48,11 +48,11 @@ macro_rules! tile_motion_vectors_common {
         cols: usize,
         rows: usize,
       ) -> Self {
-        assert!(x + cols <= frame_mvs.cols);
-        assert!(y + rows <= frame_mvs.rows);
+        assert!(x + cols <= frame_mvs.cols());
+        assert!(y + rows <= frame_mvs.rows());
         Self {
           data: unsafe {
-            $slice ::new_unchecked(& $($opt_mut)? frame_mvs[y][x], cols, rows, frame_mvs.cols)
+            $slice ::new_unchecked(& $($opt_mut)? frame_mvs[y][x], cols, rows, frame_mvs.cols())
           },
           x,
           y,

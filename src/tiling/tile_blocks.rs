@@ -56,12 +56,12 @@ macro_rules! tile_blocks_common {
       ) -> Self {
         Self {
           data: unsafe {
-            $slice ::new_unchecked(& $($opt_mut)? frame_blocks[y][x], cols, rows, frame_blocks.cols)
+            $slice ::new_unchecked(& $($opt_mut)? frame_blocks[y][x], cols, rows, frame_blocks.cols())
           },
           x,
           y,
-          frame_cols: frame_blocks.cols,
-          frame_rows: frame_blocks.rows,
+          frame_cols: frame_blocks.cols(),
+          frame_rows: frame_blocks.rows(),
         }
       }
 

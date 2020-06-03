@@ -42,6 +42,18 @@ impl<T> Data2D<T> {
     self.height
   }
 
+  /// Same as the width() function.
+  #[inline(always)]
+  pub const fn cols(&self) -> usize {
+    self.width
+  }
+
+  /// Same as the height() function.
+  #[inline(always)]
+  pub const fn rows(&self) -> usize {
+    self.height
+  }
+
   #[inline(always)]
   pub fn slice(&self) -> Slice2D<'_, T> {
     unsafe {
