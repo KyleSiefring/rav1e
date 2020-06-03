@@ -966,8 +966,8 @@ pub fn rdo_mode_decision<T: Pixel>(
 fn inter_frame_rdo_mode_decision<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, bsize: BlockSize, tile_bo: TileBlockOffset,
-  inter_cfg: &InterConfig,
-  cw_checkpoint: &ContextWriterCheckpoint, rdo_type: RDOType,
+  inter_cfg: &InterConfig, cw_checkpoint: &ContextWriterCheckpoint,
+  rdo_type: RDOType,
 ) -> PartitionParameters {
   let mut best = PartitionParameters::default();
 
@@ -1699,14 +1699,7 @@ fn rdo_partition_none<T: Pixel>(
   inter_cfg: &InterConfig,
   child_modes: &mut ArrayVec<[PartitionParameters; 4]>,
 ) -> Option<f64> {
-  let mode = rdo_mode_decision(
-    fi,
-    ts,
-    cw,
-    bsize,
-    tile_bo,
-    inter_cfg,
-  );
+  let mode = rdo_mode_decision(fi, ts, cw, bsize, tile_bo, inter_cfg);
   let cost = mode.rd_cost;
 
   child_modes.push(mode);
@@ -1719,9 +1712,9 @@ fn rdo_partition_none<T: Pixel>(
 fn rdo_partition_simple<T: Pixel, W: Writer>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, w_pre_cdef: &mut W, w_post_cdef: &mut W,
-  bsize: BlockSize, tile_bo: TileBlockOffset,
-  inter_cfg: &InterConfig, partition: PartitionType, rdo_type: RDOType,
-  best_rd: f64, child_modes: &mut ArrayVec<[PartitionParameters; 4]>,
+  bsize: BlockSize, tile_bo: TileBlockOffset, inter_cfg: &InterConfig,
+  partition: PartitionType, rdo_type: RDOType, best_rd: f64,
+  child_modes: &mut ArrayVec<[PartitionParameters; 4]>,
 ) -> Option<f64> {
   let subsize = bsize.subsize(partition);
 
@@ -1768,14 +1761,8 @@ fn rdo_partition_simple<T: Pixel, W: Writer>(
   let mut rd_cost_sum = 0.0;
 
   for offset in partitions {
-    let mode_decision = rdo_mode_decision(
-      fi,
-      ts,
-      cw,
-      subsize,
-      offset,
-      inter_cfg,
-    );
+    let mode_decision =
+      rdo_mode_decision(fi, ts, cw, subsize, offset, inter_cfg);
 
     rd_cost_sum += mode_decision.rd_cost;
 
@@ -1810,9 +1797,8 @@ pub fn rdo_partition_decision<T: Pixel, W: Writer>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, w_pre_cdef: &mut W, w_post_cdef: &mut W,
   bsize: BlockSize, tile_bo: TileBlockOffset,
-  cached_block: &PartitionGroupParameters,
-  partition_types: &[PartitionType], rdo_type: RDOType,
-  inter_cfg: &InterConfig,
+  cached_block: &PartitionGroupParameters, partition_types: &[PartitionType],
+  rdo_type: RDOType, inter_cfg: &InterConfig,
 ) -> PartitionGroupParameters {
   let mut best_partition = cached_block.part_type;
   let mut best_rd = cached_block.rd_cost;
