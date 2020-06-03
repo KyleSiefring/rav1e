@@ -357,7 +357,7 @@ pub struct FrameState<T: Pixel> {
   pub restoration: RestorationState,
   // Because we only reference these within a tile context,
   // these are stored per-tile for easier access.
-  pub half_res_pmvs: Vec<(PlaneSuperBlockOffset, Vec<BlockPmv>)>,
+  pub half_res_pmvs: Vec<(PlaneSuperBlockOffset, Data2D<BlockPmv>)>,
   pub frame_mvs: Arc<Vec<FrameMotionVectors>>,
   pub enc_stats: EncoderStats,
 }
@@ -2857,15 +2857,15 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
 #[inline(always)]
 pub(crate) fn build_coarse_pmvs<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, inter_cfg: &InterConfig,
-) -> Vec<[Option<MotionVector>; REF_FRAMES]> {
+) -> Data2D<[Option<MotionVector>; REF_FRAMES]> {
   assert!(!fi.sequence.use_128x128_superblock);
   if ts.mi_width >= 16 && ts.mi_height >= 16 {
-    let mut frame_pmvs = Vec::with_capacity(ts.sb_width * ts.sb_height);
-    for sby in 0..ts.sb_height {
-      for sbx in 0..ts.sb_width {
+    let mut frame_pmvs: Data2D<[Option<MotionVector>; REF_FRAMES]> =
+      Data2D::new(ts.sb_width, ts.sb_height);
+    for (sby, pmv_rows) in frame_pmvs.rows_iter_mut().enumerate() {
+      for (sbx, pmvs) in pmv_rows.iter_mut().enumerate() {
         let sbo = TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby });
         let bo = sbo.block_offset(0, 0);
-        let mut pmvs: [Option<MotionVector>; REF_FRAMES] = [None; REF_FRAMES];
         for i in inter_cfg.allowed_ref_frames().iter().map(|rf| rf.to_index())
         {
           let r = fi.ref_frames[i] as usize;
@@ -2874,14 +2874,13 @@ pub(crate) fn build_coarse_pmvs<T: Pixel>(
               estimate_motion_ss4(fi, ts, BlockSize::BLOCK_64X64, r, bo);
           }
         }
-        frame_pmvs.push(pmvs);
       }
     }
     frame_pmvs
   } else {
     // the block use for motion estimation would be smaller than the whole image
     // dynamic allocation: once per frmae
-    vec![[None; REF_FRAMES]; ts.sb_width * ts.sb_height]
+    Data2D::new(ts.sb_width, ts.sb_height)
   }
 }
 
@@ -3028,7 +3027,7 @@ fn build_raw_tile_group(
 pub(crate) fn build_half_res_pmvs<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   tile_sbo: TileSuperBlockOffset,
-  tile_pmvs: &[[Option<MotionVector>; REF_FRAMES]],
+  tile_pmvs: &Data2D<[Option<MotionVector>; REF_FRAMES]>,
 ) -> BlockPmv {
   let estimate_motion_ss2 = if fi.config.speed_settings.diamond_me {
     crate::me::DiamondSearch::estimate_motion_ss2
@@ -3080,25 +3079,17 @@ pub(crate) fn build_half_res_pmvs<T: Pixel>(
     for &i in ALL_INTER_REFS.iter() {
       let r = fi.ref_frames[i.to_index()] as usize;
       if pmvs[0][r].is_none() {
-        pmvs[0][r] = tile_pmvs[sby * ts.sb_width + sbx][r];
+        pmvs[0][r] = tile_pmvs[sby][sbx][r];
         if let Some(pmv) = pmvs[0][r] {
-          let pmv_w = if sbx > 0 {
-            tile_pmvs[sby * ts.sb_width + sbx - 1][r]
-          } else {
-            None
-          };
+          let pmv_w = if sbx > 0 { tile_pmvs[sby][sbx - 1][r] } else { None };
           let pmv_e = if sbx < ts.sb_width - 1 {
-            tile_pmvs[sby * ts.sb_width + sbx + 1][r]
+            tile_pmvs[sby][sbx + 1][r]
           } else {
             None
           };
-          let pmv_n = if sby > 0 {
-            tile_pmvs[sby * ts.sb_width + sbx - ts.sb_width][r]
-          } else {
-            None
-          };
+          let pmv_n = if sby > 0 { tile_pmvs[sby - 1][sbx][r] } else { None };
           let pmv_s = if sby < ts.sb_height - 1 {
-            tile_pmvs[sby * ts.sb_width + sbx + ts.sb_width][r]
+            tile_pmvs[sby + 1][sbx][r]
           } else {
             None
           };
@@ -3184,7 +3175,7 @@ pub(crate) fn build_half_res_pmvs<T: Pixel>(
 pub(crate) fn build_full_res_pmvs<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   tile_sbo: TileSuperBlockOffset,
-  half_res_pmvs: &[[[Option<MotionVector>; REF_FRAMES]; 5]],
+  half_res_pmvs: &Data2D<[[Option<MotionVector>; REF_FRAMES]; 5]>,
 ) {
   let estimate_motion = if fi.config.speed_settings.diamond_me {
     crate::me::DiamondSearch::estimate_motion
@@ -3194,7 +3185,7 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
 
   let TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby }) = tile_sbo;
   let mut pmvs: [Option<MotionVector>; REF_FRAMES] = [None; REF_FRAMES];
-  let half_res_pmvs_this_block = half_res_pmvs[sby * ts.sb_width + sbx];
+  let half_res_pmvs_this_block = half_res_pmvs[sby][sbx];
 
   if ts.mi_width >= 8 && ts.mi_height >= 8 {
     for &i in ALL_INTER_REFS.iter() {
@@ -3205,22 +3196,22 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
           assert!(!fi.sequence.use_128x128_superblock);
 
           let pmvs_w = if sbx > 0 {
-            half_res_pmvs[sby * ts.sb_width + sbx - 1]
+            half_res_pmvs[sby][sbx - 1]
           } else {
             [[None; REF_FRAMES]; 5]
           };
           let pmvs_e = if sbx < ts.sb_width - 1 {
-            half_res_pmvs[sby * ts.sb_width + sbx + 1]
+            half_res_pmvs[sby][sbx + 1]
           } else {
             [[None; REF_FRAMES]; 5]
           };
           let pmvs_n = if sby > 0 {
-            half_res_pmvs[sby * ts.sb_width + sbx - ts.sb_width]
+            half_res_pmvs[sby - 1][sbx]
           } else {
             [[None; REF_FRAMES]; 5]
           };
           let pmvs_s = if sby < ts.sb_height - 1 {
-            half_res_pmvs[sby * ts.sb_width + sbx + ts.sb_width]
+            half_res_pmvs[sby + 1][sbx]
           } else {
             [[None; REF_FRAMES]; 5]
           };
