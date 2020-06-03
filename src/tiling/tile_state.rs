@@ -62,7 +62,7 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub qc: QuantizationContext,
   pub segmentation: &'a SegmentationState,
   pub restoration: TileRestorationStateMut<'a>,
-  pub half_res_pmvs: &'a mut Vec<BlockPmv>,
+  pub half_res_pmvs: &'a mut Data2D<BlockPmv>,
   pub mvs: Vec<TileMotionVectorsMut<'a>>,
   pub coded_block_info: MiTileState,
   pub integral_buffer: IntegralImageBuffer,
@@ -147,7 +147,7 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
       // Initialize a blank array in the slot for this tile in the FrameState.
       // This will immediately be overridden with the half_res_pmvs
       // computed in the lookahead, so no need to allocate here.
-      fs.half_res_pmvs.push((sbo, Vec::new()));
+      fs.half_res_pmvs.push((sbo, Data2D::new(0, 0)));
     }
 
     Self {

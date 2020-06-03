@@ -181,16 +181,16 @@ pub(crate) fn estimate_inter_costs<T: Pixel>(
 #[hawktracer(compute_motion_vectors_per_tile)]
 fn compute_motion_vectors_per_tile<T: Pixel>(
   ts: &mut TileStateMut<T>, fi: &FrameInvariants<T>, inter_cfg: &InterConfig,
-) -> (PlaneSuperBlockOffset, Vec<BlockPmv>) {
+) -> (PlaneSuperBlockOffset, Data2D<BlockPmv>) {
   // Compute the quarter-resolution motion vectors.
   let tile_pmvs = build_coarse_pmvs(fi, ts, inter_cfg);
 
   // Compute the half-resolution motion vectors.
-  let mut half_res_pmvs = Vec::with_capacity(ts.sb_height * ts.sb_width);
-  for sby in 0..ts.sb_height {
-    for sbx in 0..ts.sb_width {
+  let mut half_res_pmvs = Data2D::new(ts.sb_width, ts.sb_height);
+  for (sby, pmv_rows) in half_res_pmvs.rows_iter_mut().enumerate() {
+    for (sbx, pmv) in pmv_rows.iter_mut().enumerate() {
       let tile_sbo = TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby });
-      half_res_pmvs.push(build_half_res_pmvs(fi, ts, tile_sbo, &tile_pmvs));
+      *pmv = build_half_res_pmvs(fi, ts, tile_sbo, &tile_pmvs);
     }
   }
 
