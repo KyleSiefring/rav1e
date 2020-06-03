@@ -19,48 +19,16 @@ use crate::partition::RefType::*;
 use crate::partition::*;
 use crate::predict::PredictionMode;
 use crate::tiling::*;
-use crate::util::Pixel;
+use crate::util::{Data2D, Pixel};
 use crate::FrameInvariants;
 
 use arrayvec::*;
 
 use std::convert::identity;
 use std::iter;
-use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 
-#[derive(Debug, Clone)]
-pub struct FrameMotionVectors {
-  mvs: Box<[MotionVector]>,
-  pub cols: usize,
-  pub rows: usize,
-}
-
-impl FrameMotionVectors {
-  pub fn new(cols: usize, rows: usize) -> Self {
-    Self {
-      // dynamic allocation: once per frame
-      mvs: vec![MotionVector::default(); cols * rows].into_boxed_slice(),
-      cols,
-      rows,
-    }
-  }
-}
-
-impl Index<usize> for FrameMotionVectors {
-  type Output = [MotionVector];
-  #[inline]
-  fn index(&self, index: usize) -> &Self::Output {
-    &self.mvs[index * self.cols..(index + 1) * self.cols]
-  }
-}
-
-impl IndexMut<usize> for FrameMotionVectors {
-  #[inline]
-  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-    &mut self.mvs[index * self.cols..(index + 1) * self.cols]
-  }
-}
+pub type FrameMotionVectors = Data2D<MotionVector>;
 
 const fn get_mv_range(
   w_in_b: usize, h_in_b: usize, bo: PlaneBlockOffset, blk_w: usize,
@@ -152,13 +120,13 @@ pub fn get_subset_predictors<T: Pixel>(
         predictors.push(top);
       }
     }
-    if frame_bo.0.x < prev_frame_mvs.cols - 1 {
+    if frame_bo.0.x < prev_frame_mvs.cols() - 1 {
       let right = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x + 1];
       if !right.is_zero() {
         predictors.push(right);
       }
     }
-    if frame_bo.0.y < prev_frame_mvs.rows - 1 {
+    if frame_bo.0.y < prev_frame_mvs.rows() - 1 {
       let bottom = prev_frame_mvs[frame_bo.0.y + 1][frame_bo.0.x];
       if !bottom.is_zero() {
         predictors.push(bottom);

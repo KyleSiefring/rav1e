@@ -13,7 +13,7 @@ use crate::cpu_features::CpuFeatureLevel;
 use crate::encoder::Sequence;
 use crate::frame::*;
 use crate::hawktracer::*;
-use crate::util::{CastFromPrimitive, Pixel, Data2D};
+use crate::util::{CastFromPrimitive, Data2D, Pixel};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -241,7 +241,11 @@ impl SceneChangeDetector {
       }
     } else {
       let sum_costs = |costs: Data2D<u32>| -> f64 {
-        costs.rows_iter().map(|row| row.iter().map(|&cost| cost as u64).sum::<u64>()).sum::<u64>() as f64 / (costs.width() * costs.height()) as f64
+        costs
+          .rows_iter()
+          .map(|row| row.iter().map(|&cost| cost as u64).sum::<u64>())
+          .sum::<u64>() as f64
+          / (costs.width() * costs.height()) as f64
       };
       let intra_costs =
         estimate_intra_costs(&*frame2, self.bit_depth, self.cpu_feature_level);

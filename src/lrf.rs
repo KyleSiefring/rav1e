@@ -23,12 +23,11 @@ use crate::frame::{
 };
 use crate::hawktracer::*;
 use crate::tiling::{Area, PlaneRegionMut, Rect};
-use crate::util::{clamp, CastFromPrimitive, ILog, Pixel};
+use crate::util::{clamp, CastFromPrimitive, Data2D, ILog, Pixel};
 
 use crate::api::SGRComplexityLevel;
 use std::cmp;
 use std::iter::FusedIterator;
-use std::ops::{Index, IndexMut};
 
 pub const RESTORATION_TILESIZE_MAX_LOG2: usize = 8;
 
@@ -1169,37 +1168,7 @@ impl Default for RestorationUnit {
   }
 }
 
-#[derive(Clone, Debug)]
-pub struct FrameRestorationUnits {
-  units: Box<[RestorationUnit]>,
-  pub cols: usize,
-  pub rows: usize,
-}
-
-impl FrameRestorationUnits {
-  pub fn new(cols: usize, rows: usize) -> Self {
-    Self {
-      units: vec![RestorationUnit::default(); cols * rows].into_boxed_slice(),
-      cols,
-      rows,
-    }
-  }
-}
-
-impl Index<usize> for FrameRestorationUnits {
-  type Output = [RestorationUnit];
-  #[inline(always)]
-  fn index(&self, index: usize) -> &Self::Output {
-    &self.units[index * self.cols..(index + 1) * self.cols]
-  }
-}
-
-impl IndexMut<usize> for FrameRestorationUnits {
-  #[inline(always)]
-  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-    &mut self.units[index * self.cols..(index + 1) * self.cols]
-  }
-}
+pub type FrameRestorationUnits = Data2D<RestorationUnit>;
 
 #[derive(Clone, Debug)]
 pub struct RestorationPlaneConfig {

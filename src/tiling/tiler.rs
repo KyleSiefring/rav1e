@@ -220,8 +220,8 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
             self.ti.tile_height_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
           let x = tile_col * tile_width_mi;
           let y = tile_row * tile_height_mi;
-          let cols = tile_width_mi.min(fb.cols - x);
-          let rows = tile_height_mi.min(fb.rows - y);
+          let cols = tile_width_mi.min(fb.cols() - x);
+          let rows = tile_height_mi.min(fb.rows() - y);
           TileBlocksMut::new(fb, x, y, cols, rows)
         },
       };
