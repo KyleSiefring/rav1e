@@ -57,19 +57,14 @@ impl<T> Data2D<T> {
   #[inline(always)]
   pub fn slice(&self) -> Slice2D<'_, T> {
     unsafe {
-      Slice2D::new_unchecked(
-        self.data.as_ptr(),
-        self.width,
-        self.height,
-        self.width,
-      )
+      Slice2D::new(self.data.as_ptr(), self.width, self.height, self.width)
     }
   }
 
   #[inline(always)]
   pub fn mut_slice(&mut self) -> Slice2DMut<'_, T> {
     unsafe {
-      Slice2DMut::new_unchecked(
+      Slice2DMut::new(
         self.data.as_mut_ptr(),
         self.width,
         self.height,
