@@ -2257,8 +2257,8 @@ pub fn encode_block_with_modes<T: Pixel>(
 fn encode_partition_bottomup<T: Pixel, W: Writer>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, w_pre_cdef: &mut W, w_post_cdef: &mut W,
-  bsize: BlockSize, tile_bo: TileBlockOffset,
-  ref_rd_cost: f64, inter_cfg: &InterConfig,
+  bsize: BlockSize, tile_bo: TileBlockOffset, ref_rd_cost: f64,
+  inter_cfg: &InterConfig,
 ) -> PartitionGroupParameters {
   let rdo_type = RDOType::PixelDistRealRate;
   let mut rd_cost = std::f64::MAX;
@@ -2311,14 +2311,8 @@ fn encode_partition_bottomup<T: Pixel, W: Writer>(
       0.0
     };
 
-    let mode_decision = rdo_mode_decision(
-      fi,
-      ts,
-      cw,
-      bsize,
-      tile_bo,
-      inter_cfg,
-    );
+    let mode_decision =
+      rdo_mode_decision(fi, ts, cw, bsize, tile_bo, inter_cfg);
 
     if !mode_decision.pred_mode_luma.is_intra() {
       // Fill the saved motion structure
@@ -2544,8 +2538,7 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   cw: &mut ContextWriter, w_pre_cdef: &mut W, w_post_cdef: &mut W,
   bsize: BlockSize, tile_bo: TileBlockOffset,
-  block_output: &Option<PartitionGroupParameters>,
-  inter_cfg: &InterConfig,
+  block_output: &Option<PartitionGroupParameters>, inter_cfg: &InterConfig,
 ) {
   if tile_bo.0.x >= cw.bc.blocks.cols() || tile_bo.0.y >= cw.bc.blocks.rows() {
     return;
@@ -2650,14 +2643,7 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
         rdo_output.part_modes[0].clone()
       } else {
         // Make a prediction mode decision for blocks encoded with no rdo_partition_decision call (e.g. edges)
-        rdo_mode_decision(
-          fi,
-          ts,
-          cw,
-          bsize,
-          tile_bo,
-          inter_cfg,
-        )
+        rdo_mode_decision(fi, ts, cw, bsize, tile_bo, inter_cfg)
       };
 
       let mut mode_luma = part_decision.pred_mode_luma;
@@ -2874,7 +2860,8 @@ pub(crate) fn build_coarse_pmvs<T: Pixel>(
 ) -> Data2D<[Option<MotionVector>; REF_FRAMES]> {
   assert!(!fi.sequence.use_128x128_superblock);
   if ts.mi_width >= 16 && ts.mi_height >= 16 {
-    let mut frame_pmvs: Data2D<[Option<MotionVector>; REF_FRAMES]> = Data2D::new(ts.sb_width, ts.sb_height);
+    let mut frame_pmvs: Data2D<[Option<MotionVector>; REF_FRAMES]> =
+      Data2D::new(ts.sb_width, ts.sb_height);
     for (sby, pmv_rows) in frame_pmvs.rows_iter_mut().enumerate() {
       for (sbx, pmvs) in pmv_rows.iter_mut().enumerate() {
         let sbo = TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby });
@@ -3094,21 +3081,13 @@ pub(crate) fn build_half_res_pmvs<T: Pixel>(
       if pmvs[0][r].is_none() {
         pmvs[0][r] = tile_pmvs[sby][sbx][r];
         if let Some(pmv) = pmvs[0][r] {
-          let pmv_w = if sbx > 0 {
-            tile_pmvs[sby][sbx - 1][r]
-          } else {
-            None
-          };
+          let pmv_w = if sbx > 0 { tile_pmvs[sby][sbx - 1][r] } else { None };
           let pmv_e = if sbx < ts.sb_width - 1 {
             tile_pmvs[sby][sbx + 1][r]
           } else {
             None
           };
-          let pmv_n = if sby > 0 {
-            tile_pmvs[sby - 1][sbx][r]
-          } else {
-            None
-          };
+          let pmv_n = if sby > 0 { tile_pmvs[sby - 1][sbx][r] } else { None };
           let pmv_s = if sby < ts.sb_height - 1 {
             tile_pmvs[sby + 1][sbx][r]
           } else {
