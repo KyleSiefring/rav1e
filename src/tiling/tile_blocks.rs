@@ -56,7 +56,7 @@ macro_rules! tile_blocks_common {
       ) -> Self {
         Self {
           data: unsafe {
-            $slice ::new_unchecked(& $($opt_mut)? frame_blocks[y][x], cols, rows, frame_blocks.cols())
+            $slice ::new(& $($opt_mut)? frame_blocks[y][x], cols, rows, frame_blocks.cols())
           },
           x,
           y,
@@ -74,7 +74,7 @@ macro_rules! tile_blocks_common {
       ) -> Self {
         Self {
           data: unsafe {
-            $slice ::new_unchecked(&
+            $slice ::new(&
               $($opt_mut)? self[y][x],
               cmp::min(cols, self.cols() - x),
               cmp::min(rows, self.rows() - y),

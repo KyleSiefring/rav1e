@@ -12,12 +12,14 @@
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
-use std::ptr::NonNull;
 use std::{fmt, slice};
 
 #[derive(Copy, Clone)]
 pub struct Slice2D<'a, T> {
-  ptr: NonNull<T>,
+  // TODO: It would be desirable to use NonNull in place of a simple pointer,
+  // but we rely on using 0x0 vecs with no allocation, thus we can't be
+  // guaranteed a non-null pointer.
+  ptr: *const T,
   width: usize,
   height: usize,
   stride: usize,
@@ -26,7 +28,7 @@ pub struct Slice2D<'a, T> {
 
 #[derive(Copy, Clone)]
 pub struct Slice2DMut<'a, T> {
-  ptr: NonNull<T>,
+  ptr: *mut T,
   width: usize,
   height: usize,
   stride: usize,
@@ -34,23 +36,19 @@ pub struct Slice2DMut<'a, T> {
 }
 
 impl<'a, T> Slice2D<'a, T> {
+  // TODO: If we ever move to Nonnull pointers, it would make sense to use that
+  // as a parameter here.
   #[inline(always)]
-  pub unsafe fn new_unchecked(
+  pub unsafe fn new(
     ptr: *const T, width: usize, height: usize, stride: usize,
   ) -> Self {
     assert!(width <= stride);
-    Self {
-      ptr: NonNull::new_unchecked(ptr as *mut T),
-      width,
-      height,
-      stride,
-      phantom: PhantomData,
-    }
+    Self { ptr, width, height, stride, phantom: PhantomData }
   }
 
   #[inline(always)]
   pub const fn as_ptr(&self) -> *const T {
-    self.ptr.as_ptr()
+    self.ptr
   }
 
   #[inline(always)]
@@ -104,7 +102,7 @@ impl<T> fmt::Debug for Slice2D<'_, T> {
 impl<'a, T> Slice2DMut<'a, T> {
   #[inline(always)]
   pub const fn as_ptr(&self) -> *const T {
-    self.ptr.as_ptr()
+    self.ptr
   }
 
   #[inline(always)]
@@ -136,17 +134,11 @@ impl<'a, T> Slice2DMut<'a, T> {
 // Mutable functions
 impl<'a, T> Slice2DMut<'a, T> {
   #[inline(always)]
-  pub unsafe fn new_unchecked(
+  pub unsafe fn new(
     ptr: *mut T, width: usize, height: usize, stride: usize,
   ) -> Self {
     assert!(width <= stride);
-    Self {
-      ptr: NonNull::new_unchecked(ptr),
-      width,
-      height,
-      stride,
-      phantom: PhantomData,
-    }
+    Self { ptr, width, height, stride, phantom: PhantomData }
   }
 
   pub const fn as_const(self) -> Slice2D<'a, T> {
@@ -160,7 +152,7 @@ impl<'a, T> Slice2DMut<'a, T> {
   }
 
   pub fn as_mut_ptr(&mut self) -> *mut T {
-    self.ptr.as_ptr()
+    self.ptr
   }
 
   pub fn rows_iter_mut(&mut self) -> RowsIterMut<'_, T> {
