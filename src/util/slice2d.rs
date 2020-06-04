@@ -18,7 +18,8 @@ use std::{fmt, slice};
 #[derive(Copy, Clone)]
 pub struct Slice2D<'a, T> {
   // TODO: It would be desirable to use NonNull in place of a simple pointer,
-  // but we rely on 0x0 2D allocations that might not have a valid pointer.
+  // but we rely on using 0x0 vecs with no allocation, thus we can't be
+  // guaranteed a non-null pointer.
   ptr: *const T,
   width: usize,
   height: usize,
