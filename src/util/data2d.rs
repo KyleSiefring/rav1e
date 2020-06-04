@@ -67,21 +67,12 @@ impl<T> Data2D<T> {
 
   #[inline(always)]
   pub fn slice(&self) -> Slice2D<'_, T> {
-    unsafe {
-      Slice2D::new(self.data.as_ptr(), self.width, self.height, self.width)
-    }
+    unsafe { Slice2D::from_raw_parts(self.slice_raw_parts()) }
   }
 
   #[inline(always)]
   pub fn mut_slice(&mut self) -> Slice2DMut<'_, T> {
-    unsafe {
-      Slice2DMut::new(
-        self.data.as_mut_ptr(),
-        self.width,
-        self.height,
-        self.width,
-      )
-    }
+    unsafe { Slice2DMut::from_raw_parts(self.slice_raw_parts()) }
   }
 
   #[inline(always)]
@@ -99,14 +90,14 @@ impl<T, I: SliceIndex2D<T>> Index<I> for Data2D<T> {
   type Output = I::Output;
   #[inline(always)]
   fn index(&self, index: I) -> &Self::Output {
-    unsafe { SliceIndex2D::index_raw(index, &self.slice_raw_parts()) }
+    unsafe { SliceIndex2D::index_raw(index, self.slice_raw_parts()) }
   }
 }
 
 impl<T, I: SliceIndex2D<T>> IndexMut<I> for Data2D<T> {
   #[inline(always)]
   fn index_mut(&mut self, index: I) -> &mut Self::Output {
-    unsafe { SliceIndex2D::index_raw_mut(index, &self.slice_raw_parts()) }
+    unsafe { SliceIndex2D::index_raw_mut(index, self.slice_raw_parts()) }
   }
 }
 
