@@ -7,7 +7,9 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
-use crate::util::{RowsIter, RowsIterMut, Slice2D, Slice2DMut};
+use crate::util::{
+  RowsIter, RowsIterMut, Slice2D, Slice2DMut, Slice2DRawParts, SliceIndex2D,
+};
 use std::fmt;
 use std::ops::{Index, IndexMut};
 
@@ -54,57 +56,48 @@ impl<T> Data2D<T> {
     self.height
   }
 
+  fn slice_raw_parts(&self) -> Slice2DRawParts<T> {
+    Slice2DRawParts {
+      ptr: self.data.as_ptr() as *mut T,
+      width: self.width,
+      height: self.height,
+      stride: self.width,
+    }
+  }
+
   #[inline(always)]
   pub fn slice(&self) -> Slice2D<'_, T> {
-    unsafe {
-      Slice2D::new(self.data.as_ptr(), self.width, self.height, self.width)
-    }
+    unsafe { Slice2D::from_raw_parts(self.slice_raw_parts()) }
   }
 
   #[inline(always)]
   pub fn mut_slice(&mut self) -> Slice2DMut<'_, T> {
-    unsafe {
-      Slice2DMut::new(
-        self.data.as_mut_ptr(),
-        self.width,
-        self.height,
-        self.width,
-      )
-    }
+    unsafe { Slice2DMut::from_raw_parts(self.slice_raw_parts()) }
   }
 
   #[inline(always)]
   pub fn rows_iter(&self) -> RowsIter<'_, T> {
-    unsafe {
-      RowsIter::new(self.data.as_ptr(), self.width, self.width, self.height)
-    }
+    unsafe { RowsIter::new(self.slice_raw_parts()) }
   }
 
   #[inline(always)]
   pub fn rows_iter_mut(&mut self) -> RowsIterMut<'_, T> {
-    unsafe {
-      RowsIterMut::new(
-        self.data.as_mut_ptr(),
-        self.width,
-        self.width,
-        self.height,
-      )
-    }
+    unsafe { RowsIterMut::new(self.slice_raw_parts()) }
   }
 }
 
-impl<T> Index<usize> for Data2D<T> {
-  type Output = [T];
+impl<T, I: SliceIndex2D<T>> Index<I> for Data2D<T> {
+  type Output = I::Output;
   #[inline(always)]
-  fn index(&self, index: usize) -> &Self::Output {
-    &self.data[index * self.width..(index + 1) * self.width]
+  fn index(&self, index: I) -> &Self::Output {
+    unsafe { SliceIndex2D::index_raw(index, self.slice_raw_parts()) }
   }
 }
 
-impl<T> IndexMut<usize> for Data2D<T> {
+impl<T, I: SliceIndex2D<T>> IndexMut<I> for Data2D<T> {
   #[inline(always)]
-  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-    &mut self.data[index * self.width..(index + 1) * self.width]
+  fn index_mut(&mut self, index: I) -> &mut Self::Output {
+    unsafe { SliceIndex2D::index_raw_mut(index, self.slice_raw_parts()) }
   }
 }
 

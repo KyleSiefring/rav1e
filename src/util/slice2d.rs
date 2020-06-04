@@ -14,77 +14,165 @@ use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 use std::{fmt, slice};
 
-#[derive(Copy, Clone)]
-pub struct Slice2D<'a, T> {
+pub struct Slice2DRawParts<T> {
   // TODO: It would be desirable to use NonNull in place of a simple pointer,
   // but we rely on using 0x0 vecs with no allocation, thus we can't be
   // guaranteed a non-null pointer.
-  ptr: *const T,
-  width: usize,
-  height: usize,
-  stride: usize,
+  pub ptr: *mut T,
+  pub width: usize,
+  pub height: usize,
+  pub stride: usize,
+}
+
+// Implement copy and clone regardless of whether T implements them.
+impl<T> Copy for Slice2DRawParts<T> {}
+impl<T> Clone for Slice2DRawParts<T> {
+  fn clone(&self) -> Slice2DRawParts<T> {
+    *self
+  }
+}
+
+/// Inspired by std::slice::SliceIndex
+pub trait SliceIndex2D<T>: Copy {
+  type Output: ?Sized;
+
+  unsafe fn get_raw_unchecked<'a>(
+    index: Self, data: Slice2DRawParts<T>,
+  ) -> &'a Self::Output;
+  unsafe fn get_raw_mut_unchecked<'a>(
+    index: Self, data: Slice2DRawParts<T>,
+  ) -> &'a mut Self::Output;
+
+  fn check_assert(index: &Self, data: Slice2DRawParts<T>);
+  fn check(index: &Self, data: Slice2DRawParts<T>) -> bool;
+
+  #[inline(always)]
+  unsafe fn get_raw<'a>(
+    index: Self, data: Slice2DRawParts<T>,
+  ) -> Option<&'a Self::Output> {
+    if Self::check(&index, data) {
+      Some(Self::get_raw_unchecked(index, data))
+    } else {
+      None
+    }
+  }
+
+  #[inline(always)]
+  unsafe fn get_raw_mut<'a>(
+    index: Self, data: Slice2DRawParts<T>,
+  ) -> Option<&'a mut Self::Output> {
+    if Self::check(&index, data) {
+      Some(Self::get_raw_mut_unchecked(index, data))
+    } else {
+      None
+    }
+  }
+
+  #[inline(always)]
+  unsafe fn index_raw<'a>(
+    index: Self, data: Slice2DRawParts<T>,
+  ) -> &'a Self::Output {
+    Self::check_assert(&index, data);
+    Self::get_raw_unchecked(index, data)
+  }
+
+  #[inline(always)]
+  unsafe fn index_raw_mut<'a>(
+    index: Self, data: Slice2DRawParts<T>,
+  ) -> &'a mut Self::Output {
+    Self::check_assert(&index, data);
+    Self::get_raw_mut_unchecked(index, data)
+  }
+}
+
+impl<T> SliceIndex2D<T> for usize {
+  type Output = [T];
+
+  #[inline(always)]
+  unsafe fn get_raw_unchecked<'a>(
+    index: Self, data: Slice2DRawParts<T>,
+  ) -> &'a Self::Output {
+    slice::from_raw_parts(data.ptr.add(index * data.stride), data.width)
+  }
+
+  #[inline(always)]
+  unsafe fn get_raw_mut_unchecked<'a>(
+    index: Self, data: Slice2DRawParts<T>,
+  ) -> &'a mut Self::Output {
+    slice::from_raw_parts_mut(data.ptr.add(index * data.stride), data.width)
+  }
+
+  #[inline(always)]
+  fn check_assert(index: &Self, data: Slice2DRawParts<T>) {
+    assert!(*index < data.height);
+  }
+
+  #[inline(always)]
+  fn check(index: &Self, data: Slice2DRawParts<T>) -> bool {
+    *index < data.height
+  }
+}
+
+#[derive(Copy, Clone)]
+pub struct Slice2D<'a, T> {
+  raw_parts: Slice2DRawParts<T>,
   phantom: PhantomData<&'a T>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Slice2DMut<'a, T> {
-  ptr: *mut T,
-  width: usize,
-  height: usize,
-  stride: usize,
+  raw_parts: Slice2DRawParts<T>,
   phantom: PhantomData<&'a mut T>,
 }
 
 impl<'a, T> Slice2D<'a, T> {
-  // TODO: If we ever move to Nonnull pointers, it would make sense to use that
-  // as a parameter here.
+  // TODO: Get rid of once splitting of Slices is handled elsewhere.
   #[inline(always)]
   pub unsafe fn new(
     ptr: *const T, width: usize, height: usize, stride: usize,
   ) -> Self {
     assert!(width <= stride);
-    Self { ptr, width, height, stride, phantom: PhantomData }
+    Self {
+      raw_parts: Slice2DRawParts { ptr: ptr as *mut T, width, height, stride },
+      phantom: PhantomData,
+    }
+  }
+
+  #[inline(always)]
+  pub unsafe fn from_raw_parts(raw_parts: Slice2DRawParts<T>) -> Self {
+    Self { raw_parts, phantom: PhantomData }
   }
 
   #[inline(always)]
   pub const fn as_ptr(&self) -> *const T {
-    self.ptr
+    self.raw_parts.ptr
   }
 
   #[inline(always)]
   pub const fn width(&self) -> usize {
-    self.width
+    self.raw_parts.width
   }
 
   #[inline(always)]
   pub const fn height(&self) -> usize {
-    self.height
+    self.raw_parts.height
   }
 
   #[inline(always)]
   pub const fn stride(&self) -> usize {
-    self.stride
+    self.raw_parts.stride
   }
 
   pub fn rows_iter(&self) -> RowsIter<'_, T> {
-    RowsIter {
-      data: self.as_ptr(),
-      stride: self.stride(),
-      width: self.width(),
-      remaining: self.height(),
-      phantom: PhantomData,
-    }
+    unsafe { RowsIter::new(self.raw_parts) }
   }
 }
 
-impl<T> Index<usize> for Slice2D<'_, T> {
-  type Output = [T];
+impl<'a, T, I: SliceIndex2D<T>> Index<I> for Slice2D<'a, T> {
+  type Output = I::Output;
   #[inline(always)]
-  fn index(&self, index: usize) -> &Self::Output {
-    assert!(index < self.height);
-    unsafe {
-      slice::from_raw_parts(self.as_ptr().add(index * self.stride), self.width)
-    }
+  fn index(&self, index: I) -> &Self::Output {
+    unsafe { I::index_raw(index, self.raw_parts) }
   }
 }
 
@@ -93,7 +181,10 @@ impl<T> fmt::Debug for Slice2D<'_, T> {
     write!(
       f,
       "Slice2D {{ ptr: {:?}, size: {}({})x{} }}",
-      self.ptr, self.width, self.stride, self.height
+      self.as_ptr(),
+      self.width(),
+      self.stride(),
+      self.height()
     )
   }
 }
@@ -101,33 +192,32 @@ impl<T> fmt::Debug for Slice2D<'_, T> {
 // Functions shared with Slice2D
 impl<'a, T> Slice2DMut<'a, T> {
   #[inline(always)]
+  pub unsafe fn from_raw_parts(raw_parts: Slice2DRawParts<T>) -> Self {
+    Self { raw_parts, phantom: PhantomData }
+  }
+
+  #[inline(always)]
   pub const fn as_ptr(&self) -> *const T {
-    self.ptr
+    self.raw_parts.ptr
   }
 
   #[inline(always)]
   pub const fn width(&self) -> usize {
-    self.width
+    self.raw_parts.width
   }
 
   #[inline(always)]
   pub const fn height(&self) -> usize {
-    self.height
+    self.raw_parts.height
   }
 
   #[inline(always)]
   pub const fn stride(&self) -> usize {
-    self.stride
+    self.raw_parts.stride
   }
 
   pub fn rows_iter(&self) -> RowsIter<'_, T> {
-    RowsIter {
-      data: self.as_ptr(),
-      stride: self.stride(),
-      width: self.width(),
-      remaining: self.height(),
-      phantom: PhantomData,
-    }
+    unsafe { RowsIter::new(self.raw_parts) }
   }
 }
 
@@ -138,54 +228,37 @@ impl<'a, T> Slice2DMut<'a, T> {
     ptr: *mut T, width: usize, height: usize, stride: usize,
   ) -> Self {
     assert!(width <= stride);
-    Self { ptr, width, height, stride, phantom: PhantomData }
+    Self {
+      raw_parts: Slice2DRawParts { ptr: ptr as *mut T, width, height, stride },
+      phantom: PhantomData,
+    }
   }
 
   pub const fn as_const(self) -> Slice2D<'a, T> {
-    Slice2D {
-      ptr: self.ptr,
-      width: self.width,
-      height: self.height,
-      stride: self.stride,
-      phantom: PhantomData,
-    }
+    Slice2D { raw_parts: self.raw_parts, phantom: PhantomData }
   }
 
   pub fn as_mut_ptr(&mut self) -> *mut T {
-    self.ptr
+    self.raw_parts.ptr
   }
 
   pub fn rows_iter_mut(&mut self) -> RowsIterMut<'_, T> {
-    RowsIterMut {
-      data: self.as_mut_ptr(),
-      stride: self.stride(),
-      width: self.width(),
-      remaining: self.height(),
-      phantom: PhantomData,
-    }
+    unsafe { RowsIterMut::new(self.raw_parts) }
   }
 }
 
-impl<T> Index<usize> for Slice2DMut<'_, T> {
-  type Output = [T];
+impl<'a, T, I: SliceIndex2D<T>> Index<I> for Slice2DMut<'a, T> {
+  type Output = I::Output;
   #[inline(always)]
-  fn index(&self, index: usize) -> &Self::Output {
-    assert!(index < self.height());
-    unsafe {
-      let ptr = self.as_ptr().add(index * self.stride());
-      slice::from_raw_parts(ptr, self.width())
-    }
+  fn index(&self, index: I) -> &Self::Output {
+    unsafe { SliceIndex2D::index_raw(index, self.raw_parts) }
   }
 }
 
-impl<T> IndexMut<usize> for Slice2DMut<'_, T> {
+impl<'a, T, I: SliceIndex2D<T>> IndexMut<I> for Slice2DMut<'a, T> {
   #[inline(always)]
-  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-    assert!(index < self.height());
-    unsafe {
-      let ptr = self.as_mut_ptr().add(index * self.stride());
-      slice::from_raw_parts_mut(ptr, self.width())
-    }
+  fn index_mut(&mut self, index: I) -> &mut Self::Output {
+    unsafe { SliceIndex2D::index_raw_mut(index, self.raw_parts) }
   }
 }
 
@@ -194,44 +267,43 @@ impl<T> fmt::Debug for Slice2DMut<'_, T> {
     write!(
       f,
       "Slice2D {{ ptr: {:?}, size: {}({})x{} }}",
-      self.ptr, self.width, self.stride, self.height
+      self.as_ptr(),
+      self.width(),
+      self.stride(),
+      self.height()
     )
   }
 }
 
 /// Iterator over rows
 pub struct RowsIter<'a, T> {
-  data: *const T,
-  stride: usize,
-  width: usize,
-  remaining: usize,
+  /// Represent the iterators state in a 2d slice.
+  /// Width and stride are constant. The pointer tracks the current row and the
+  /// height tracks the remaining rows.
+  slice: Slice2DRawParts<T>,
   phantom: PhantomData<&'a T>,
 }
 
 /// Mutable iterator over rows
 pub struct RowsIterMut<'a, T> {
-  data: *mut T,
-  stride: usize,
-  width: usize,
-  remaining: usize,
+  /// Represent the iterators state in a 2d slice.
+  /// Width and stride are constant. The pointer tracks the current row and the
+  /// height tracks the remaining rows.
+  slice: Slice2DRawParts<T>,
   phantom: PhantomData<&'a mut T>,
 }
 
 impl<'a, T> RowsIter<'a, T> {
   #[inline(always)]
-  pub unsafe fn new(
-    data: *const T, stride: usize, width: usize, remaining: usize,
-  ) -> Self {
-    Self { data, stride, width, remaining, phantom: PhantomData }
+  pub unsafe fn new(slice: Slice2DRawParts<T>) -> Self {
+    Self { slice, phantom: PhantomData }
   }
 }
 
 impl<'a, T> RowsIterMut<'a, T> {
   #[inline(always)]
-  pub unsafe fn new(
-    data: *mut T, stride: usize, width: usize, remaining: usize,
-  ) -> Self {
-    Self { data, stride, width, remaining, phantom: PhantomData }
+  pub unsafe fn new(slice: Slice2DRawParts<T>) -> Self {
+    Self { slice, phantom: PhantomData }
   }
 }
 
@@ -240,22 +312,17 @@ impl<'a, T> Iterator for RowsIter<'a, T> {
 
   #[inline(always)]
   fn next(&mut self) -> Option<Self::Item> {
-    if self.remaining > 0 {
-      let row = unsafe {
-        let ptr = self.data;
-        self.data = self.data.add(self.stride);
-        slice::from_raw_parts(ptr, self.width)
-      };
-      self.remaining -= 1;
+    unsafe { SliceIndex2D::get_raw(0, self.slice) }.and_then(|row| {
+      self.slice.ptr =
+        unsafe { self.slice.ptr.offset(self.slice.stride as isize) };
+      self.slice.height -= 1;
       Some(row)
-    } else {
-      None
-    }
+    })
   }
 
   #[inline(always)]
   fn size_hint(&self) -> (usize, Option<usize>) {
-    (self.remaining, Some(self.remaining))
+    (self.slice.height, Some(self.slice.height))
   }
 }
 
@@ -264,22 +331,17 @@ impl<'a, T> Iterator for RowsIterMut<'a, T> {
 
   #[inline(always)]
   fn next(&mut self) -> Option<Self::Item> {
-    if self.remaining > 0 {
-      let row = unsafe {
-        let ptr = self.data;
-        self.data = self.data.add(self.stride);
-        slice::from_raw_parts_mut(ptr, self.width)
-      };
-      self.remaining -= 1;
+    unsafe { SliceIndex2D::get_raw_mut(0, self.slice) }.and_then(|row| {
+      self.slice.ptr =
+        unsafe { self.slice.ptr.offset(self.slice.stride as isize) };
+      self.slice.height -= 1;
       Some(row)
-    } else {
-      None
-    }
+    })
   }
 
   #[inline(always)]
   fn size_hint(&self) -> (usize, Option<usize>) {
-    (self.remaining, Some(self.remaining))
+    (self.slice.height, Some(self.slice.height))
   }
 }
 
