@@ -257,14 +257,14 @@ impl<'a, T, I: SliceIndex2D<T>> Index<I> for Slice2DMut<'a, T> {
   type Output = I::Output;
   #[inline(always)]
   fn index(&self, index: I) -> &Self::Output {
-    unsafe { I::index_raw(index, &self.to_raw_parts()) }
+    unsafe { SliceIndex2D::index_raw(index, &self.to_raw_parts()) }
   }
 }
 
 impl<'a, T, I: SliceIndex2D<T>> IndexMut<I> for Slice2DMut<'a, T> {
   #[inline(always)]
   fn index_mut(&mut self, index: I) -> &mut Self::Output {
-    unsafe { I::index_raw_mut(index, &self.to_raw_parts()) }
+    unsafe { SliceIndex2D::index_raw_mut(index, &self.to_raw_parts()) }
   }
 }
 
