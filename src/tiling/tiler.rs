@@ -171,7 +171,9 @@ impl TilingInfo {
   pub fn tile_iter_mut<'a, 'b, T: Pixel>(
     &self, fs: &'a mut FrameState<T>, fb: &'b mut FrameBlocks,
   ) -> TileContextIterMut<'a, 'b, T> {
-    TileContextIterMut { ti: *self, fs, fb, next: 0, phantom: PhantomData }
+    //TileContextIterMut { ti: *self, fs, fb, next: 0, phantom: PhantomData }
+    //let (fb_rows, fb_cols) = fb.mut_slice().horizontal_split_mut(0);
+    TileContextIterMut { ti: *self, fs, fb, tile_row: 0, tile_col: 0, next: 0, phantom: PhantomData }
   }
 }
 
@@ -186,7 +188,11 @@ pub struct TileContextIterMut<'a, 'b, T: Pixel> {
   ti: TilingInfo,
   fs: *mut FrameState<T>,
   fb: *mut FrameBlocks,
-  next: usize,
+  //fb_rows: Slice2DMut<'b, Block>,
+  //fb_cols: Slice2DMut<'b, Block>,
+  tile_row: usize,
+  tile_col: usize,
+  next: usize, // TODO: change to remaining
   phantom: PhantomData<(&'a mut FrameState<T>, &'b mut FrameBlocks)>,
 }
 
@@ -194,15 +200,16 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
   type Item = TileContextMut<'a, 'b, T>;
 
   fn next(&mut self) -> Option<Self::Item> {
-    if self.next < self.ti.rows * self.ti.cols {
-      let tile_col = self.next % self.ti.cols;
-      let tile_row = self.next / self.ti.cols;
+    if self.tile_row < self.ti.rows {
+    //if self.next < self.ti.rows * self.ti.cols {
+      //let tile_col = self.next % self.ti.cols;
+      //let tile_row = self.next / self.ti.cols;
       let ctx = TileContextMut {
         ts: {
           let fs = unsafe { &mut *self.fs };
           let sbo = PlaneSuperBlockOffset(SuperBlockOffset {
-            x: tile_col * self.ti.tile_width_sb,
-            y: tile_row * self.ti.tile_height_sb,
+            x: self.tile_col * self.ti.tile_width_sb,
+            y: self.tile_row * self.ti.tile_height_sb,
           });
           let x = sbo.0.x << self.ti.sb_size_log2;
           let y = sbo.0.y << self.ti.sb_size_log2;
@@ -215,17 +222,25 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
         tb: {
           let fb = unsafe { &mut *self.fb };
           let tile_width_mi =
-            self.ti.tile_width_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
+              self.ti.tile_width_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
           let tile_height_mi =
-            self.ti.tile_height_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
-          let x = tile_col * tile_width_mi;
-          let y = tile_row * tile_height_mi;
+              self.ti.tile_height_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
+          let x = self.tile_col * tile_width_mi;
+          let y = self.tile_row * tile_height_mi;
           let cols = tile_width_mi.min(fb.cols() - x);
           let rows = tile_height_mi.min(fb.rows() - y);
+
           TileBlocksMut::new(fb, x, y, cols, rows)
         },
       };
       self.next += 1;
+
+      self.tile_col += 1;
+      if self.tile_col >= self.ti.cols {
+        self.tile_col = 0;
+        self.tile_row += 1;
+      }
+
       Some(ctx)
     } else {
       None
