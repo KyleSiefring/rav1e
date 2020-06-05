@@ -313,8 +313,7 @@ impl<'a, T> Iterator for RowsIter<'a, T> {
   #[inline(always)]
   fn next(&mut self) -> Option<Self::Item> {
     unsafe { SliceIndex2D::get_raw(0, self.slice) }.and_then(|row| {
-      self.slice.ptr =
-        unsafe { self.slice.ptr.offset(self.slice.stride as isize) };
+      self.slice.ptr = unsafe { self.slice.ptr.add(self.slice.stride) };
       self.slice.height -= 1;
       Some(row)
     })
@@ -332,8 +331,7 @@ impl<'a, T> Iterator for RowsIterMut<'a, T> {
   #[inline(always)]
   fn next(&mut self) -> Option<Self::Item> {
     unsafe { SliceIndex2D::get_raw_mut(0, self.slice) }.and_then(|row| {
-      self.slice.ptr =
-        unsafe { self.slice.ptr.offset(self.slice.stride as isize) };
+      self.slice.ptr = unsafe { self.slice.ptr.add(self.slice.stride) };
       self.slice.height -= 1;
       Some(row)
     })
