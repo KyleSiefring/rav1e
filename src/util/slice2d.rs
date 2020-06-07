@@ -165,13 +165,11 @@ impl<T> SliceIndex2D<T> for usize {
   }
 }
 
-#[derive(Copy, Clone)]
 pub struct Slice2D<'a, T> {
   raw_parts: Slice2DRawParts<T>,
   phantom: PhantomData<&'a T>,
 }
 
-#[derive(Copy, Clone)]
 pub struct Slice2DMut<'a, T> {
   raw_parts: Slice2DRawParts<T>,
   phantom: PhantomData<&'a mut T>,
@@ -360,7 +358,7 @@ impl<'a, T> Slice2DMut<'a, T> {
     }
   }
 
-  pub const fn as_const(self) -> Slice2D<'a, T> {
+  pub const fn as_const(&self) -> Slice2D<'a, T> {
     Slice2D { raw_parts: self.raw_parts, phantom: PhantomData }
   }
 
