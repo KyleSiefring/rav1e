@@ -564,12 +564,14 @@ pub type FrameBlocks = Data2D<Block>;
 impl FrameBlocks {
   #[inline(always)]
   pub fn as_tile_blocks(&self) -> TileBlocks<'_> {
-    TileBlocks::new(self, 0, 0, self.cols(), self.rows())
+    TileBlocks::new(self.slice(), 0, 0, self.cols(), self.rows())
   }
 
   #[inline(always)]
   pub fn as_tile_blocks_mut(&mut self) -> TileBlocksMut<'_> {
-    TileBlocksMut::new(self, 0, 0, self.cols(), self.rows())
+    let cols = self.cols();
+    let rows = self.rows();
+    TileBlocksMut::new(self.mut_slice(), 0, 0, cols, rows)
   }
 }
 

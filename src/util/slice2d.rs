@@ -15,7 +15,7 @@
 
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Range};
 use std::{fmt, slice};
 
 pub struct Slice2DRawParts<T> {
@@ -213,45 +213,37 @@ impl<'a, T> Slice2D<'a, T> {
     self.raw_parts.stride
   }
 
-  /// Inspired by split_at for slices.
-  ///
-  /// Horizontally divides one slice into two at index.
-  ///
-  /// The first will contains rows from `[0, mid)` (excluding the index `mid`
-  /// itself) and the second will contain all rows from `[mid, height)`
-  /// (excluding the index `height` itself).
-  ///
-  /// # Panic
-  ///
-  /// Panics if `mid > height`.
-  #[inline(always)]
-  pub fn horizontal_split(&self, mid: usize) -> (Slice2D<'_, T>, Slice2D<'_, T>) {
+  pub fn cut_top_off(&mut self, mid: usize) -> Slice2D<'a, T> {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
-      (Self::from_raw_parts(top), Self::from_raw_parts(bottom))
+      self.raw_parts = bottom;
+      Slice2D::from_raw_parts(top)
     }
   }
 
-  /// Inspired by split_at for slices.
-  ///
-  /// Vertically divides one slice into two at an index.
-  ///
-  /// The first will contains columns from `[0, mid)` (excluding the index `mid`
-  /// itself) and the second will contain all columns from `[mid, height)`
-  /// (excluding the index `height` itself).
-  ///
-  /// # Panic
-  ///
-  /// Panics if `mid > width`.
-  unsafe fn vertical_split(&self, mid: usize) -> (Slice2D<T>, Slice2D<T>) {
+  pub fn cut_left_off(&mut self, mid: usize) -> Slice2D<'a, T> {
     unsafe {
       let (left, right) = self.raw_parts.vertical_split(mid);
-      (Self::from_raw_parts(left), Self::from_raw_parts(right))
+      self.raw_parts = right;
+      Slice2D::from_raw_parts(left)
     }
   }
 
   pub fn rows_iter(&self) -> RowsIter<'_, T> {
     unsafe { RowsIter::new(self.raw_parts) }
+  }
+
+  pub fn tmp_subslice(&mut self, index: (Range<usize>, Range<usize>)) -> Slice2D<'a, T> {
+    let data = self.raw_parts;
+    assert!(index.0.end <= data.height && index.1.end <= data.width);
+    unsafe {
+      Slice2D::from_raw_parts(Slice2DRawParts {
+        ptr: data.ptr.add(index.0.start * data.stride + index.1.start),
+        width: index.1.end - index.1.start,
+        height: index.0.end - index.0.start,
+        stride: data.stride
+      })
+    }
   }
 }
 
@@ -299,44 +291,33 @@ impl<'a, T> Slice2DMut<'a, T> {
   }
 
   #[inline(always)]
+  pub const fn cols(&self) -> usize {
+    self.raw_parts.width
+  }
+
+  #[inline(always)]
+  pub const fn rows(&self) -> usize {
+    self.raw_parts.height
+  }
+
+  #[inline(always)]
   pub const fn stride(&self) -> usize {
     self.raw_parts.stride
   }
 
-  /// Inspired by split_at for slices.
-  ///
-  /// Horizontally divides one slice into two at index.
-  ///
-  /// The first will contains rows from `[0, mid)` (excluding the index `mid`
-  /// itself) and the second will contain all rows from `[mid, height)`
-  /// (excluding the index `height` itself).
-  ///
-  /// # Panic
-  ///
-  /// Panics if `mid > height`.
-  #[inline(always)]
-  pub fn horizontal_split(&self, mid: usize) -> (Slice2D<'_, T>, Slice2D<'_, T>) {
+  pub fn cut_top_off(&mut self, mid: usize) -> Slice2D<'a, T> {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
-      (Slice2D::from_raw_parts(top), Slice2D::from_raw_parts(bottom))
+      self.raw_parts = bottom;
+      Slice2D::from_raw_parts(top)
     }
   }
 
-  /// Inspired by split_at for slices.
-  ///
-  /// Vertically divides one slice into two at an index.
-  ///
-  /// The first will contains columns from `[0, mid)` (excluding the index `mid`
-  /// itself) and the second will contain all columns from `[mid, height)`
-  /// (excluding the index `height` itself).
-  ///
-  /// # Panic
-  ///
-  /// Panics if `mid > width`.
-  unsafe fn vertical_split(&self, mid: usize) -> (Slice2D<T>, Slice2D<T>) {
+  pub fn cut_left_off(&mut self, mid: usize) -> Slice2D<'a, T> {
     unsafe {
       let (left, right) = self.raw_parts.vertical_split(mid);
-      (Slice2D::from_raw_parts(left), Slice2D::from_raw_parts(right))
+      self.raw_parts = right;
+      Slice2D::from_raw_parts(left)
     }
   }
 
@@ -366,29 +347,32 @@ impl<'a, T> Slice2DMut<'a, T> {
     self.raw_parts.ptr
   }
 
-  /// Inspired by split_at for slices.
-  ///
-  /// Horizontally divides one mutable slice into two at index.
-  ///
-  /// The first will contains rows from `[0, mid)` (excluding the index `mid`
-  /// itself) and the second will contain all rows from `[mid, height)`
-  /// (excluding the index `height` itself).
-  ///
-  /// # Panic
-  ///
-  /// Panics if `mid > height`.
-  #[inline(always)]
-  pub fn horizontal_split_mut(&mut self, mid: usize) -> (Slice2DMut<'_, T>, Slice2DMut<'_, T>) {
+  pub fn cut_top_off_mut(&mut self, mid: usize) -> Slice2DMut<'a, T> {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
-      (Self::from_raw_parts(top), Self::from_raw_parts(bottom))
+      self.raw_parts = bottom;
+      Slice2DMut::from_raw_parts(top)
     }
   }
 
-  unsafe fn vertical_split_mut(&mut self, mid: usize) -> (Slice2DMut<T>, Slice2DMut<T>) {
+  pub fn cut_left_off_mut(&mut self, mid: usize) -> Slice2DMut<'a, T> {
     unsafe {
       let (left, right) = self.raw_parts.vertical_split(mid);
-      (Self::from_raw_parts(left), Self::from_raw_parts(right))
+      self.raw_parts = right;
+      Slice2DMut::from_raw_parts(left)
+    }
+  }
+
+  pub fn tmp_subslice(&mut self, index: (Range<usize>, Range<usize>)) -> Slice2DMut<'a, T> {
+    let data = self.raw_parts;
+    assert!(index.0.end <= data.height && index.1.end <= data.width);
+    unsafe {
+      Slice2DMut::from_raw_parts(Slice2DRawParts {
+        ptr: data.ptr.add(index.0.start * data.stride + index.1.start),
+        width: index.1.end - index.1.start,
+        height: index.0.end - index.0.start,
+        stride: data.stride
+      })
     }
   }
 

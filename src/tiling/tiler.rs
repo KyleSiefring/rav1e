@@ -172,8 +172,10 @@ impl TilingInfo {
     &self, fs: &'a mut FrameState<T>, fb: &'b mut FrameBlocks,
   ) -> TileContextIterMut<'a, 'b, T> {
     //TileContextIterMut { ti: *self, fs, fb, next: 0, phantom: PhantomData }
-    //let (fb_rows, fb_cols) = fb.mut_slice().horizontal_split_mut(0);
-    TileContextIterMut { ti: *self, fs, fb, tile_row: 0, tile_col: 0, next: 0, phantom: PhantomData }
+    let fb_rows = fb.rows();
+    let mut block_slice = fb.mut_slice();
+    let block_row = block_slice.cut_top_off_mut(fb_rows.min(self.tile_height_sb << (self.sb_size_log2 - MI_SIZE_LOG2)));
+    TileContextIterMut { ti: *self, fs, fb_rows, block_row, block_slice, tile_row: 0, tile_col: 0, next: 0, phantom: PhantomData }
   }
 }
 
@@ -187,9 +189,10 @@ pub struct TileContextMut<'a, 'b, T: Pixel> {
 pub struct TileContextIterMut<'a, 'b, T: Pixel> {
   ti: TilingInfo,
   fs: *mut FrameState<T>,
-  fb: *mut FrameBlocks,
-  //fb_rows: Slice2DMut<'b, Block>,
-  //fb_cols: Slice2DMut<'b, Block>,
+  //fb: *mut FrameBlocks,
+  fb_rows: usize,
+  block_row: Slice2DMut<'b, Block>,
+  block_slice: Slice2DMut<'b, Block>,
   tile_row: usize,
   tile_col: usize,
   next: usize, // TODO: change to remaining
@@ -220,17 +223,15 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
           TileStateMut::new(fs, sbo, self.ti.sb_size_log2, width, height)
         },
         tb: {
-          let fb = unsafe { &mut *self.fb };
           let tile_width_mi =
               self.ti.tile_width_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
           let tile_height_mi =
               self.ti.tile_height_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
           let x = self.tile_col * tile_width_mi;
           let y = self.tile_row * tile_height_mi;
-          let cols = tile_width_mi.min(fb.cols() - x);
-          let rows = tile_height_mi.min(fb.rows() - y);
+          let cols = tile_width_mi.min(self.block_row.cols());
 
-          TileBlocksMut::new(fb, x, y, cols, rows)
+          TileBlocksMut::new(self.block_row.cut_left_off_mut(cols), x, y, self.block_slice.cols(), self.fb_rows)
         },
       };
       self.next += 1;
@@ -239,6 +240,9 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
       if self.tile_col >= self.ti.cols {
         self.tile_col = 0;
         self.tile_row += 1;
+
+        let tile_height_mi = self.ti.tile_height_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
+        self.block_row = self.block_slice.cut_top_off_mut(self.block_slice.rows().min(tile_height_mi));
       }
 
       Some(ctx)

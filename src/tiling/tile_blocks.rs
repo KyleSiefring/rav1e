@@ -48,20 +48,18 @@ macro_rules! tile_blocks_common {
 
       #[inline(always)]
       pub fn new(
-        frame_blocks: &'a $($opt_mut)? FrameBlocks,
+        data: $slice <'a, Block>,
         x: usize,
         y: usize,
-        cols: usize,
-        rows: usize,
+        frame_cols: usize,
+        frame_rows: usize
       ) -> Self {
         Self {
-          data: unsafe {
-            $slice ::new(& $($opt_mut)? frame_blocks[y][x], cols, rows, frame_blocks.cols())
-          },
+          data,
           x,
           y,
-          frame_cols: frame_blocks.cols(),
-          frame_rows: frame_blocks.rows(),
+          frame_cols,
+          frame_rows,
         }
       }
 
@@ -73,14 +71,10 @@ macro_rules! tile_blocks_common {
         rows: usize,
       ) -> Self {
         Self {
-          data: unsafe {
-            $slice ::new(&
-              $($opt_mut)? self[y][x],
-              cmp::min(cols, self.cols() - x),
-              cmp::min(rows, self.rows() - y),
-              self.frame_cols
-            )
-          },
+          data:
+          self.data.tmp_subslice(
+            (y..(y+rows).min(self.rows()), x..(x+cols).min(self.cols()))
+          ),
           x: self.x+x,
           y: self.y+y,
           frame_cols: self.frame_cols,
