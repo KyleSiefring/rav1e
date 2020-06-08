@@ -430,7 +430,7 @@ impl<'a, T> Slice2DMut<'a, T> {
     }
   }
 
-  pub const fn as_const(&self) -> Slice2D<'a, T> {
+  pub const fn as_const(&self) -> Slice2D<'_, T> {
     Slice2D { raw_parts: self.raw_parts, phantom: PhantomData }
   }
 
