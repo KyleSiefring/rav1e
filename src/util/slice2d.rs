@@ -48,7 +48,9 @@ impl<T> Slice2DRawParts<T> {
   /// # Panic
   ///
   /// Panics if `mid > height`.
-  unsafe fn horizontal_split(self, mid: usize) -> (Slice2DRawParts<T>, Slice2DRawParts<T>) {
+  unsafe fn horizontal_split(
+    self, mid: usize,
+  ) -> (Slice2DRawParts<T>, Slice2DRawParts<T>) {
     // Out of bounds
     assert!(mid <= self.height);
 
@@ -71,7 +73,9 @@ impl<T> Slice2DRawParts<T> {
   /// # Panic
   ///
   /// Panics if `mid > width`.
-  unsafe fn vertical_split(self, mid: usize) -> (Slice2DRawParts<T>, Slice2DRawParts<T>) {
+  unsafe fn vertical_split(
+    self, mid: usize,
+  ) -> (Slice2DRawParts<T>, Slice2DRawParts<T>) {
     // Out of bounds
     assert!(mid <= self.width);
 
@@ -225,7 +229,9 @@ impl<'a, T> Slice2D<'a, T> {
   ///
   /// Panics if `mid > height`.
   #[inline(always)]
-  pub fn horizontal_split(self, mid: usize) -> (Slice2D<'a, T>, Slice2D<'a, T>) {
+  pub fn horizontal_split(
+    self, mid: usize,
+  ) -> (Slice2D<'a, T>, Slice2D<'a, T>) {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
       (Slice2D::from_raw_parts(top), Slice2D::from_raw_parts(bottom))
@@ -255,7 +261,9 @@ impl<'a, T> Slice2D<'a, T> {
     unsafe { RowsIter::new(self.raw_parts) }
   }
 
-  pub fn tmp_subslice(&mut self, index: (Range<usize>, Range<usize>)) -> Slice2D<'a, T> {
+  pub fn tmp_subslice(
+    &mut self, index: (Range<usize>, Range<usize>),
+  ) -> Slice2D<'a, T> {
     let data = self.raw_parts;
     assert!(index.0.end <= data.height && index.1.end <= data.width);
     unsafe {
@@ -263,7 +271,7 @@ impl<'a, T> Slice2D<'a, T> {
         ptr: data.ptr.add(index.0.start * data.stride + index.1.start),
         width: index.1.end - index.1.start,
         height: index.0.end - index.0.start,
-        stride: data.stride
+        stride: data.stride,
       })
     }
   }
@@ -339,7 +347,9 @@ impl<'a, T> Slice2DMut<'a, T> {
   ///
   /// Panics if `mid > height`.
   #[inline(always)]
-  pub fn horizontal_split(self, mid: usize) -> (Slice2D<'a, T>, Slice2D<'a, T>) {
+  pub fn horizontal_split(
+    self, mid: usize,
+  ) -> (Slice2D<'a, T>, Slice2D<'a, T>) {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
       (Slice2D::from_raw_parts(top), Slice2D::from_raw_parts(bottom))
@@ -372,9 +382,14 @@ impl<'a, T> Slice2DMut<'a, T> {
 
 // Mutable functions
 impl<'a, T> Slice2DMut<'a, T> {
-  pub fn empty() -> Slice2DMut<'a, T>{
+  pub fn empty() -> Slice2DMut<'a, T> {
     Self {
-      raw_parts: Slice2DRawParts { ptr: std::ptr::null_mut(), width: 0, height: 0, stride: 0 },
+      raw_parts: Slice2DRawParts {
+        ptr: std::ptr::null_mut(),
+        width: 0,
+        height: 0,
+        stride: 0,
+      },
       phantom: PhantomData,
     }
   }
@@ -410,7 +425,9 @@ impl<'a, T> Slice2DMut<'a, T> {
   ///
   /// Panics if `mid > height`.
   #[inline(always)]
-  pub fn horizontal_split_mut(self, mid: usize) -> (Slice2DMut<'a, T>, Slice2DMut<'a, T>) {
+  pub fn horizontal_split_mut(
+    self, mid: usize,
+  ) -> (Slice2DMut<'a, T>, Slice2DMut<'a, T>) {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
       (Slice2DMut::from_raw_parts(top), Slice2DMut::from_raw_parts(bottom))
@@ -429,14 +446,18 @@ impl<'a, T> Slice2DMut<'a, T> {
   ///
   /// Panics if `mid > height`.
   #[inline(always)]
-  pub fn vertical_split_mut(self, mid: usize) -> (Slice2DMut<'a, T>, Slice2DMut<'a, T>) {
+  pub fn vertical_split_mut(
+    self, mid: usize,
+  ) -> (Slice2DMut<'a, T>, Slice2DMut<'a, T>) {
     unsafe {
       let (left, right) = self.raw_parts.vertical_split(mid);
       (Slice2DMut::from_raw_parts(left), Slice2DMut::from_raw_parts(right))
     }
   }
 
-  pub fn tmp_subslice(&mut self, index: (Range<usize>, Range<usize>)) -> Slice2DMut<'a, T> {
+  pub fn tmp_subslice(
+    &mut self, index: (Range<usize>, Range<usize>),
+  ) -> Slice2DMut<'a, T> {
     let data = self.raw_parts;
     assert!(index.0.end <= data.height && index.1.end <= data.width);
     unsafe {
@@ -444,7 +465,7 @@ impl<'a, T> Slice2DMut<'a, T> {
         ptr: data.ptr.add(index.0.start * data.stride + index.1.start),
         width: index.1.end - index.1.start,
         height: index.0.end - index.0.start,
-        stride: data.stride
+        stride: data.stride,
       })
     }
   }

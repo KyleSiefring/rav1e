@@ -45,38 +45,24 @@ macro_rules! tile_blocks_common {
   // $opt_mut: nothing or mut
   ($name:ident, $slice:ident $(,$opt_mut:tt)?) => {
     impl<'a> $name<'a> {
-
       #[inline(always)]
       pub fn new(
-        data: $slice <'a, Block>,
-        x: usize,
-        y: usize,
-        frame_cols: usize,
-        frame_rows: usize
+        data: $slice<'a, Block>, x: usize, y: usize, frame_cols: usize,
+        frame_rows: usize,
       ) -> Self {
-        Self {
-          data,
-          x,
-          y,
-          frame_cols,
-          frame_rows,
-        }
+        Self { data, x, y, frame_cols, frame_rows }
       }
 
       pub fn subregion(
-        &mut self,
-        x: usize,
-        y: usize,
-        cols: usize,
-        rows: usize,
+        &mut self, x: usize, y: usize, cols: usize, rows: usize,
       ) -> Self {
         Self {
-          data:
-          self.data.tmp_subslice(
-            (y..(y+rows).min(self.rows()), x..(x+cols).min(self.cols()))
-          ),
-          x: self.x+x,
-          y: self.y+y,
+          data: self.data.tmp_subslice((
+            y..(y + rows).min(self.rows()),
+            x..(x + cols).min(self.cols()),
+          )),
+          x: self.x + x,
+          y: self.y + y,
           frame_cols: self.frame_cols,
           frame_rows: self.frame_rows,
         }
@@ -152,7 +138,7 @@ macro_rules! tile_blocks_common {
         &self[bo.0.y][bo.0.x]
       }
     }
-  }
+  };
 }
 
 tile_blocks_common!(TileBlocks, Slice2D);
