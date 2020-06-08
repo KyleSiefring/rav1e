@@ -173,8 +173,7 @@ impl TilingInfo {
   ) -> TileContextIterMut<'a, 'b, T> {
     //TileContextIterMut { ti: *self, fs, fb, next: 0, phantom: PhantomData }
     let fb_rows = fb.rows();
-    let mut block_slice = fb.mut_slice();
-    let block_row = block_slice.cut_top_off_mut(fb_rows.min(self.tile_height_sb << (self.sb_size_log2 - MI_SIZE_LOG2)));
+    let (block_row, block_slice) = fb.mut_slice().horizontal_split_mut(fb_rows.min(self.tile_height_sb << (self.sb_size_log2 - MI_SIZE_LOG2)));
     TileContextIterMut { ti: *self, fs, fb_rows, block_row, block_slice, tile_row: 0, tile_col: 0, next: 0, phantom: PhantomData }
   }
 }
@@ -231,7 +230,10 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
           let y = self.tile_row * tile_height_mi;
           let cols = tile_width_mi.min(self.block_row.cols());
 
-          TileBlocksMut::new(self.block_row.cut_left_off_mut(cols), x, y, self.block_slice.cols(), self.fb_rows)
+          let tmp = std::mem::replace(&mut self.block_row, Slice2DMut::empty());
+          let (left, right) = tmp.vertical_split_mut(cols);
+          self.block_row = right;
+          TileBlocksMut::new(left, x, y, self.block_slice.cols(), self.fb_rows)
         },
       };
       self.next += 1;
@@ -242,7 +244,11 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
         self.tile_row += 1;
 
         let tile_height_mi = self.ti.tile_height_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
-        self.block_row = self.block_slice.cut_top_off_mut(self.block_slice.rows().min(tile_height_mi));
+        let rows = self.block_slice.rows().min(tile_height_mi);
+        let tmp = std::mem::replace(&mut self.block_slice, Slice2DMut::empty());
+        let (top, bottom) = tmp.horizontal_split_mut(rows);
+        self.block_row = top;
+        self.block_slice = bottom;
       }
 
       Some(ctx)

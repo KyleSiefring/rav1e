@@ -213,19 +213,41 @@ impl<'a, T> Slice2D<'a, T> {
     self.raw_parts.stride
   }
 
-  pub fn cut_top_off(&mut self, mid: usize) -> Slice2D<'a, T> {
+  /// Inspired by split_at for slices.
+  ///
+  /// Horizontally divides one slice into two at index.
+  ///
+  /// The first will contains rows from `[0, mid)` (excluding the index `mid`
+  /// itself) and the second will contain all rows from `[mid, height)`
+  /// (excluding the index `height` itself).
+  ///
+  /// # Panic
+  ///
+  /// Panics if `mid > height`.
+  #[inline(always)]
+  pub fn horizontal_split(self, mid: usize) -> (Slice2D<'a, T>, Slice2D<'a, T>) {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
-      self.raw_parts = bottom;
-      Slice2D::from_raw_parts(top)
+      (Slice2D::from_raw_parts(top), Slice2D::from_raw_parts(bottom))
     }
   }
 
-  pub fn cut_left_off(&mut self, mid: usize) -> Slice2D<'a, T> {
+  /// Inspired by split_at for slices.
+  ///
+  /// Vertically divides one slice into two at index.
+  ///
+  /// The first will contains columns from `[0, mid)` (excluding the columns
+  /// `mid` itself) and the second will contain all rows from `[mid, height)`
+  /// (excluding the column `height` itself).
+  ///
+  /// # Panic
+  ///
+  /// Panics if `mid > height`.
+  #[inline(always)]
+  pub fn vertical_split(self, mid: usize) -> (Slice2D<'a, T>, Slice2D<'a, T>) {
     unsafe {
       let (left, right) = self.raw_parts.vertical_split(mid);
-      self.raw_parts = right;
-      Slice2D::from_raw_parts(left)
+      (Slice2D::from_raw_parts(left), Slice2D::from_raw_parts(right))
     }
   }
 
@@ -305,19 +327,41 @@ impl<'a, T> Slice2DMut<'a, T> {
     self.raw_parts.stride
   }
 
-  pub fn cut_top_off(&mut self, mid: usize) -> Slice2D<'a, T> {
+  /// Inspired by split_at for slices.
+  ///
+  /// Horizontally divides one slice into two at index.
+  ///
+  /// The first will contains rows from `[0, mid)` (excluding the index `mid`
+  /// itself) and the second will contain all rows from `[mid, height)`
+  /// (excluding the index `height` itself).
+  ///
+  /// # Panic
+  ///
+  /// Panics if `mid > height`.
+  #[inline(always)]
+  pub fn horizontal_split(self, mid: usize) -> (Slice2D<'a, T>, Slice2D<'a, T>) {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
-      self.raw_parts = bottom;
-      Slice2D::from_raw_parts(top)
+      (Slice2D::from_raw_parts(top), Slice2D::from_raw_parts(bottom))
     }
   }
 
-  pub fn cut_left_off(&mut self, mid: usize) -> Slice2D<'a, T> {
+  /// Inspired by split_at for slices.
+  ///
+  /// Vertically divides one slice into two at index.
+  ///
+  /// The first will contains columns from `[0, mid)` (excluding the columns
+  /// `mid` itself) and the second will contain all rows from `[mid, height)`
+  /// (excluding the column `height` itself).
+  ///
+  /// # Panic
+  ///
+  /// Panics if `mid > height`.
+  #[inline(always)]
+  pub fn vertical_split(self, mid: usize) -> (Slice2D<'a, T>, Slice2D<'a, T>) {
     unsafe {
       let (left, right) = self.raw_parts.vertical_split(mid);
-      self.raw_parts = right;
-      Slice2D::from_raw_parts(left)
+      (Slice2D::from_raw_parts(left), Slice2D::from_raw_parts(right))
     }
   }
 
@@ -328,6 +372,13 @@ impl<'a, T> Slice2DMut<'a, T> {
 
 // Mutable functions
 impl<'a, T> Slice2DMut<'a, T> {
+  pub fn empty() -> Slice2DMut<'a, T>{
+    Self {
+      raw_parts: Slice2DRawParts { ptr: std::ptr::null_mut(), width: 0, height: 0, stride: 0 },
+      phantom: PhantomData,
+    }
+  }
+
   #[inline(always)]
   pub unsafe fn new(
     ptr: *mut T, width: usize, height: usize, stride: usize,
@@ -347,19 +398,41 @@ impl<'a, T> Slice2DMut<'a, T> {
     self.raw_parts.ptr
   }
 
-  pub fn cut_top_off_mut(&mut self, mid: usize) -> Slice2DMut<'a, T> {
+  /// Inspired by split_at for slices.
+  ///
+  /// Horizontally divides one mutable slice into two at index.
+  ///
+  /// The first will contains rows from `[0, mid)` (excluding the row `mid`
+  /// itself) and the second will contain all rows from `[mid, height)`
+  /// (excluding the row `height` itself).
+  ///
+  /// # Panic
+  ///
+  /// Panics if `mid > height`.
+  #[inline(always)]
+  pub fn horizontal_split_mut(self, mid: usize) -> (Slice2DMut<'a, T>, Slice2DMut<'a, T>) {
     unsafe {
       let (top, bottom) = self.raw_parts.horizontal_split(mid);
-      self.raw_parts = bottom;
-      Slice2DMut::from_raw_parts(top)
+      (Slice2DMut::from_raw_parts(top), Slice2DMut::from_raw_parts(bottom))
     }
   }
 
-  pub fn cut_left_off_mut(&mut self, mid: usize) -> Slice2DMut<'a, T> {
+  /// Inspired by split_at for slices.
+  ///
+  /// Vertically divides one mutable slice into two at index.
+  ///
+  /// The first will contains columns from `[0, mid)` (excluding the columns
+  /// `mid` itself) and the second will contain all rows from `[mid, height)`
+  /// (excluding the column `height` itself).
+  ///
+  /// # Panic
+  ///
+  /// Panics if `mid > height`.
+  #[inline(always)]
+  pub fn vertical_split_mut(self, mid: usize) -> (Slice2DMut<'a, T>, Slice2DMut<'a, T>) {
     unsafe {
       let (left, right) = self.raw_parts.vertical_split(mid);
-      self.raw_parts = right;
-      Slice2DMut::from_raw_parts(left)
+      (Slice2DMut::from_raw_parts(left), Slice2DMut::from_raw_parts(right))
     }
   }
 
