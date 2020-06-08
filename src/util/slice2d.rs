@@ -225,6 +225,16 @@ impl<'a, T> Slice2D<'a, T> {
   }
 
   #[inline(always)]
+  pub const fn cols(&self) -> usize {
+    self.raw_parts.width
+  }
+
+  #[inline(always)]
+  pub const fn rows(&self) -> usize {
+    self.raw_parts.height
+  }
+
+  #[inline(always)]
   pub const fn stride(&self) -> usize {
     self.raw_parts.stride
   }

@@ -10,7 +10,7 @@
 use crate::context::*;
 use crate::encoder::FrameInvariants;
 use crate::lrf::*;
-use crate::util::Pixel;
+use crate::util::{Pixel, Slice2D, Slice2DMut};
 
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
@@ -20,27 +20,19 @@ use std::slice;
 /// Tiled view of RestorationUnits
 #[derive(Debug)]
 pub struct TileRestorationUnits<'a> {
-  data: *const RestorationUnit,
+  data: Slice2D<'a, RestorationUnit>,
   // private to guarantee borrowing rules
   x: usize,
   y: usize,
-  cols: usize,
-  rows: usize,
-  stride: usize, // number of cols in the underlying FrameRestorationUnits
-  phantom: PhantomData<&'a RestorationUnit>,
 }
 
 /// Mutable tiled view of RestorationUnits
 #[derive(Debug)]
 pub struct TileRestorationUnitsMut<'a> {
-  data: *mut RestorationUnit,
+  data: Slice2DMut<'a, RestorationUnit>,
   // private to guarantee borrowing rules
   x: usize,
   y: usize,
-  cols: usize,
-  rows: usize,
-  stride: usize, // number of cols in the underlying FrameRestorationUnits
-  phantom: PhantomData<&'a mut RestorationUnit>,
 }
 
 // common impl for TileRestorationUnits and TileRestorationUnitsMut
@@ -48,7 +40,7 @@ macro_rules! tile_restoration_units_common {
   // $name: TileRestorationUnits or TileRestorationUnitsMut
   // $null: null or null_mut
   // $opt_mut: nothing or mut
-  ($name:ident, $null:ident $(,$opt_mut:tt)?) => {
+  ($name:ident, $slice:ident $(,$opt_mut:tt)?) => {
     impl<'a> $name<'a> {
 
       #[inline(always)]
@@ -59,19 +51,19 @@ macro_rules! tile_restoration_units_common {
         cols: usize,
         rows: usize,
       ) -> Self {
+        let (y_index, rows) = if y < frame_units.rows() { (y, rows) } else { (0, 0) };
+        let (x_index, cols) = if x < frame_units.cols() { (x, cols) } else { (0, 0) };
         Self {
-          data: if x < frame_units.cols() && y < frame_units.rows() {
-            & $($opt_mut)? frame_units[y][x]
-          } else {
-            // on edges, a tile may contain no restoration units
-            ptr::$null()
+          data: unsafe {
+            $slice ::new(
+              & $($opt_mut)? frame_units[y_index][x_index],
+              cols,
+              rows,
+              frame_units.cols()
+            )
           },
           x,
           y,
-          cols,
-          rows,
-          stride: frame_units.cols(),
-          phantom: PhantomData,
         }
       }
 
@@ -87,12 +79,12 @@ macro_rules! tile_restoration_units_common {
 
       #[inline(always)]
       pub const fn cols(&self) -> usize {
-        self.cols
+        self.data.cols()
       }
 
       #[inline(always)]
       pub const fn rows(&self) -> usize {
-        self.rows
+        self.data.rows()
       }
     }
 
@@ -104,30 +96,22 @@ macro_rules! tile_restoration_units_common {
 
       #[inline(always)]
       fn index(&self, index: usize) -> &Self::Output {
-        assert!(index < self.rows);
-        unsafe {
-          let ptr = self.data.add(index * self.stride);
-          slice::from_raw_parts(ptr, self.cols)
-        }
+        &self.data[index]
       }
     }
   }
 }
 
-tile_restoration_units_common!(TileRestorationUnits, null);
-tile_restoration_units_common!(TileRestorationUnitsMut, null_mut, mut);
+tile_restoration_units_common!(TileRestorationUnits, Slice2D);
+tile_restoration_units_common!(TileRestorationUnitsMut, Slice2DMut, mut);
 
 impl TileRestorationUnitsMut<'_> {
   #[inline(always)]
   pub const fn as_const(&self) -> TileRestorationUnits<'_> {
     TileRestorationUnits {
-      data: self.data,
+      data: self.data.as_const(),
       x: self.x,
-      y: self.y,
-      cols: self.cols,
-      rows: self.rows,
-      stride: self.stride,
-      phantom: PhantomData,
+      y: self.y
     }
   }
 }
@@ -135,11 +119,7 @@ impl TileRestorationUnitsMut<'_> {
 impl IndexMut<usize> for TileRestorationUnitsMut<'_> {
   #[inline(always)]
   fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-    assert!(index < self.rows);
-    unsafe {
-      let ptr = self.data.add(index * self.stride);
-      slice::from_raw_parts_mut(ptr, self.cols)
-    }
+    &mut self.data[index]
   }
 }
 
@@ -191,18 +171,18 @@ macro_rules! tile_restoration_plane_common {
       // index (stretch == true) or None (stretch == false).
       pub fn restoration_unit_index(&self, sbo: TileSuperBlockOffset, stretch: bool)
         -> Option<(usize, usize)> {
-        if self.units.rows > 0 && self.units.cols > 0 {
+        if self.units.rows() > 0 && self.units.cols() > 0 {
           // is this a stretch block?
           let x_stretch = sbo.0.x < self.rp_cfg.sb_cols &&
-            sbo.0.x >> self.rp_cfg.sb_h_shift >= self.units.cols;
+            sbo.0.x >> self.rp_cfg.sb_h_shift >= self.units.cols();
           let y_stretch = sbo.0.y < self.rp_cfg.sb_rows &&
-            sbo.0.y >> self.rp_cfg.sb_v_shift >= self.units.rows;
+            sbo.0.y >> self.rp_cfg.sb_v_shift >= self.units.rows();
           if (x_stretch || y_stretch) && !stretch {
             None
           } else {
             let x = (sbo.0.x >> self.rp_cfg.sb_h_shift) - if x_stretch { 1 } else { 0 };
             let y = (sbo.0.y >> self.rp_cfg.sb_v_shift) - if y_stretch { 1 } else { 0 };
-            if x < self.units.cols && y < self.units.rows {
+            if x < self.units.cols() && y < self.units.rows() {
               Some((x, y))
             } else {
               None
@@ -228,7 +208,7 @@ macro_rules! tile_restoration_plane_common {
       }
 
       pub const fn restoration_unit_countable(&self, x: usize, y: usize) -> usize {
-        y * self.units.cols + x
+        y * self.units.cols() + x
       }
 
       // Is this the last sb (in scan order) in the restoration unit
@@ -246,8 +226,8 @@ macro_rules! tile_restoration_plane_common {
         let h_mask = (1 << self.rp_cfg.sb_h_shift) - 1;
         let v_mask = (1 << self.rp_cfg.sb_v_shift) - 1;
         // is this a stretch block?
-        let x_stretch = tile_sbo.0.x >> self.rp_cfg.sb_h_shift >= self.units.cols;
-        let y_stretch = tile_sbo.0.y >> self.rp_cfg.sb_v_shift >= self.units.rows;
+        let x_stretch = tile_sbo.0.x >> self.rp_cfg.sb_h_shift >= self.units.cols();
+        let y_stretch = tile_sbo.0.y >> self.rp_cfg.sb_v_shift >= self.units.rows();
         // Need absolute superblock offsets for edge check, not local to the tile.
         let sbx = global_sbo.0.x + tile_sbo.0.x;
         let sby = global_sbo.0.y + tile_sbo.0.y;
