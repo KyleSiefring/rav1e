@@ -180,6 +180,18 @@ pub struct Slice2DMut<'a, T> {
 }
 
 impl<'a, T> Slice2D<'a, T> {
+  pub fn empty(backing: [T; 0]) -> Slice2D<'a, T> {
+    Self {
+      raw_parts: Slice2DRawParts {
+        ptr: backing.as_ptr() as *mut T,
+        width: 0,
+        height: 0,
+        stride: 0,
+      },
+      phantom: PhantomData,
+    }
+  }
+
   // TODO: Get rid of once splitting of Slices is handled elsewhere.
   #[inline(always)]
   pub unsafe fn new(
@@ -382,10 +394,10 @@ impl<'a, T> Slice2DMut<'a, T> {
 
 // Mutable functions
 impl<'a, T> Slice2DMut<'a, T> {
-  pub fn empty() -> Slice2DMut<'a, T> {
+  pub fn empty(mut backing: [T; 0]) -> Slice2DMut<'a, T> {
     Self {
       raw_parts: Slice2DRawParts {
-        ptr: std::ptr::null_mut(),
+        ptr: backing.as_mut_ptr(),
         width: 0,
         height: 0,
         stride: 0,

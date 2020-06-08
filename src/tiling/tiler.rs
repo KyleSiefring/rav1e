@@ -243,7 +243,7 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
           let cols = tile_width_mi.min(self.block_row.cols());
 
           let tmp =
-            std::mem::replace(&mut self.block_row, Slice2DMut::empty());
+            std::mem::replace(&mut self.block_row, Slice2DMut::empty([]));
           let (left, right) = tmp.vertical_split_mut(cols);
           self.block_row = right;
           TileBlocksMut::new(left, x, y, self.block_slice.cols(), self.fb_rows)
@@ -260,7 +260,7 @@ impl<'a, 'b, T: Pixel> Iterator for TileContextIterMut<'a, 'b, T> {
           self.ti.tile_height_sb << (self.ti.sb_size_log2 - MI_SIZE_LOG2);
         let rows = self.block_slice.rows().min(tile_height_mi);
         let tmp =
-          std::mem::replace(&mut self.block_slice, Slice2DMut::empty());
+          std::mem::replace(&mut self.block_slice, Slice2DMut::empty([]));
         let (top, bottom) = tmp.horizontal_split_mut(rows);
         self.block_row = top;
         self.block_slice = bottom;
