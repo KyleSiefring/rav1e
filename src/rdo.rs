@@ -2032,6 +2032,16 @@ pub fn rdo_loop_decision<T: Pixel>(
     sb_h << SUPERBLOCK_TO_BLOCK_SHIFT,
   );
 
+  let mut b = cw.bc.blocks.subregion(
+    base_sbo.block_offset(0, 0).0.x,
+    base_sbo.block_offset(0, 0).0.y,
+    sb_w << SUPERBLOCK_TO_BLOCK_SHIFT,
+    sb_h << SUPERBLOCK_TO_BLOCK_SHIFT,
+  );
+
+  tileblocks_subset[0][0].cdef_index = 0;
+  b[0][0].cdef_index = 0;
+
   // why copy and not just a view?  Because CDEF optimization requires
   // u16 working space. This avoids adding another generic buffer
   // typing parameter and expanding code to handle all the possible
