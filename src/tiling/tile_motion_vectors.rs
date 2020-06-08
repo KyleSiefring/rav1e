@@ -80,9 +80,6 @@ macro_rules! tile_motion_vectors_common {
       }
     }
 
-    unsafe impl Send for $name<'_> {}
-    unsafe impl Sync for $name<'_> {}
-
     impl Index<usize> for $name<'_> {
       type Output = [MotionVector];
 

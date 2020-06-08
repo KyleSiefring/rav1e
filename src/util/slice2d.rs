@@ -297,6 +297,9 @@ impl<'a, T, I: SliceIndex2D<T>> Index<I> for Slice2D<'a, T> {
   }
 }
 
+unsafe impl<T> Send for Slice2D<'_, T> where T: Sync {}
+unsafe impl<T> Sync for Slice2D<'_, T> where T: Sync {}
+
 impl<T> fmt::Debug for Slice2D<'_, T> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(
@@ -486,6 +489,9 @@ impl<'a, T> Slice2DMut<'a, T> {
     unsafe { RowsIterMut::new(self.raw_parts) }
   }
 }
+
+unsafe impl<T> Send for Slice2DMut<'_, T> where T: Send {}
+unsafe impl<T> Sync for Slice2DMut<'_, T> where T: Sync {}
 
 impl<'a, T, I: SliceIndex2D<T>> Index<I> for Slice2DMut<'a, T> {
   type Output = I::Output;

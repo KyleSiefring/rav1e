@@ -119,9 +119,6 @@ macro_rules! tile_blocks_common {
       }
     }
 
-    unsafe impl Send for $name<'_> {}
-    unsafe impl Sync for $name<'_> {}
-
     impl Index<usize> for $name<'_> {
       type Output = [Block];
       #[inline(always)]
