@@ -16,7 +16,7 @@
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut, Range};
-use std::{fmt, slice};
+use std::{fmt, mem, slice};
 
 pub struct Slice2DRawParts<T> {
   // TODO: It would be desirable to use NonNull in place of a simple pointer,
@@ -612,3 +612,144 @@ impl<T> ExactSizeIterator for RowsIter<'_, T> {}
 impl<T> FusedIterator for RowsIter<'_, T> {}
 impl<T> ExactSizeIterator for RowsIterMut<'_, T> {}
 impl<T> FusedIterator for RowsIterMut<'_, T> {}
+
+pub struct VerticalChunks2D<'a, T> {
+  slice: Slice2D<'a, T>,
+  chunk_size: usize,
+}
+
+pub struct VerticalChunks2DMut<'a, T> {
+  slice: Slice2DMut<'a, T>,
+  chunk_size: usize,
+}
+
+pub struct HorizontalChunks2D<'a, T> {
+  slice: Slice2D<'a, T>,
+  chunk_size: usize,
+}
+
+pub struct HorizontalChunks2DMut<'a, T> {
+  slice: Slice2DMut<'a, T>,
+  chunk_size: usize,
+}
+
+impl<'a, T> Iterator for VerticalChunks2D<'a, T> {
+  type Item = Slice2D<'a, T>;
+
+  #[inline(always)]
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.slice.height() == 0 {
+      None
+    } else {
+      let chunksz = self.slice.height().min(self.chunk_size);
+      let tmp = mem::replace(&mut self.slice, Slice2D::empty([]));
+      let (head, tail) = tmp.horizontal_split(chunksz);
+      self.slice = tail;
+      Some(head)
+    }
+  }
+
+  #[inline(always)]
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    if self.slice.height() == 0 {
+      (0, Some(0))
+    } else {
+      let n = self.slice.height() / self.chunk_size;
+      let rem = self.slice.height() % self.chunk_size;
+      let n = if rem > 0 { n + 1 } else { n };
+      (n, Some(n))
+    }
+  }
+}
+
+impl<'a, T> Iterator for VerticalChunks2DMut<'a, T> {
+  type Item = Slice2DMut<'a, T>;
+
+  #[inline(always)]
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.slice.height() == 0 {
+      None
+    } else {
+      let chunksz = self.slice.height().min(self.chunk_size);
+      let tmp = mem::replace(&mut self.slice, Slice2DMut::empty([]));
+      let (head, tail) = tmp.horizontal_split_mut(chunksz);
+      self.slice = tail;
+      Some(head)
+    }
+  }
+
+  #[inline(always)]
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    if self.slice.height() == 0 {
+      (0, Some(0))
+    } else {
+      let n = self.slice.height() / self.chunk_size;
+      let rem = self.slice.height() % self.chunk_size;
+      let n = if rem > 0 { n + 1 } else { n };
+      (n, Some(n))
+    }
+  }
+}
+
+impl<'a, T> Iterator for HorizontalChunks2D<'a, T> {
+  type Item = Slice2D<'a, T>;
+
+  #[inline(always)]
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.slice.width() == 0 {
+      None
+    } else {
+      let chunksz = self.slice.width().min(self.chunk_size);
+      let tmp = mem::replace(&mut self.slice, Slice2D::empty([]));
+      let (head, tail) = tmp.vertical_split(chunksz);
+      self.slice = tail;
+      Some(head)
+    }
+  }
+
+  #[inline(always)]
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    if self.slice.height() == 0 {
+      (0, Some(0))
+    } else {
+      let n = self.slice.width() / self.chunk_size;
+      let rem = self.slice.width() % self.chunk_size;
+      let n = if rem > 0 { n + 1 } else { n };
+      (n, Some(n))
+    }
+  }
+}
+
+impl<'a, T> Iterator for HorizontalChunks2DMut<'a, T> {
+  type Item = Slice2DMut<'a, T>;
+
+  #[inline(always)]
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.slice.width() == 0 {
+      None
+    } else {
+      let chunksz = self.slice.width().min(self.chunk_size);
+      let tmp = mem::replace(&mut self.slice, Slice2DMut::empty([]));
+      let (head, tail) = tmp.vertical_split_mut(chunksz);
+      self.slice = tail;
+      Some(head)
+    }
+  }
+
+  #[inline(always)]
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    if self.slice.height() == 0 {
+      (0, Some(0))
+    } else {
+      let n = self.slice.width() / self.chunk_size;
+      let rem = self.slice.width() % self.chunk_size;
+      let n = if rem > 0 { n + 1 } else { n };
+      (n, Some(n))
+    }
+  }
+}
+
+impl<T> ExactSizeIterator for VerticalChunks2D<'_, T> {}
+impl<T> FusedIterator for VerticalChunks2D<'_, T> {}
+impl<T> ExactSizeIterator for HorizontalChunks2D<'_, T> {}
+impl<T> FusedIterator for HorizontalChunks2D<'_, T> {}
