@@ -108,11 +108,7 @@ tile_restoration_units_common!(TileRestorationUnitsMut, Slice2DMut, mut);
 impl TileRestorationUnitsMut<'_> {
   #[inline(always)]
   pub const fn as_const(&self) -> TileRestorationUnits<'_> {
-    TileRestorationUnits {
-      data: self.data.as_const(),
-      x: self.x,
-      y: self.y
-    }
+    TileRestorationUnits { data: self.data.as_const(), x: self.x, y: self.y }
   }
 }
 
