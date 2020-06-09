@@ -709,7 +709,7 @@ impl<'a, T> Iterator for HorizontalChunks2D<'a, T> {
 
   #[inline(always)]
   fn size_hint(&self) -> (usize, Option<usize>) {
-    if self.slice.height() == 0 {
+    if self.slice.width() == 0 {
       (0, Some(0))
     } else {
       let n = self.slice.width() / self.chunk_size;
@@ -738,7 +738,7 @@ impl<'a, T> Iterator for HorizontalChunks2DMut<'a, T> {
 
   #[inline(always)]
   fn size_hint(&self) -> (usize, Option<usize>) {
-    if self.slice.height() == 0 {
+    if self.slice.width() == 0 {
       (0, Some(0))
     } else {
       let n = self.slice.width() / self.chunk_size;
@@ -751,5 +751,9 @@ impl<'a, T> Iterator for HorizontalChunks2DMut<'a, T> {
 
 impl<T> ExactSizeIterator for VerticalChunks2D<'_, T> {}
 impl<T> FusedIterator for VerticalChunks2D<'_, T> {}
+impl<T> ExactSizeIterator for VerticalChunks2DMut<'_, T> {}
+impl<T> FusedIterator for VerticalChunks2DMut<'_, T> {}
 impl<T> ExactSizeIterator for HorizontalChunks2D<'_, T> {}
 impl<T> FusedIterator for HorizontalChunks2D<'_, T> {}
+impl<T> ExactSizeIterator for HorizontalChunks2DMut<'_, T> {}
+impl<T> FusedIterator for HorizontalChunks2DMut<'_, T> {}
