@@ -404,6 +404,7 @@ impl<'a, T> Slice2DMut<'a, T> {
     }
   }
 
+  #[inline(always)]
   pub fn rows_iter(&self) -> RowsIter<'_, T> {
     unsafe { RowsIter::new(self.raw_parts) }
   }
