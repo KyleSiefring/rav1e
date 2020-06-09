@@ -48,6 +48,7 @@ impl<T> Slice2DRawParts<T> {
   /// # Panic
   ///
   /// Panics if `mid > height`.
+  #[inline(always)]
   unsafe fn horizontal_split(
     self, mid: usize,
   ) -> (Slice2DRawParts<T>, Slice2DRawParts<T>) {
@@ -73,6 +74,7 @@ impl<T> Slice2DRawParts<T> {
   /// # Panic
   ///
   /// Panics if `mid > width`.
+  #[inline(always)]
   unsafe fn vertical_split(
     self, mid: usize,
   ) -> (Slice2DRawParts<T>, Slice2DRawParts<T>) {
@@ -180,6 +182,7 @@ pub struct Slice2DMut<'a, T> {
 }
 
 impl<'a, T> Slice2D<'a, T> {
+  #[inline(always)]
   pub fn empty(backing: [T; 0]) -> Slice2D<'a, T> {
     Self {
       raw_parts: Slice2DRawParts {
@@ -279,6 +282,7 @@ impl<'a, T> Slice2D<'a, T> {
     }
   }
 
+  #[inline(always)]
   pub fn rows_iter(&self) -> RowsIter<'_, T> {
     unsafe { RowsIter::new(self.raw_parts) }
   }
@@ -407,6 +411,7 @@ impl<'a, T> Slice2DMut<'a, T> {
 
 // Mutable functions
 impl<'a, T> Slice2DMut<'a, T> {
+  #[inline(always)]
   pub fn empty(mut backing: [T; 0]) -> Slice2DMut<'a, T> {
     Self {
       raw_parts: Slice2DRawParts {
@@ -430,10 +435,12 @@ impl<'a, T> Slice2DMut<'a, T> {
     }
   }
 
+  #[inline(always)]
   pub const fn as_const(&self) -> Slice2D<'_, T> {
     Slice2D { raw_parts: self.raw_parts, phantom: PhantomData }
   }
 
+  #[inline(always)]
   pub fn as_mut_ptr(&mut self) -> *mut T {
     self.raw_parts.ptr
   }
@@ -480,6 +487,7 @@ impl<'a, T> Slice2DMut<'a, T> {
     }
   }
 
+  #[inline(always)]
   pub fn tmp_subslice(
     &mut self, index: (Range<usize>, Range<usize>),
   ) -> Slice2DMut<'a, T> {
@@ -495,6 +503,7 @@ impl<'a, T> Slice2DMut<'a, T> {
     }
   }
 
+  #[inline(always)]
   pub fn rows_iter_mut(&mut self) -> RowsIterMut<'_, T> {
     unsafe { RowsIterMut::new(self.raw_parts) }
   }
