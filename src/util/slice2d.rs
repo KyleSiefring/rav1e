@@ -287,6 +287,24 @@ impl<'a, T> Slice2D<'a, T> {
     unsafe { RowsIter::new(self.raw_parts) }
   }
 
+  #[inline(always)]
+  pub fn vertical_chunks(&self, chunk_size: usize) -> VerticalChunks2D<'_, T> {
+    VerticalChunks2D {
+      slice: unsafe { Slice2D::from_raw_parts(self.raw_parts) },
+      chunk_size,
+    }
+  }
+
+  #[inline(always)]
+  pub fn horizontal_chunks(
+    &self, chunk_size: usize,
+  ) -> HorizontalChunks2D<'_, T> {
+    HorizontalChunks2D {
+      slice: unsafe { Slice2D::from_raw_parts(self.raw_parts) },
+      chunk_size,
+    }
+  }
+
   pub fn tmp_subslice(
     &mut self, index: (Range<usize>, Range<usize>),
   ) -> Slice2D<'a, T> {
@@ -408,6 +426,24 @@ impl<'a, T> Slice2DMut<'a, T> {
   pub fn rows_iter(&self) -> RowsIter<'_, T> {
     unsafe { RowsIter::new(self.raw_parts) }
   }
+
+  #[inline(always)]
+  pub fn vertical_chunks(&self, chunk_size: usize) -> VerticalChunks2D<'_, T> {
+    VerticalChunks2D {
+      slice: unsafe { Slice2D::from_raw_parts(self.raw_parts) },
+      chunk_size,
+    }
+  }
+
+  #[inline(always)]
+  pub fn horizontal_chunks(
+    &self, chunk_size: usize,
+  ) -> HorizontalChunks2D<'_, T> {
+    HorizontalChunks2D {
+      slice: unsafe { Slice2D::from_raw_parts(self.raw_parts) },
+      chunk_size,
+    }
+  }
 }
 
 // Mutable functions
@@ -507,6 +543,26 @@ impl<'a, T> Slice2DMut<'a, T> {
   #[inline(always)]
   pub fn rows_iter_mut(&mut self) -> RowsIterMut<'_, T> {
     unsafe { RowsIterMut::new(self.raw_parts) }
+  }
+
+  #[inline(always)]
+  pub fn vertical_chunks_mut(
+    &mut self, chunk_size: usize,
+  ) -> VerticalChunks2DMut<'_, T> {
+    VerticalChunks2DMut {
+      slice: unsafe { Slice2DMut::from_raw_parts(self.raw_parts) },
+      chunk_size,
+    }
+  }
+
+  #[inline(always)]
+  pub fn horizontal_chunks_mut(
+    &mut self, chunk_size: usize,
+  ) -> HorizontalChunks2DMut<'_, T> {
+    HorizontalChunks2DMut {
+      slice: unsafe { Slice2DMut::from_raw_parts(self.raw_parts) },
+      chunk_size,
+    }
   }
 }
 
