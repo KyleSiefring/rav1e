@@ -814,3 +814,42 @@ impl<T> ExactSizeIterator for HorizontalChunks2D<'_, T> {}
 impl<T> FusedIterator for HorizontalChunks2D<'_, T> {}
 impl<T> ExactSizeIterator for HorizontalChunks2DMut<'_, T> {}
 impl<T> FusedIterator for HorizontalChunks2DMut<'_, T> {}
+
+fn std_chunks() {
+  let mut arr = [0u32; 12];
+  // Excerpt 1:
+  // pub fn chunks_mut(&mut self, chunk_size: usize) -> ChunksMut<'_, T>
+  //
+  // Excerpt 2:
+  // impl<'a, T> Iterator for ChunksMut<'a, T> {
+  //     type Item = &'a mut [T];
+  //     fn next(&mut self) -> Option<&'a mut [T]> ...
+
+  let mut chunks: Vec<&mut [u32]> =
+    arr.chunks_mut(8).map(|a: &mut [u32]| a.chunks_mut(4)).flatten().collect();
+  chunks[0][0] = chunks[1][1];
+}
+
+fn chunks() {
+  use crate::util::Data2D;
+  let mut data: Data2D<u32> = Data2D::new(5, 5);
+  let slice: Slice2D<u32> = data.slice();
+
+  // Excerpt 1:
+  // pub fn vertical_chunks(&self, chunk_size: usize) -> VerticalChunks2D<'_, T> {
+  //
+  // Excerpt 2:
+  // impl<'a, T> Iterator for VerticalChunks2D<'a, T> {
+  //   type Item = Slice2D<'a, T>;
+  //   fn next(&mut self) -> Option<Self::Item> ...
+
+  let chunks =
+    slice.vertical_chunks(2).map(|a| a.horizontal_chunks(2)).flatten();
+
+  // Compile Error:
+  // |     slice.vertical_chunks(2).map(|a| a.horizontal_chunks(2)).flatten();
+  // |                                      -^^^^^^^^^^^^^^^^^^^^^
+  // |                                      |
+  // |                                      returns a value referencing data owned by the current function
+  // |                                      `a` is borrowed here
+}
