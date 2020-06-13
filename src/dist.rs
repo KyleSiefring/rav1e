@@ -13,6 +13,7 @@ cfg_if::cfg_if! {
   } else if #[cfg(asm_neon)] {
     pub use crate::asm::aarch64::dist::*;
     pub use self::rust::get_satd;
+    pub use self::rust::get_sse;
   } else {
     pub use self::rust::*;
   }
@@ -175,6 +176,32 @@ pub(crate) mod rust {
     // Normalize the results
     let ln = msb(size as i32) as u64;
     ((sum + (1 << ln >> 1)) >> ln) as u32
+  }
+
+  pub fn get_sse<T: Pixel>(
+    plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
+    w: usize, h: usize, _bit_depth: usize, _cpu: CpuFeatureLevel,
+  ) -> u64 {
+    // Assembly doesn't support larger blocks.
+    assert!(w <= 8 && h <= 8);
+
+    let mut sum: u64 = 0 as u64;
+
+    for (slice_org, slice_ref) in
+    plane_org.rows_iter().take(h).zip(plane_ref.rows_iter())
+    {
+      sum += slice_org
+          .iter()
+          .take(w)
+          .zip(slice_ref)
+          .map(|(&a, &b)| {
+            let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;
+            (c * c) as u32
+          })
+          .sum::<u32>() as u64;
+    }
+
+    sum
   }
 }
 

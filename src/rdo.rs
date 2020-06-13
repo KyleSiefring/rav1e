@@ -12,6 +12,7 @@
 
 use crate::api::*;
 use crate::cdef::*;
+use crate::cpu_features::CpuFeatureLevel;
 use crate::context::*;
 use crate::deblock::*;
 use crate::dist::*;
@@ -233,9 +234,10 @@ pub fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
 }
 
 // Sum of Squared Error for a wxh block
+#[inline(never)]
 pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, w: usize, h: usize,
-  compute_bias: F,
+  compute_bias: F, bit_depth: usize, cpu: CpuFeatureLevel,
 ) -> Distortion {
   assert!(w & (MI_SIZE - 1) == 0);
   assert!(h & (MI_SIZE - 1) == 0);
@@ -251,31 +253,15 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   let mut sse = Distortion::zero();
   for block_y in 0..h / block_h {
     for block_x in 0..w / block_w {
-      let mut value = 0;
-
-      for j in 0..block_h {
-        let s1 = &src1[block_y * block_h + j]
-          [block_x * block_w..(block_x + 1) * block_w];
-        let s2 = &src2[block_y * block_h + j]
-          [block_x * block_w..(block_x + 1) * block_w];
-
-        let row_sse = s1
-          .iter()
-          .zip(s2)
-          .map(|(&a, &b)| {
-            let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;
-            (c * c) as u32
-          })
-          .sum::<u32>();
-        value += row_sse as u64;
-      }
+      // StartingAt gives the correct block offset.
+      let block = Area::StartingAt {
+        x: (block_x * block_w) as isize,
+        y: (block_y * block_h) as isize,
+      };
+      let value = get_sse(&src1.subregion(block), &src2.subregion(block), block_w, block_h, bit_depth, cpu);
 
       let bias = compute_bias(
-        // StartingAt gives the correct block offset.
-        Area::StartingAt {
-          x: (block_x * block_w) as isize,
-          y: (block_y * block_h) as isize,
-        },
+        block,
         imp_bsize,
       );
       sse += RawDistortion::new(value) * bias;
@@ -321,6 +307,8 @@ fn compute_distortion<T: Pixel>(
           bsize,
         )
       },
+      fi.sequence.bit_depth,
+      fi.cpu_feature_level,
     ),
   } * fi.dist_scale[0];
 
@@ -356,6 +344,8 @@ fn compute_distortion<T: Pixel>(
               bsize,
             )
           },
+          fi.sequence.bit_depth,
+          fi.cpu_feature_level,
         ) * fi.dist_scale[p];
       }
     };
@@ -386,6 +376,8 @@ fn compute_tx_distortion<T: Pixel>(
           bsize,
         )
       },
+      fi.sequence.bit_depth,
+      fi.cpu_feature_level,
     ) * fi.dist_scale[0]
   } else {
     tx_dist
@@ -423,6 +415,8 @@ fn compute_tx_distortion<T: Pixel>(
               bsize,
             )
           },
+          fi.sequence.bit_depth,
+          fi.cpu_feature_level,
         ) * fi.dist_scale[p];
       }
     }
@@ -1500,6 +1494,8 @@ pub fn rdo_cfl_alpha<T: Pixel>(
           uv_tx_size.width(),
           uv_tx_size.height(),
           |_, _| DistortionScale::default(), // We're not doing RDO here.
+          fi.sequence.bit_depth,
+          fi.cpu_feature_level,
         )
         .0
       };
@@ -1926,7 +1922,10 @@ fn rdo_loop_plane_error<T: Pixel>(
           cdef_dist_wxh_8x8(&src_region, &test_region, fi.sequence.bit_depth)
             * bias
         } else {
-          sse_wxh(&src_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| bias)
+          sse_wxh(&src_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| bias,
+                  fi.sequence.bit_depth,
+                  fi.cpu_feature_level,
+          )
         };
       }
     }
