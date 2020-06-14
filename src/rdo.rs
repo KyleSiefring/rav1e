@@ -147,7 +147,7 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
   let coeff_shift = bit_depth - 8;
 
   let c = get_satd(&src1, &src2, BlockSize::BLOCK_8X8, bit_depth, cpu) as u64;
-  RawDistortion::new((c * c) / (8 * 8 * (256 << coeff_shift)) as u64)
+  RawDistortion::new((c * c) / (8 * 8) as u64)
 /*
   // Sum into columns to improve auto-vectorization
   let mut sum_s_cols: [u16; 8] = [0; 8];
