@@ -1895,11 +1895,7 @@ fn rdo_loop_plane_error<T: Pixel>(
         // relative to the full frame origin (not the tile or analysis
         // area)
         let frame_bo = (base_sbo + offset_sbo).block_offset(bx << 1, by << 1);
-        let bias = distortion_scale(
-          fi,
-          ts.to_frame_block_offset(frame_bo),
-          BlockSize::BLOCK_8X8,
-        );
+        let bias = DistortionScale::default();
 
         let src_region =
           src_plane.region(Area::BlockStartingAt { bo: loop_bo.0 });
