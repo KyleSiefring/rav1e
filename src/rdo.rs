@@ -12,6 +12,7 @@
 
 use crate::api::*;
 use crate::cdef::*;
+use crate::cpu_features::CpuFeatureLevel;
 use crate::context::*;
 use crate::deblock::*;
 use crate::dist::*;
@@ -136,7 +137,7 @@ pub fn estimate_rate(qindex: u8, ts: TxSize, fast_distortion: u64) -> u64 {
 // The microbenchmarks perform better with inlining turned off
 #[inline(never)]
 fn cdef_dist_wxh_8x8<T: Pixel>(
-  src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, bit_depth: usize,
+  src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, bit_depth: usize, cpu: CpuFeatureLevel
 ) -> RawDistortion {
   debug_assert!(src1.plane_cfg.xdec == 0);
   debug_assert!(src1.plane_cfg.ydec == 0);
@@ -145,6 +146,9 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
 
   let coeff_shift = bit_depth - 8;
 
+  let c = get_satd(&src1, &src2, BlockSize::BLOCK_8X8, bit_depth, cpu) as u64;
+  RawDistortion::new((c * c) / (8 * 8 * (256 << coeff_shift)) as u64)
+/*
   // Sum into columns to improve auto-vectorization
   let mut sum_s_cols: [u16; 8] = [0; 8];
   let mut sum_d_cols: [u16; 8] = [0; 8];
@@ -197,13 +201,13 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
   let ssim_boost = (4033_f64 / 16_384_f64)
     * (svar + dvar + (16_384 << (2 * coeff_shift))) as f64
     / f64::sqrt(((16_265_089i64 << (4 * coeff_shift)) + svar * dvar) as f64);
-  RawDistortion::new((sse * ssim_boost + 0.5_f64) as u64)
+  RawDistortion::new((sse * ssim_boost + 0.5_f64) as u64)*/
 }
 
 #[allow(unused)]
 pub fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, w: usize, h: usize,
-  bit_depth: usize, compute_bias: F,
+  bit_depth: usize, compute_bias: F, cpu: CpuFeatureLevel
 ) -> Distortion {
   assert!(w & 0x7 == 0);
   assert!(h & 0x7 == 0);
@@ -220,6 +224,7 @@ pub fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
         &src1.subregion(area),
         &src2.subregion(area),
         bit_depth,
+        cpu
       );
 
       // cdef is always called on non-subsampled planes, so BLOCK_8X8 is
@@ -305,6 +310,7 @@ fn compute_distortion<T: Pixel>(
             bsize,
           )
         },
+        fi.cpu_feature_level
       )
     }
     Tune::Psnr | Tune::Psychovisual => sse_wxh(
@@ -1910,7 +1916,7 @@ fn rdo_loop_plane_error<T: Pixel>(
           // For loop filters, We intentionally use cdef_dist even with
           // `--tune Psnr`. Using SSE instead gives no PSNR gain but has a
           // significant negative impact on other metrics and visual quality.
-          cdef_dist_wxh_8x8(&src_region, &test_region, fi.sequence.bit_depth)
+          cdef_dist_wxh_8x8(&src_region, &test_region, fi.sequence.bit_depth, fi.cpu_feature_level)
             * bias
         } else {
           sse_wxh(&src_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| bias)
