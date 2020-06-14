@@ -46,6 +46,7 @@ use crate::partition::PartitionType::*;
 use arrayvec::*;
 use itertools::izip;
 use std::fmt;
+use std::process::exit;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum RDOType {
@@ -134,6 +135,8 @@ pub fn estimate_rate(qindex: u8, ts: TxSize, fast_distortion: u64) -> u64 {
   (y0 + (((fast_distortion as i64 - x0) * slope) >> 8)).max(0) as u64
 }
 
+static mut cnt: u32 = 0;
+
 // The microbenchmarks perform better with inlining turned off
 #[inline(never)]
 fn cdef_dist_wxh_8x8<T: Pixel>(
@@ -144,11 +147,13 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
   debug_assert!(src2.plane_cfg.xdec == 0);
   debug_assert!(src2.plane_cfg.ydec == 0);
 
-  let coeff_shift = bit_depth - 8;
-
   let c = get_satd(&src1, &src2, BlockSize::BLOCK_8X8, bit_depth, cpu) as u64;
-  RawDistortion::new((c * c) / (8 * 8) as u64)
-/*
+  //let mut tmp2: u64 = 0;
+  let tmp = c*c*13/8 / (8*8);
+  RawDistortion::new(tmp)
+
+/*  let coeff_shift = bit_depth - 8;
+
   // Sum into columns to improve auto-vectorization
   let mut sum_s_cols: [u16; 8] = [0; 8];
   let mut sum_d_cols: [u16; 8] = [0; 8];
@@ -171,6 +176,10 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
       // Don't convert directly to u32 to allow better vectorization
       let s: u16 = u16::cast_from(*s);
       let d: u16 = u16::cast_from(*d);
+
+      let c = (s as i16 - d as i16) as i32;
+      tmp2 += (c * c) as u64;
+
       *sum_s += s;
       *sum_d += d;
 
@@ -201,6 +210,18 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
   let ssim_boost = (4033_f64 / 16_384_f64)
     * (svar + dvar + (16_384 << (2 * coeff_shift))) as f64
     / f64::sqrt(((16_265_089i64 << (4 * coeff_shift)) + svar * dvar) as f64);
+
+  unsafe {
+    let tmp3 = (sse * ssim_boost + 0.5_f64) as u64;
+    if tmp3 > 1000 {
+      println!("{} - {} - {}", tmp, tmp2, tmp3);
+      cnt += 1;
+      if cnt == 15 {
+        exit(0);
+      }
+    }
+  }
+
   RawDistortion::new((sse * ssim_boost + 0.5_f64) as u64)*/
 }
 
