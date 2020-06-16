@@ -161,6 +161,7 @@ pub struct WriterCheckpoint {
 
 /// Constructor for a counting Writer
 impl WriterCounter {
+  #[inline]
   pub fn new() -> WriterBase<WriterCounter> {
     WriterBase::new(WriterCounter { bytes: 0 })
   }
@@ -168,6 +169,7 @@ impl WriterCounter {
 
 /// Constructor for a recording Writer
 impl WriterRecorder {
+  #[inline]
   pub fn new() -> WriterBase<WriterRecorder> {
     WriterBase::new(WriterRecorder { storage: Vec::new(), bytes: 0 })
   }
@@ -175,6 +177,7 @@ impl WriterRecorder {
 
 /// Constructor for a encoding Writer
 impl WriterEncoder {
+  #[inline]
   pub fn new() -> WriterBase<WriterEncoder> {
     WriterBase::new(WriterEncoder { precarry: Vec::new(), low: 0 })
   }
@@ -301,6 +304,7 @@ impl StorageBackend for WriterBase<WriterEncoder> {
 impl<S> WriterBase<S> {
   /// Internal constructor called by the subtypes that implement the
   /// actual encoder and Recorder.
+  #[inline]
   fn new(storage: S) -> Self {
     #[cfg(feature = "desync_finder")]
     {

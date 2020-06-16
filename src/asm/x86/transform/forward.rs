@@ -21,6 +21,7 @@ use std::arch::x86_64::*;
 
 type TxfmFuncI32X8 = unsafe fn(&mut [I32X8]);
 
+#[inline]
 fn get_func_i32x8(t: TxfmType) -> TxfmFuncI32X8 {
   use self::TxfmType::*;
   match t {
@@ -315,6 +316,7 @@ enum SizeClass1D {
 }
 
 impl SizeClass1D {
+  #[inline]
   fn from_length(len: usize) -> Self {
     assert!(len.is_power_of_two());
     use SizeClass1D::*;

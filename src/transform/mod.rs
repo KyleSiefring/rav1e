@@ -375,6 +375,7 @@ const HTX_TAB: [TxType1D; TX_TYPES] = [
   TxType1D::FLIPADST,
 ];
 
+#[inline]
 pub fn valid_av1_transform(tx_size: TxSize, tx_type: TxType) -> bool {
   let size_sq = tx_size.sqr_up();
   use TxSize::*;

@@ -54,6 +54,7 @@ pub enum RDOType {
 }
 
 impl RDOType {
+  #[inline]
   pub fn needs_tx_dist(self) -> bool {
     match self {
       // Pixel-domain distortion and exact ec rate
@@ -64,6 +65,7 @@ impl RDOType {
       RDOType::TxDistEstRate => true,
     }
   }
+  #[inline]
   pub fn needs_coeff_rate(self) -> bool {
     match self {
       RDOType::PixelDistRealRate => true,

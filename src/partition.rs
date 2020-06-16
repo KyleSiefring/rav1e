@@ -38,6 +38,7 @@ pub enum RefType {
 
 impl RefType {
   // convert to a ref list index, 0-6 (INTER_REFS_PER_FRAME)
+  #[inline]
   pub fn to_index(self) -> usize {
     match self {
       NONE_FRAME => {
@@ -49,9 +50,11 @@ impl RefType {
       _ => (self as usize) - 1,
     }
   }
+  #[inline]
   pub const fn is_fwd_ref(self) -> bool {
     (self as usize) < 5
   }
+  #[inline]
   pub const fn is_bwd_ref(self) -> bool {
     (self as usize) >= 5
   }
@@ -290,8 +293,8 @@ impl BlockSize {
     }
   }
 
-  #[inline]
   /// Source: Subsampled_Size (AV1 specification section 5.11.38)
+  #[inline]
   pub fn subsampled_size(self, xdec: usize, ydec: usize) -> BlockSize {
     match (xdec, ydec) {
       (0, 0) /* 4:4:4 */ => self,
@@ -357,6 +360,7 @@ impl BlockSize {
     xdec != 0 && self.width_log2() == 2 || ydec != 0 && self.height_log2() == 2
   }
 
+  #[inline]
   pub fn sub8x8_offset(self, xdec: usize, ydec: usize) -> (isize, isize) {
     let offset_x = if xdec != 0 && self.width_log2() == 2 { -1 } else { 0 };
     let offset_y = if ydec != 0 && self.height_log2() == 2 { -1 } else { 0 };
