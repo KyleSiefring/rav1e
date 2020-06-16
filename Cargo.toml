@@ -145,8 +145,8 @@ harness = false
 opt-level = 1
 
 [profile.release]
-debug = true
-codegen-units = 1  # if > 1 enables parallel code generation which improves
+#debug = true
+#codegen-units = 1  # if > 1 enables parallel code generation which improves
                    # compile times, but prevents some optimizations.
                    # Passes `-C codegen-units`. Ignored when `lto = true`.
 
