@@ -517,6 +517,7 @@ impl DistortionScale {
   /// 24 bits is likely excessive.
   const BITS: u32 = 24;
 
+  #[inline]
   pub fn new(scale: f64) -> Self {
     Self(
       (scale * (1 << Self::SHIFT) as f64 + 0.5)
@@ -526,6 +527,7 @@ impl DistortionScale {
 
   /// Multiply, round and shift
   /// Internal implementation, so don't use multiply trait.
+  #[inline]
   fn mul_u64(self, dist: u64) -> u64 {
     (self.0 as u64 * dist + (1 << Self::SHIFT >> 1)) >> Self::SHIFT
   }
@@ -533,6 +535,7 @@ impl DistortionScale {
 
 // Default value for DistortionScale is a fixed point 1
 impl Default for DistortionScale {
+  #[inline]
   fn default() -> Self {
     Self(1 << Self::SHIFT)
   }
@@ -545,12 +548,14 @@ impl fmt::Debug for DistortionScale {
 }
 
 impl From<DistortionScale> for f64 {
+  #[inline]
   fn from(scale: DistortionScale) -> Self {
     scale.0 as f64 / (1 << DistortionScale::SHIFT) as f64
   }
 }
 
 impl RawDistortion {
+  #[inline]
   pub fn new(dist: u64) -> Self {
     Self(dist)
   }
@@ -558,12 +563,14 @@ impl RawDistortion {
 
 impl std::ops::Mul<DistortionScale> for RawDistortion {
   type Output = Distortion;
+  #[inline]
   fn mul(self, rhs: DistortionScale) -> Distortion {
     Distortion(rhs.mul_u64(self.0))
   }
 }
 
 impl Distortion {
+  #[inline]
   pub const fn zero() -> Self {
     Self(0)
   }
@@ -571,24 +578,28 @@ impl Distortion {
 
 impl std::ops::Mul<f64> for Distortion {
   type Output = ScaledDistortion;
+  #[inline]
   fn mul(self, rhs: f64) -> ScaledDistortion {
     ScaledDistortion((self.0 as f64 * rhs) as u64)
   }
 }
 
 impl std::ops::AddAssign for Distortion {
+  #[inline]
   fn add_assign(&mut self, other: Self) {
     self.0 += other.0;
   }
 }
 
 impl ScaledDistortion {
+  #[inline]
   pub const fn zero() -> Self {
     Self(0)
   }
 }
 
 impl std::ops::AddAssign for ScaledDistortion {
+  #[inline]
   fn add_assign(&mut self, other: Self) {
     self.0 += other.0;
   }

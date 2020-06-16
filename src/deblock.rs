@@ -325,6 +325,7 @@ fn copy_vertical<T: Pixel>(
   }
 }
 
+#[inline]
 fn stride_sse(a: &[i32], b: &[i32]) -> i64 {
   let mut acc: i32 = 0;
   for (a, b) in a.iter().take(b.len()).zip(b) {
