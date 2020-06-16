@@ -119,6 +119,7 @@ pub trait Pixel:
 impl Pixel for u8 {
   type Coeff = i16;
 
+  #[inline]
   fn type_enum() -> PixelType {
     PixelType::U8
   }
@@ -127,6 +128,7 @@ impl Pixel for u8 {
 impl Pixel for u16 {
   type Coeff = i32;
 
+  #[inline]
   fn type_enum() -> PixelType {
     PixelType::U16
   }
