@@ -242,11 +242,11 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
 
   // To bias the distortion correctly, compute it in blocks up to the size
   // importance block size in a non-subsampled plane.
-  let imp_block_w = IMPORTANCE_BLOCK_SIZE.min(w << src1.plane_cfg.xdec);
-  let imp_block_h = IMPORTANCE_BLOCK_SIZE.min(h << src1.plane_cfg.ydec);
+  let imp_block_w = IMPORTANCE_BLOCK_SIZE.min(w);
+  let imp_block_h = IMPORTANCE_BLOCK_SIZE.min(h);
   let imp_bsize = BlockSize::from_width_and_height(imp_block_w, imp_block_h);
-  let block_w = imp_block_w >> src1.plane_cfg.xdec;
-  let block_h = imp_block_h >> src1.plane_cfg.ydec;
+  let block_w = imp_block_w;
+  let block_h = imp_block_h;
 
   let mut sse = Distortion::zero();
   for block_y in 0..h / block_h {
@@ -270,14 +270,20 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
         value += row_sse as u64;
       }
 
-      let bias = compute_bias(
-        // StartingAt gives the correct block offset.
-        Area::StartingAt {
-          x: (block_x * block_w) as isize,
-          y: (block_y * block_h) as isize,
-        },
-        imp_bsize,
-      );
+      let mut bias: u32 = 0;
+      for j in 0..=src1.plane_cfg.ydec {
+        for i in 0..=src2.plane_cfg.xdec {
+          bias += compute_bias(
+            // StartingAt gives the correct block offset.
+            Area::StartingAt {
+              x: (block_x * block_w + if block_w == 8 { i * 4 } else { 0 }) as isize,
+              y: (block_y * block_h + if block_h == 8 { j * 4 } else { 0 }) as isize,
+            },
+            imp_bsize,
+          ).0;
+        }
+      }
+      let bias = DistortionScale(bias >> 2);
       sse += RawDistortion::new(value) * bias;
     }
   }
