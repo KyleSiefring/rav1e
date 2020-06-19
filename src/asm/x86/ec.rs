@@ -11,6 +11,7 @@ use crate::ec::rust;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+#[inline]
 pub fn update_cdf(cdf: &mut [u16], val: u32) {
   if cdf.len() == 5 {
     return unsafe {
@@ -22,6 +23,7 @@ pub fn update_cdf(cdf: &mut [u16], val: u32) {
 }
 
 #[target_feature(enable = "sse2")]
+#[inline]
 unsafe fn update_cdf_4_sse2(cdf: &mut [u16], val: u32) {
   let nsymbs = 4;
   let rate = 5 + (cdf[nsymbs] >> 4) as usize;
@@ -71,15 +73,15 @@ unsafe fn update_cdf_4_sse2(cdf: &mut [u16], val: u32) {
   // Now the result of `cmplt` can be used along with the result from `avg` and the data in `cdf`
   // in order to obtain the right hand side of the subtraction from `cdf`.
 
-  let val_splat = _mm_set1_epi16(val as i16);
+  let val_splat = _mm_shufflelo_epi16(_mm_cvtsi32_si128(val as i32), 0);
   let indices = _mm_set_epi16(0, 0, 0, 0, 3, 2, 1, 0);
   let index_lt_val = _mm_cmplt_epi16(indices, val_splat);
   let k = _mm_avg_epu16(index_lt_val, _mm_setzero_si128());
-  let cdf_simd = _mm_loadl_epi64(cdf.as_mut_ptr() as *const __m128i);
+  let cdf_simd = _mm_loadl_epi64(cdf.as_ptr() as *const __m128i);
   let k_minus_v = _mm_sub_epi16(k, cdf_simd);
   let negated_if_lt_val = _mm_sub_epi16(index_lt_val, k_minus_v);
   let shifted =
-    _mm_sra_epi16(negated_if_lt_val, _mm_set_epi32(0, 0, 0, rate as i32));
+    _mm_sra_epi16(negated_if_lt_val, _mm_cvtsi32_si128(rate as i32));
   let fixed_if_lt_val = _mm_sub_epi16(shifted, index_lt_val);
   let result = _mm_sub_epi16(cdf_simd, fixed_if_lt_val);
 

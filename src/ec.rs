@@ -879,6 +879,7 @@ impl<W: io::Write> BCodeWriter for BitWriter<W, BigEndian> {
 
 pub(crate) mod rust {
   // Function to update the CDF for Writer calls that do so.
+  #[inline]
   pub fn update_cdf(cdf: &mut [u16], val: u32) {
     let nsymbs = cdf.len() - 1;
     let rate = 3 + (nsymbs >> 1).min(2) + (cdf[nsymbs] >> 4) as usize;
