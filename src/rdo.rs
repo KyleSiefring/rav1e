@@ -136,12 +136,46 @@ pub fn estimate_rate(qindex: u8, ts: TxSize, fast_distortion: u64) -> u64 {
   (y0 + (((fast_distortion as i64 - x0) * slope) >> 8)).max(0) as u64
 }
 
+fn var_diff_8x8<T: Pixel>(
+  src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>
+) -> u64 {
+  let mut sum_cols: [i16; 8] = [0; 8];
+  let mut sse_cols: [u32; 8] = [0; 8];
+
+  for j in 0..8 {
+    let row1 = &src1[j][0..8];
+    let row2 = &src2[j][0..8];
+    for (sum, sse, s, d) in izip!(
+      &mut sum_cols,
+      &mut sse_cols,
+      row1,
+      row2
+    ) {
+      // Don't convert directly to u32 to allow better vectorization
+      let diff: i16 = i16::cast_from(*s) - i16::cast_from(*d);
+      *sum += diff;
+
+      // Convert to i32 to avoid overflows when multiplying
+      let c: i32 = diff as i32;
+
+      *sse += (c * c) as u32;
+    }
+  }
+
+  let sum: i64 =
+      sum_cols.iter().map(|&a| i32::cast_from(a)).sum::<i32>() as i64;
+  let sse: i64 = sse_cols.iter().sum::<u32>() as i64;
+
+  (sse - (sum * sum / (8 * 8))).max(0) as u64
+}
+
 // The microbenchmarks perform better with inlining turned off
 #[inline(never)]
 fn cdef_dist_wxh_8x8<T: Pixel>(
   src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, bit_depth: usize,
 ) -> RawDistortion {
-  debug_assert!(src1.plane_cfg.xdec == 0);
+  RawDistortion(var_diff_8x8(src1, src2))
+  /*debug_assert!(src1.plane_cfg.xdec == 0);
   debug_assert!(src1.plane_cfg.ydec == 0);
   debug_assert!(src2.plane_cfg.xdec == 0);
   debug_assert!(src2.plane_cfg.ydec == 0);
@@ -200,7 +234,8 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
   let ssim_boost = (4033_f64 / 16_384_f64)
     * (svar + dvar + (16_384 << (2 * coeff_shift))) as f64
     / f64::sqrt(((16_265_089i64 << (4 * coeff_shift)) + svar * dvar) as f64);
-  RawDistortion::new((sse * ssim_boost + 0.5_f64) as u64)
+
+  RawDistortion::new((sse * ssim_boost + 0.5_f64) as u64)*/
 }
 
 #[allow(unused)]
