@@ -77,9 +77,7 @@ pub fn get_sse<T: Pixel>(
     #[cfg(feature = "check_asm")]
     let ref_dist = call_rust();
 
-    // TODO: Remove the w and h check
-    // If width and height are powers of 2 and greater than or equal 4 .
-    let dist = if (w-1)&(w|3) == 0 && (h-1)&(h|3) == 0 {
+    let dist = if bsize != BlockSize::BLOCK_INVALID {
         match T::type_enum() {
             PixelType::U8 => match SSE_FNS[cpu.as_index()][to_index(bsize)] {
                 Some(func) => unsafe {
