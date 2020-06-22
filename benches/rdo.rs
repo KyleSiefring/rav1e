@@ -3,6 +3,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 
 use rav1e::bench::cpu_features::*;
+use rav1e::bench::dist;
 use rav1e::bench::frame::AsRegion;
 use rav1e::bench::rdo;
 use rav1e::bench::rdo::DistortionScale;
@@ -46,6 +47,28 @@ pub fn sse_wxh_8x8(c: &mut Criterion) {
         8,
         8,
         |_, _| DistortionScale::default(),
+        8,
+        cpu
+      )
+    })
+  });
+}
+
+pub fn sse_4x4(c: &mut Criterion) {
+  let cpu = CpuFeatureLevel::default();
+  let src1 = init_plane_u8(8, 8, 1);
+  let src2 = init_plane_u8(8, 8, 2);
+
+  let src1 = &src1.region(Area::Rect { x: 0, y: 0, width: 4, height: 4 });
+  let src2 = &src2.region(Area::Rect { x: 0, y: 0, width: 4, height: 4 });
+
+  c.bench_function("sse_4x4", move |b| {
+    b.iter(|| {
+      dist::get_sse(
+        src1,
+        src2,
+        4,
+        4,
         8,
         cpu
       )
@@ -101,6 +124,7 @@ criterion_group!(
   rdo,
   cdef_dist_wxh_8x8,
   sse_wxh_8x8,
+  sse_4x4,
   sse_wxh_4x4,
   sse_wxh_2x2,
 );
