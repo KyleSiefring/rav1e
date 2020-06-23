@@ -1481,6 +1481,7 @@ pub fn rdo_cfl_alpha<T: Pixel>(
         IntraParam::None,
       );
       let mut alpha_cost = |alpha: i16| -> u64 {
+        let input_region = input.subregion(Area::BlockStartingAt { bo: tile_bo.0 });
         let mut rec_region =
           rec.subregion_mut(Area::BlockStartingAt { bo: tile_bo.0 });
         PredictionMode::UV_CFL_PRED.predict_intra(
@@ -1495,11 +1496,17 @@ pub fn rdo_cfl_alpha<T: Pixel>(
           fi.cpu_feature_level,
         );
         sse_wxh(
-          &input.subregion(Area::BlockStartingAt { bo: tile_bo.0 }),
+          &input_region,
           &rec_region.as_const(),
           uv_tx_size.width(),
           uv_tx_size.height(),
-          |_, _| DistortionScale::default(), // We're not doing RDO here.
+          |bias_area, bsize| {
+            distortion_scale(
+              fi,
+              input_region.subregion(bias_area).frame_block_offset(),
+              bsize,
+            )
+          }
         )
         .0
       };
