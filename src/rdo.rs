@@ -249,6 +249,7 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   let imp_bsize = BlockSize::from_width_and_height(imp_block_w, imp_block_h);
   let block_w = imp_block_w >> src1.plane_cfg.xdec;
   let block_h = imp_block_h >> src1.plane_cfg.ydec;
+  let bsize: BlockSize = BlockSize::from_width_and_height(block_w, block_h);
 
   let mut sse = Distortion::zero();
   for block_y in 0..h / block_h {
@@ -258,7 +259,7 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
         x: (block_x * block_w) as isize,
         y: (block_y * block_h) as isize,
       };
-      let value = get_sse(&src1.subregion(block), &src2.subregion(block), block_w, block_h, bit_depth, cpu);
+      let value = get_sse(&src1.subregion(block), &src2.subregion(block), bsize, bit_depth, cpu);
 
       let bias = compute_bias(
         block,

@@ -180,19 +180,19 @@ pub(crate) mod rust {
 
   pub fn get_sse<T: Pixel>(
     plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
-    w: usize, h: usize, _bit_depth: usize, _cpu: CpuFeatureLevel,
+    bsize: BlockSize, _bit_depth: usize, _cpu: CpuFeatureLevel,
   ) -> u64 {
-    // Assembly doesn't support larger blocks.
-    assert!(w <= 8 && h <= 8);
+    let blk_w = bsize.width();
+    let blk_h = bsize.height();
 
     let mut sum: u64 = 0 as u64;
 
     for (slice_org, slice_ref) in
-    plane_org.rows_iter().take(h).zip(plane_ref.rows_iter())
+    plane_org.rows_iter().take(blk_h).zip(plane_ref.rows_iter())
     {
       sum += slice_org
           .iter()
-          .take(w)
+          .take(blk_w)
           .zip(slice_ref)
           .map(|(&a, &b)| {
             let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;

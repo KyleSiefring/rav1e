@@ -113,6 +113,32 @@ fn run_dist_bench<T: Pixel>(
   })
 }
 
+type DistFn64<T> = fn(
+  plane_org: &PlaneRegion<'_, T>,
+  plane_ref: &PlaneRegion<'_, T>,
+  bsize: BlockSize,
+  bit_depth: usize,
+  cpu: CpuFeatureLevel,
+) -> u64;
+
+fn run_wxh_dist_bench<T: Pixel>(
+  b: &mut Bencher, &(bs, bit_depth): &(BlockSize, usize), func: DistFn64<T>,
+) {
+  let mut ra = ChaChaRng::from_seed([0; 32]);
+  let cpu = CpuFeatureLevel::default();
+  let w = 640;
+  let h = 480;
+  let input_plane = new_plane::<T>(&mut ra, w, h);
+  let rec_plane = new_plane::<T>(&mut ra, w, h);
+
+  let plane_org = input_plane.as_region();
+  let plane_ref = rec_plane.as_region();
+
+  b.iter(|| {
+    let _ = black_box(func(&plane_org, &plane_ref, bs, bit_depth, cpu));
+  })
+}
+
 fn bench_get_sad(b: &mut Bencher, &&(bs, bit_depth): &&(BlockSize, usize)) {
   if bit_depth <= 8 {
     run_dist_bench::<u8>(b, &(bs, bit_depth), dist::get_sad::<u8>)
@@ -135,4 +161,16 @@ fn bench_get_satd(b: &mut Bencher, &&(bs, bit_depth): &&(BlockSize, usize)) {
 
 pub fn get_satd(c: &mut Criterion) {
   c.bench_function_over_inputs("get_satd", bench_get_satd, DIST_BENCH_SET);
+}
+
+fn bench_get_sse(b: &mut Bencher, &&(bs, bit_depth): &&(BlockSize, usize)) {
+  if bit_depth <= 8 {
+    run_wxh_dist_bench::<u8>(b, &(bs, bit_depth), dist::get_sse::<u8>)
+  } else {
+    run_wxh_dist_bench::<u16>(b, &(bs, bit_depth), dist::get_sse::<u16>)
+  }
+}
+
+pub fn get_sse(c: &mut Criterion) {
+  c.bench_function_over_inputs("get_sse", bench_get_sse, DIST_BENCH_SET);
 }
