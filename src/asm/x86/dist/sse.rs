@@ -6,7 +6,7 @@
 // obtain it at www.aomedia.org/license/software. If the Alliance for Open
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
-
+/*
 use crate::tiling::PlaneRegion;
 use crate::cpu_features::CpuFeatureLevel;
 use crate::dist::*;
@@ -222,6 +222,6 @@ pub mod test {
                 CpuFeatureLevel::default()
             );
         }
-
     }
 }
+ */

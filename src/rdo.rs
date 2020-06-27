@@ -36,7 +36,7 @@ use crate::predict::{
 use crate::rdo_tables::*;
 use crate::tiling::*;
 use crate::transform::{TxSet, TxSize, TxType, RAV1E_TX_TYPES};
-use crate::util::{Aligned, CastFromPrimitive, Pixel};
+use crate::util::{Aligned, CastFromPrimitive, Pixel, init_slice_repeat_mut};
 use crate::write_tx_blocks;
 use crate::write_tx_tree;
 use crate::Tune;
@@ -46,6 +46,7 @@ use crate::partition::PartitionType::*;
 use arrayvec::*;
 use itertools::izip;
 use std::fmt;
+use std::mem::MaybeUninit;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum RDOType {
@@ -233,6 +234,81 @@ pub fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   sum
 }
 
+
+extern {
+  fn rav1e_weighted_sse_4x4_avx2(
+  src: *const u8, src_stride: isize, dst: *const u8, dst_stride: isize, scale: *const u32, scale_stride: isize
+  ) -> u64;
+
+  fn rav1e_weighted_sse_8x8_avx2(
+    src: *const u8, src_stride: isize, dst: *const u8, dst_stride: isize, scale: *const u32, scale_stride: isize
+  ) -> u64;
+
+  fn rav1e_weighted_sse_16x16_avx2(
+    src: *const u8, src_stride: isize, dst: *const u8, dst_stride: isize, scale: *const u32, scale_stride: isize
+  ) -> u64;
+
+  fn rav1e_sse_4x4_avx2(
+    src: *const u8, src_stride: isize, dst: *const u8, dst_stride: isize
+  ) -> u64;
+}
+
+/// Computes weighted sum of squared error.
+///
+/// read weights from ['buf'] and overwrite it with the results.
+///
+/// TODO: add warning for switching from 8x8 to 16x16 imp
+/// #[inline(never)]
+pub fn get_weighted_sse<T: Pixel>(
+  src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, scale: &[u32],
+  bsize: BlockSize, _bit_depth: usize, _cpu: CpuFeatureLevel,
+) -> u64 {
+  let w: usize = bsize.width();
+  let h: usize = bsize.height();
+
+  let mut sse: u64 = 0;
+
+  for block_y in 0..h / MI_SIZE {
+    for block_x in 0..w / MI_SIZE {
+      let mut block_sse: u32 = 0;
+
+      for j in 0..MI_SIZE {
+        let s1 = &src1[block_y * MI_SIZE + j]
+            [block_x * MI_SIZE..(block_x + 1) * MI_SIZE];
+        let s2 = &src2[block_y * MI_SIZE + j]
+            [block_x * MI_SIZE..(block_x + 1) * MI_SIZE];
+
+        block_sse += s1
+            .iter()
+            .zip(s2)
+            .map(|(&a, &b)| {
+              let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;
+              (c * c) as u32
+            })
+            .sum::<u32>();
+      }
+
+      sse += (RawDistortion(block_sse as u64) * DistortionScale(scale[block_y * (w / MI_SIZE) + block_x])).0;
+    }
+  }
+
+  if bsize == BlockSize::BLOCK_16X16 && std::mem::size_of::<T>() == 1 {unsafe {
+    fn size_of_element<T: Sized> (_: &[T]) -> usize {
+      std::mem::size_of::<T>()
+    }
+    assert_eq!(sse,
+      rav1e_weighted_sse_16x16_avx2(
+        src1.data_ptr() as *const _, T::to_asm_stride(src1.plane_cfg.stride),
+        src2.data_ptr() as *const _, T::to_asm_stride(src2.plane_cfg.stride),
+        scale.as_ptr(),
+        (w / MI_SIZE * size_of_element(scale)) as isize)
+    );
+    }
+  }
+
+  sse
+}
+
 // Sum of Squared Error for a wxh block
 #[inline(never)]
 pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
@@ -244,31 +320,64 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
 
   // To bias the distortion correctly, compute it in blocks up to the size
   // importance block size in a non-subsampled plane.
-  let imp_block_w = IMPORTANCE_BLOCK_SIZE.min(w << src1.plane_cfg.xdec);
-  let imp_block_h = IMPORTANCE_BLOCK_SIZE.min(h << src1.plane_cfg.ydec);
+  let (block_w, block_h) = (MI_SIZE, MI_SIZE);
+  let imp_block_w = block_w << src1.plane_cfg.xdec;
+  let imp_block_h = block_h << src1.plane_cfg.ydec;
   let imp_bsize = BlockSize::from_width_and_height(imp_block_w, imp_block_h);
-  let block_w = imp_block_w >> src1.plane_cfg.xdec;
-  let block_h = imp_block_h >> src1.plane_cfg.ydec;
-  let bsize: BlockSize = BlockSize::from_width_and_height(block_w, block_h);
 
-  let mut sse = Distortion::zero();
-  for block_y in 0..h / block_h {
-    for block_x in 0..w / block_w {
-      // StartingAt gives the correct block offset.
+  assert!(w <= 128);
+  assert!(h <= 128);
+  let mut buf_storage: Aligned<[MaybeUninit<u32>; 32 * 32]> = Aligned::new([MaybeUninit::<u32>::uninit(); (128*128)>>(MI_SIZE_LOG2*2)]);
+  let buf = init_slice_repeat_mut(&mut buf_storage.data[..(w*h)>>(MI_SIZE_LOG2*2)], 0);
+
+  for block_y in 0..h / MI_SIZE {
+    for block_x in 0..w / MI_SIZE {
       let block = Area::StartingAt {
-        x: (block_x * block_w) as isize,
-        y: (block_y * block_h) as isize,
+        x: (block_x * MI_SIZE) as isize,
+        y: (block_y * MI_SIZE) as isize,
       };
-      let value = get_sse(&src1.subregion(block), &src2.subregion(block), bsize, bit_depth, cpu);
-
-      let bias = compute_bias(
-        block,
-        imp_bsize,
-      );
-      sse += RawDistortion::new(value) * bias;
+      buf[block_y * (w / MI_SIZE) + block_x] = compute_bias(block, imp_bsize).0;
     }
   }
-  sse
+
+  /*if w.is_power_of_two() && h.is_power_of_two() */ {
+    Distortion(get_weighted_sse(src1, src2, buf, BlockSize::from_width_and_height(w, h), bit_depth, cpu))
+  } /*else {
+    let mut sse = Distortion::zero();
+    for block_y in 0..h / block_h {
+      for block_x in 0..w / block_w {
+        let mut value = 0;
+
+        for j in 0..block_h {
+          let s1 = &src1[block_y * block_h + j]
+              [block_x * block_w..(block_x + 1) * block_w];
+          let s2 = &src2[block_y * block_h + j]
+              [block_x * block_w..(block_x + 1) * block_w];
+
+          let row_sse = s1
+              .iter()
+              .zip(s2)
+              .map(|(&a, &b)| {
+                let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;
+                (c * c) as u32
+              })
+              .sum::<u32>();
+          value += row_sse as u64;
+        }
+
+        let bias = compute_bias(
+          // StartingAt gives the correct block offset.
+          Area::StartingAt {
+            x: (block_x * block_w) as isize,
+            y: (block_y * block_h) as isize,
+          },
+          imp_bsize,
+        );
+        sse += RawDistortion::new(value) * bias;
+      }
+    }
+    sse
+  }*/
 }
 
 // Compute the pixel-domain distortion for an encode
