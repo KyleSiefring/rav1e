@@ -31,7 +31,6 @@ use log::Level::Info;
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use crate::rdo::DistortionScale;
 
 /// The set of options that controls frame re-ordering and reference picture
 ///  selection.
@@ -1027,7 +1026,7 @@ impl<T: Pixel> ContextInner<T> {
 
     if !output_framenos.is_empty() {
       let fi = &mut self.frame_data.get_mut(&output_framenos[0]).unwrap().fi;
-      let block_importances = fi.block_importances.iter();
+      /*let block_importances = fi.block_importances.iter();
       let lookahead_intra_costs = fi.lookahead_intra_costs.iter();
       let distortion_scales = fi.distortion_scales.iter_mut();
       for ((&propagate_cost, &intra_cost), distortion_scale) in
@@ -1037,27 +1036,35 @@ impl<T: Pixel> ContextInner<T> {
           propagate_cost as f64,
           intra_cost as f64,
         );
-      }
+      }*/
 
       for y in (0..fi.h_in_imp_b).step_by(2) {
         for x in (0..fi.w_in_imp_b).step_by(2) {
-          let mut cnt = 1;
-          let mut sum: f64 = f64::from(fi.distortion_scales[y * fi.w_in_imp_b + x]);
+          let idx: usize = y * fi.w_in_imp_b + x;
+          let mut prop_cost: f64 = fi.block_importances[idx] as f64;
+          let mut intra_cost: f64 = fi.lookahead_intra_costs[idx] as f64;
 
           if y + 1 < fi.h_in_imp_b {
-            cnt += 1;
-            sum += f64::from(fi.distortion_scales[(y + 1) * fi.w_in_imp_b + x]);
+            let idx: usize = (y + 1) * fi.w_in_imp_b + x;
+            prop_cost += fi.block_importances[idx] as f64;
+            intra_cost += fi.lookahead_intra_costs[idx] as f64;
+
             if x + 1 < fi.w_in_imp_b {
-              cnt += 1;
-              sum += f64::from(fi.distortion_scales[(y + 1) * fi.w_in_imp_b + x + 1]);
+              let idx: usize = (y + 1) * fi.w_in_imp_b + x + 1;
+              prop_cost += fi.block_importances[idx] as f64;
+              intra_cost += fi.lookahead_intra_costs[idx] as f64;
             }
           }
           if x + 1 < fi.w_in_imp_b {
-            cnt += 1;
-            sum += f64::from(fi.distortion_scales[y * fi.w_in_imp_b + x + 1]);
+            let idx: usize = y * fi.w_in_imp_b + x + 1;
+            prop_cost += fi.block_importances[idx] as f64;
+            intra_cost += fi.lookahead_intra_costs[idx] as f64;
           }
 
-          let scale = DistortionScale::new(sum / cnt as f64);
+          let scale = crate::rdo::distortion_scale_for(
+            prop_cost as f64,
+            intra_cost as f64,
+          );
           fi.distortion_scales[y * fi.w_in_imp_b + x] = scale;
           if y + 1 < fi.h_in_imp_b {
             fi.distortion_scales[(y + 1) * fi.w_in_imp_b + x] = scale;
