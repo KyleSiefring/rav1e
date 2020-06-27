@@ -31,6 +31,7 @@ use log::Level::Info;
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use crate::rdo::DistortionScale;
 
 /// The set of options that controls frame re-ordering and reference picture
 ///  selection.
@@ -1037,6 +1038,39 @@ impl<T: Pixel> ContextInner<T> {
           intra_cost as f64,
         );
       }
+
+      for y in (0..fi.h_in_imp_b).step_by(2) {
+        for x in (0..fi.w_in_imp_b).step_by(2) {
+          let mut cnt = 1;
+          let mut sum: f64 = f64::from(fi.distortion_scales[y * fi.w_in_imp_b + x]);
+
+          if y + 1 < fi.h_in_imp_b {
+            cnt += 1;
+            sum += f64::from(fi.distortion_scales[(y + 1) * fi.w_in_imp_b + x]);
+            if x + 1 < fi.w_in_imp_b {
+              cnt += 1;
+              sum += f64::from(fi.distortion_scales[(y + 1) * fi.w_in_imp_b + x + 1]);
+            }
+          }
+          if x + 1 < fi.w_in_imp_b {
+            cnt += 1;
+            sum += f64::from(fi.distortion_scales[y * fi.w_in_imp_b + x + 1]);
+          }
+
+          let scale = DistortionScale::new(sum / cnt as f64);
+          fi.distortion_scales[y * fi.w_in_imp_b + x] = scale;
+          if y + 1 < fi.h_in_imp_b {
+            fi.distortion_scales[(y + 1) * fi.w_in_imp_b + x] = scale;
+            if x + 1 < fi.w_in_imp_b {
+              fi.distortion_scales[(y + 1) * fi.w_in_imp_b + x + 1] = scale;
+            }
+          }
+          if x + 1 < fi.w_in_imp_b {
+            fi.distortion_scales[y * fi.w_in_imp_b + x + 1] = scale;
+          }
+        }
+      }
+
       #[cfg(feature = "dump_lookahead_data")]
       {
         use byteorder::{NativeEndian, WriteBytesExt};
