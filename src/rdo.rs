@@ -248,6 +248,10 @@ extern {
     src: *const u8, src_stride: isize, dst: *const u8, dst_stride: isize, scale: *const u32, scale_stride: isize
   ) -> u64;
 
+  fn rav1e_weighted_sse_32x32_avx2(
+    src: *const u8, src_stride: isize, dst: *const u8, dst_stride: isize, scale: *const u32, scale_stride: isize
+  ) -> u64;
+
   fn rav1e_sse_4x4_avx2(
     src: *const u8, src_stride: isize, dst: *const u8, dst_stride: isize
   ) -> u64;
@@ -292,12 +296,12 @@ pub fn get_weighted_sse<T: Pixel>(
     }
   }
 
-  if bsize == BlockSize::BLOCK_16X16 && std::mem::size_of::<T>() == 1 {unsafe {
+  if bsize == BlockSize::BLOCK_32X32 && std::mem::size_of::<T>() == 1 {unsafe {
     fn size_of_element<T: Sized> (_: &[T]) -> usize {
       std::mem::size_of::<T>()
     }
     assert_eq!(sse,
-      rav1e_weighted_sse_16x16_avx2(
+      rav1e_weighted_sse_32x32_avx2(
         src1.data_ptr() as *const _, T::to_asm_stride(src1.plane_cfg.stride),
         src2.data_ptr() as *const _, T::to_asm_stride(src2.plane_cfg.stride),
         scale.as_ptr(),
