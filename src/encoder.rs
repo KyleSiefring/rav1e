@@ -1585,11 +1585,21 @@ pub fn encode_block_post_cdef<T: Pixel>(
       fi.sequence.chroma_sampling,
     );
   }
-  cw.bc.blocks.set_block_size(tile_bo, bsize);
-  cw.bc.blocks.set_mode(tile_bo, bsize, luma_mode);
-  cw.bc.blocks.set_tx_size(tile_bo, bsize, tx_size);
-  cw.bc.blocks.set_ref_frames(tile_bo, bsize, ref_frames);
-  cw.bc.blocks.set_motion_vectors(tile_bo, bsize, mvs);
+
+  let n4_w = bsize.width_mi();
+  let n4_h = bsize.height_mi();
+  cw.bc.blocks.for_each(tile_bo, bsize, |block| {
+    // Set block size
+    block.bsize = bsize;
+    block.n4_w = n4_w;
+    block.n4_h = n4_h;
+
+    // Then everything else
+    block.mode = luma_mode;
+    block.txsize = tx_size;
+    block.ref_frames = ref_frames;
+    block.mv = mvs;
+  });
 
   //write_q_deltas();
   if cw.bc.code_deltas

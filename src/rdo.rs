@@ -952,9 +952,11 @@ pub fn rdo_mode_decision<T: Pixel>(
     }
   }
 
-  cw.bc.blocks.set_mode(tile_bo, bsize, best.pred_mode_luma);
-  cw.bc.blocks.set_ref_frames(tile_bo, bsize, best.ref_frames);
-  cw.bc.blocks.set_motion_vectors(tile_bo, bsize, best.mvs);
+  cw.bc.blocks.for_each(tile_bo, bsize, |block| {
+    block.mode = best.pred_mode_luma;
+    block.ref_frames = best.ref_frames;
+    block.mv = best.mvs;
+  });
 
   assert!(best.rd_cost >= 0_f64);
 
