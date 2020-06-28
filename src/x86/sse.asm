@@ -133,7 +133,7 @@ cglobal weighted_sse_8x8, 6, 8, 5, \
     vpbroadcastq        m3, [rounding]
     paddq               m2, m3
     psrlq               m2, 12
-    paddd               m1, m2
+    paddq               m1, m2
 
     pshufd              m0, m1, q3232
     paddq               m0, m1
@@ -142,7 +142,104 @@ cglobal weighted_sse_8x8, 6, 8, 5, \
 
 INIT_YMM avx2
 
+cglobal weighted_sse_16x4, 6, 8, 4, \
+        src, src_stride, dst, dst_stride, scale, scale_stride, \
+        src_stride3, dst_stride3
+    lea       src_stride3q, [src_strideq*3]
+    lea       dst_stride3q, [dst_strideq*3]
+    pmovzxbw            m0, [srcq]
+    pmovzxbw            m1, [dstq]
+    psubw               m0, m1
+    pmaddwd             m0, m0
+    pmovzxbw            m1, [srcq+src_strideq]
+    pmovzxbw            m2, [dstq+dst_strideq]
+    psubw               m1, m2
+    pmaddwd             m1, m1
+    paddd               m0, m1
+    pmovzxbw            m1, [srcq+src_strideq*2]
+    pmovzxbw            m2, [dstq+dst_strideq*2]
+    psubw               m1, m2
+    pmaddwd             m1, m1
+    pmovzxbw            m2, [srcq+src_stride3q]
+    pmovzxbw            m3, [dstq+dst_stride3q]
+    psubw               m2, m3
+    pmaddwd             m2, m2
+    paddd               m1, m2
+    paddd               m0, m1
+
+    pshufd              m1, m0, q3311
+    paddd               m0, m1
+
+    mova               xm1, [scaleq]
+    pmovzxdq            m1, xm1
+    add             scaleq, scale_strideq
+
+    pmuludq             m0, m1
+    vpbroadcastq        m1, [rounding]
+    paddq               m0, m1
+    psrlq               m0, 12
+
+    vextracti128       xm1, m0, 1
+    paddq              xm0, xm1
+    pshufd             xm1, xm0, q3232
+    paddq              xm0, xm1
+    movq               rax, xm0
+    RET
+
 ; TODO: do I need to disable for 32 bit since 9 registers
+cglobal weighted_sse_16x8, 6, 9, 5, \
+        src, src_stride, dst, dst_stride, scale, scale_stride, \
+        src_stride3, dst_stride3, h
+    lea       src_stride3q, [src_strideq*3]
+    lea       dst_stride3q, [dst_strideq*3]
+    pxor                m0, m0
+    mov                 hd, 1
+.loop:
+    pmovzxbw            m1, [srcq]
+    pmovzxbw            m2, [dstq]
+    psubw               m1, m2
+    pmaddwd             m1, m1
+    pmovzxbw            m2, [srcq+src_strideq]
+    pmovzxbw            m3, [dstq+dst_strideq]
+    psubw               m2, m3
+    pmaddwd             m2, m2
+    paddd               m1, m2
+    pmovzxbw            m2, [srcq+src_strideq*2]
+    pmovzxbw            m3, [dstq+dst_strideq*2]
+    psubw               m2, m3
+    pmaddwd             m2, m2
+    pmovzxbw            m3, [srcq+src_stride3q]
+    pmovzxbw            m4, [dstq+dst_stride3q]
+    psubw               m3, m4
+    pmaddwd             m3, m3
+    paddd               m2, m3
+    paddd               m1, m2
+
+    pshufd              m2, m1, q3311
+    paddd               m1, m2
+
+    mova               xm2, [scaleq]
+    pmovzxdq            m2, xm2
+    add             scaleq, scale_strideq
+
+    pmuludq             m1, m2
+    vpbroadcastq        m2, [rounding]
+    paddq               m1, m2
+    psrlq               m1, 12
+    paddq               m0, m1
+
+    lea               srcq, [srcq+src_strideq*4]
+    lea               dstq, [dstq+dst_strideq*4]
+    dec                 hq
+    jge .loop
+
+    vextracti128       xm1, m0, 1
+    paddq              xm0, xm1
+    pshufd             xm1, xm0, q3232
+    paddq              xm0, xm1
+    movq               rax, xm0
+    RET
+
 cglobal weighted_sse_16x16, 6, 9, 5, \
         src, src_stride, dst, dst_stride, scale, scale_stride, \
         src_stride3, dst_stride3, h
@@ -150,6 +247,112 @@ cglobal weighted_sse_16x16, 6, 9, 5, \
     lea       dst_stride3q, [dst_strideq*3]
     pxor                m0, m0
     mov                 hd, 3
+.loop:
+    pmovzxbw            m1, [srcq]
+    pmovzxbw            m2, [dstq]
+    psubw               m1, m2
+    pmaddwd             m1, m1
+    pmovzxbw            m2, [srcq+src_strideq]
+    pmovzxbw            m3, [dstq+dst_strideq]
+    psubw               m2, m3
+    pmaddwd             m2, m2
+    paddd               m1, m2
+    pmovzxbw            m2, [srcq+src_strideq*2]
+    pmovzxbw            m3, [dstq+dst_strideq*2]
+    psubw               m2, m3
+    pmaddwd             m2, m2
+    pmovzxbw            m3, [srcq+src_stride3q]
+    pmovzxbw            m4, [dstq+dst_stride3q]
+    psubw               m3, m4
+    pmaddwd             m3, m3
+    paddd               m2, m3
+    paddd               m1, m2
+
+    pshufd              m2, m1, q3311
+    paddd               m1, m2
+
+    mova               xm2, [scaleq]
+    pmovzxdq            m2, xm2
+    add             scaleq, scale_strideq
+
+    pmuludq             m1, m2
+    vpbroadcastq        m2, [rounding]
+    paddq               m1, m2
+    psrlq               m1, 12
+    paddq               m0, m1
+
+    lea               srcq, [srcq+src_strideq*4]
+    lea               dstq, [dstq+dst_strideq*4]
+    dec                 hq
+    jge .loop
+
+    vextracti128       xm1, m0, 1
+    paddq              xm0, xm1
+    pshufd             xm1, xm0, q3232
+    paddq              xm0, xm1
+    movq               rax, xm0
+    RET
+
+cglobal weighted_sse_16x32, 6, 9, 5, \
+        src, src_stride, dst, dst_stride, scale, scale_stride, \
+        src_stride3, dst_stride3, h
+    lea       src_stride3q, [src_strideq*3]
+    lea       dst_stride3q, [dst_strideq*3]
+    pxor                m0, m0
+    mov                 hd, 7
+.loop:
+    pmovzxbw            m1, [srcq]
+    pmovzxbw            m2, [dstq]
+    psubw               m1, m2
+    pmaddwd             m1, m1
+    pmovzxbw            m2, [srcq+src_strideq]
+    pmovzxbw            m3, [dstq+dst_strideq]
+    psubw               m2, m3
+    pmaddwd             m2, m2
+    paddd               m1, m2
+    pmovzxbw            m2, [srcq+src_strideq*2]
+    pmovzxbw            m3, [dstq+dst_strideq*2]
+    psubw               m2, m3
+    pmaddwd             m2, m2
+    pmovzxbw            m3, [srcq+src_stride3q]
+    pmovzxbw            m4, [dstq+dst_stride3q]
+    psubw               m3, m4
+    pmaddwd             m3, m3
+    paddd               m2, m3
+    paddd               m1, m2
+
+    pshufd              m2, m1, q3311
+    paddd               m1, m2
+
+    mova               xm2, [scaleq]
+    pmovzxdq            m2, xm2
+    add             scaleq, scale_strideq
+
+    pmuludq             m1, m2
+    vpbroadcastq        m2, [rounding]
+    paddq               m1, m2
+    psrlq               m1, 12
+    paddq               m0, m1
+
+    lea               srcq, [srcq+src_strideq*4]
+    lea               dstq, [dstq+dst_strideq*4]
+    dec                 hq
+    jge .loop
+
+    vextracti128       xm1, m0, 1
+    paddq              xm0, xm1
+    pshufd             xm1, xm0, q3232
+    paddq              xm0, xm1
+    movq               rax, xm0
+    RET
+
+cglobal weighted_sse_16x64, 6, 9, 5, \
+        src, src_stride, dst, dst_stride, scale, scale_stride, \
+        src_stride3, dst_stride3, h
+    lea       src_stride3q, [src_strideq*3]
+    lea       dst_stride3q, [dst_strideq*3]
+    pxor                m0, m0
+    mov                 hd, 15
 .loop:
     pmovzxbw            m1, [srcq]
     pmovzxbw            m2, [dstq]
@@ -283,6 +486,44 @@ cglobal weighted_sse_32x32, 6, 9, 9, \
     RET
 
 INIT_XMM avx2
+
+cglobal weighted_sse_4x4_hbd, 6, 8, 4, \
+        src, src_stride, dst, dst_stride, scale, scale_stride, \
+        src_stride3, dst_stride3
+    lea       src_stride3q, [src_strideq*3]
+    lea       dst_stride3q, [dst_strideq*3]
+    movq                m0, [srcq]
+    movq                m1, [dstq]
+    psubw               m0, m1
+    pmaddwd             m0, m0
+    movq                m1, [srcq+src_strideq]
+    movq                m2, [dstq+dst_strideq]
+    psubw               m1, m2
+    pmaddwd             m1, m1
+    paddd               m0, m1
+    movq                m1, [srcq+src_strideq*2]
+    movq                m2, [dstq+dst_strideq*2]
+    psubw               m1, m2
+    pmaddwd             m1, m1
+    movq                m2, [srcq+src_stride3q]
+    movq                m3, [dstq+dst_stride3q]
+    psubw               m2, m3
+    pmaddwd             m2, m2
+    paddd               m1, m2
+    paddd               m0, m1
+
+    pshuflw             m1, m0, q3232
+    paddd               m0, m1
+    movd               eax, m0
+
+    mov             scaled, [scaleq]
+    mul             scaleq
+    add                rax, 0x800
+    shr                rax, 12
+    RET
+
+
+
 
 cglobal sse_4x4_internal, 0, 0, 0, src, src_stride, dst, dst_stride, \
                                    src_stride3, dst_stride3
