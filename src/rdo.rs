@@ -199,7 +199,7 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
   let ssim_boost = (4033_f64 / 16_384_f64)
     * (svar + dvar + (16_384 << (2 * coeff_shift))) as f64
     / f64::sqrt(((16_265_089i64 << (4 * coeff_shift)) + svar * dvar) as f64);
-  RawDistortion::new((sse * ssim_boost + 0.5_f64) as u64)
+  RawDistortion::new((16.0 * sse * ssim_boost + 0.5_f64) as u64)
 }
 
 #[allow(unused)]
@@ -229,7 +229,7 @@ pub fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
       sum += value * compute_bias(area, BlockSize::BLOCK_8X8);
     }
   }
-  sum
+  Distortion((sum.0 + (1 << 3)) >> 4)
 }
 
 // Sum of Squared Error for a wxh block
@@ -278,10 +278,10 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
         },
         imp_bsize,
       );
-      sse += RawDistortion::new(value) * bias;
+      sse += RawDistortion::new(value << 4) * bias;
     }
   }
-  sse
+  Distortion((sse.0 + (1 << 3)) >> 4)
 }
 
 // Compute the pixel-domain distortion for an encode
@@ -1926,12 +1926,12 @@ fn rdo_loop_plane_error<T: Pixel>(
           cdef_dist_wxh_8x8(&src_region, &test_region, fi.sequence.bit_depth)
             * bias
         } else {
-          sse_wxh(&src_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| bias)
+          RawDistortion(sse_wxh(&src_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| DistortionScale::default()).0 * 16) * bias
         };
       }
     }
   }
-  err * fi.dist_scale[pli]
+  err * (fi.dist_scale[pli] / 16.0)
 }
 
 // Passed in a superblock offset representing the upper left corner of
