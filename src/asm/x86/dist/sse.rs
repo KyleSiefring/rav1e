@@ -54,14 +54,27 @@ macro_rules! declare_asm_hbd_sse_fn {
 declare_asm_sse_fn![
   // AVX2
   rav1e_weighted_sse_4x4_avx2,
+  rav1e_weighted_sse_4x8_avx2,
+  rav1e_weighted_sse_4x16_avx2,
+  rav1e_weighted_sse_8x4_avx2,
   rav1e_weighted_sse_8x8_avx2,
+  rav1e_weighted_sse_8x16_avx2,
+  rav1e_weighted_sse_8x32_avx2,
   rav1e_weighted_sse_16x4_avx2,
   rav1e_weighted_sse_16x8_avx2,
   rav1e_weighted_sse_16x16_avx2,
   rav1e_weighted_sse_16x32_avx2,
   rav1e_weighted_sse_16x64_avx2,
-  rav1e_weighted_sse_32x32_avx2
-  //rav1e_weighted_sse_64x64_avx2
+  rav1e_weighted_sse_32x8_avx2,
+  rav1e_weighted_sse_32x16_avx2,
+  rav1e_weighted_sse_32x32_avx2,
+  rav1e_weighted_sse_32x64_avx2,
+  rav1e_weighted_sse_64x16_avx2,
+  rav1e_weighted_sse_64x32_avx2,
+  rav1e_weighted_sse_64x64_avx2,
+  rav1e_weighted_sse_64x128_avx2,
+  rav1e_weighted_sse_128x64_avx2,
+  rav1e_weighted_sse_128x128_avx2
 
   //rav1e_sse_4x8_avx2,
   //rav1e_sse_8x16_avx2,
@@ -133,13 +146,27 @@ static SSE_FNS_AVX2: [Option<WeightedSseFn>; DIST_FNS_LENGTH] = {
 
     use BlockSize::*;
     out[BLOCK_4X4 as usize] = Some(rav1e_weighted_sse_4x4_avx2);
+    out[BLOCK_4X8 as usize] = Some(rav1e_weighted_sse_4x8_avx2);
+    out[BLOCK_4X16 as usize] = Some(rav1e_weighted_sse_4x16_avx2);
+    out[BLOCK_8X4 as usize] = Some(rav1e_weighted_sse_8x4_avx2);
     out[BLOCK_8X8 as usize] = Some(rav1e_weighted_sse_8x8_avx2);
+    out[BLOCK_8X16 as usize] = Some(rav1e_weighted_sse_8x16_avx2);
+    out[BLOCK_8X32 as usize] = Some(rav1e_weighted_sse_8x32_avx2);
     out[BLOCK_16X4 as usize] = Some(rav1e_weighted_sse_16x4_avx2);
     out[BLOCK_16X8 as usize] = Some(rav1e_weighted_sse_16x8_avx2);
     out[BLOCK_16X16 as usize] = Some(rav1e_weighted_sse_16x16_avx2);
     out[BLOCK_16X32 as usize] = Some(rav1e_weighted_sse_16x32_avx2);
     out[BLOCK_16X64 as usize] = Some(rav1e_weighted_sse_16x64_avx2);
+    out[BLOCK_32X8 as usize] = Some(rav1e_weighted_sse_32x8_avx2);
+    out[BLOCK_32X16 as usize] = Some(rav1e_weighted_sse_32x16_avx2);
     out[BLOCK_32X32 as usize] = Some(rav1e_weighted_sse_32x32_avx2);
+    out[BLOCK_32X64 as usize] = Some(rav1e_weighted_sse_32x64_avx2);
+    out[BLOCK_64X16 as usize] = Some(rav1e_weighted_sse_64x16_avx2);
+    out[BLOCK_64X32 as usize] = Some(rav1e_weighted_sse_64x32_avx2);
+    out[BLOCK_64X64 as usize] = Some(rav1e_weighted_sse_64x64_avx2);
+    out[BLOCK_64X128 as usize] = Some(rav1e_weighted_sse_64x128_avx2);
+    out[BLOCK_128X64 as usize] = Some(rav1e_weighted_sse_128x64_avx2);
+    out[BLOCK_128X128 as usize] = Some(rav1e_weighted_sse_128x128_avx2);
 
     //out[BLOCK_4X8 as usize] = Some(rav1e_sse_4x8_avx2);
     //out[BLOCK_8X16 as usize] = Some(rav1e_sse_8x16_avx2);
