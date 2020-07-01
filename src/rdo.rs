@@ -270,11 +270,11 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   // TODO: This is slow and needs to be replaced
   for block_y in 0..h / CHUNK_SIZE {
     for block_x in 0..w / CHUNK_SIZE {
-      let mut sum: f64 = 8.0 * f64::from(compute_bias(Area::StartingAt {
+      let mut sum: f64 = 16.0 * f64::from(compute_bias(Area::StartingAt {
         x: (block_x * CHUNK_SIZE) as isize,
         y: (block_y * CHUNK_SIZE) as isize,
       }, imp_bsize));
-      let mut div: f64 = 8.0;
+      let mut div: f64 = 16.0;
       if block_y != 0 {
         sum += f64::from(compute_bias(Area::StartingAt {
           x: (block_x * CHUNK_SIZE) as isize,
