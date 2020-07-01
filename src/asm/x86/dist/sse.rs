@@ -168,12 +168,6 @@ static SSE_FNS_AVX2: [Option<WeightedSseFn>; DIST_FNS_LENGTH] = {
     out[BLOCK_128X64 as usize] = Some(rav1e_weighted_sse_128x64_avx2);
     out[BLOCK_128X128 as usize] = Some(rav1e_weighted_sse_128x128_avx2);
 
-    //out[BLOCK_4X8 as usize] = Some(rav1e_sse_4x8_avx2);
-    //out[BLOCK_8X16 as usize] = Some(rav1e_sse_8x16_avx2);
-
-    //out[BLOCK_8X32 as usize] = Some(rav1e_sse_8x32_avx2);
-    //out[BLOCK_4X16 as usize] = Some(rav1e_sse_4x16_avx2);
-
     out
 };
 
