@@ -47,7 +47,7 @@ pub fn sse_wxh_8x8(c: &mut Criterion) {
         8,
         |_, _| DistortionScale::default(),
         8,
-        cpu
+        cpu,
       )
     })
   });
@@ -67,7 +67,7 @@ pub fn sse_wxh_4x4(c: &mut Criterion) {
         4,
         |_, _| DistortionScale::default(),
         8,
-        cpu
+        cpu,
       )
     })
   });
@@ -91,7 +91,7 @@ pub fn sse_wxh_2x2(c: &mut Criterion) {
         4,
         |_, _| DistortionScale::default(),
         8,
-        cpu
+        cpu,
       )
     })
   });

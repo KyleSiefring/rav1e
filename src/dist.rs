@@ -25,9 +25,9 @@ pub(crate) mod rust {
   use crate::tiling::*;
   use crate::util::*;
 
-  use simd_helpers::cold_for_target_arch;
-  use crate::rdo::{RawDistortion, DistortionScale};
   use crate::encoder::IMPORTANCE_BLOCK_SIZE;
+  use crate::rdo::{DistortionScale, RawDistortion};
+  use simd_helpers::cold_for_target_arch;
 
   #[cold_for_target_arch("x86_64")]
   pub fn get_sad<T: Pixel>(
@@ -206,21 +206,23 @@ pub(crate) mod rust {
 
         for j in 0..chunk_size {
           let s1 = &src1[block_y * chunk_size + j]
-              [block_x * chunk_size..(block_x + 1) * chunk_size];
+            [block_x * chunk_size..(block_x + 1) * chunk_size];
           let s2 = &src2[block_y * chunk_size + j]
-              [block_x * chunk_size..(block_x + 1) * chunk_size];
+            [block_x * chunk_size..(block_x + 1) * chunk_size];
 
           block_sse += s1
-              .iter()
-              .zip(s2)
-              .map(|(&a, &b)| {
-                let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;
-                (c * c) as u32
-              })
-              .sum::<u32>();
+            .iter()
+            .zip(s2)
+            .map(|(&a, &b)| {
+              let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;
+              (c * c) as u32
+            })
+            .sum::<u32>();
         }
 
-        sse += (RawDistortion::new(block_sse as u64) * DistortionScale(scale[block_y * scale_stride + block_x])).0;
+        sse += (RawDistortion::new(block_sse as u64)
+          * DistortionScale(scale[block_y * scale_stride + block_x]))
+        .0;
       }
     }
 

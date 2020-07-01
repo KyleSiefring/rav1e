@@ -12,8 +12,8 @@
 
 use crate::api::*;
 use crate::cdef::*;
-use crate::cpu_features::CpuFeatureLevel;
 use crate::context::*;
+use crate::cpu_features::CpuFeatureLevel;
 use crate::deblock::*;
 use crate::dist::*;
 use crate::ec::{Writer, WriterCounter, OD_BITRES};
@@ -36,7 +36,7 @@ use crate::predict::{
 use crate::rdo_tables::*;
 use crate::tiling::*;
 use crate::transform::{TxSet, TxSize, TxType, RAV1E_TX_TYPES};
-use crate::util::{Aligned, CastFromPrimitive, Pixel, init_slice_repeat_mut};
+use crate::util::{init_slice_repeat_mut, Aligned, CastFromPrimitive, Pixel};
 use crate::write_tx_blocks;
 use crate::write_tx_tree;
 use crate::Tune;
@@ -259,8 +259,13 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   assert!(w <= 128 && w.is_power_of_two());
   assert!(h <= 128 && h.is_power_of_two());
 
-  let mut buf_storage: Aligned<[MaybeUninit<u32>; 32 * 32]> = Aligned::new([MaybeUninit::<u32>::uninit(); 128/ CHUNK_SIZE *128/ CHUNK_SIZE]);
-  let buf = init_slice_repeat_mut(&mut buf_storage.data[..w/ CHUNK_SIZE *h/ CHUNK_SIZE], 0);
+  let mut buf_storage: Aligned<[MaybeUninit<u32>; 32 * 32]> = Aligned::new(
+    [MaybeUninit::<u32>::uninit(); 128 / CHUNK_SIZE * 128 / CHUNK_SIZE],
+  );
+  let buf = init_slice_repeat_mut(
+    &mut buf_storage.data[..w / CHUNK_SIZE * h / CHUNK_SIZE],
+    0,
+  );
 
   // TODO: This is slow and needs to be replaced
   for block_y in 0..h / CHUNK_SIZE {
@@ -269,48 +274,58 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
         x: (block_x * CHUNK_SIZE) as isize,
         y: (block_y * CHUNK_SIZE) as isize,
       };
-      buf[block_y * (w / CHUNK_SIZE) + block_x] = compute_bias(block, imp_bsize).0;
+      buf[block_y * (w / CHUNK_SIZE) + block_x] =
+        compute_bias(block, imp_bsize).0;
     }
   }
 
-  /*if w.is_power_of_two() && h.is_power_of_two() */ {
-    Distortion(get_weighted_sse(src1, src2, buf, w / CHUNK_SIZE, BlockSize::from_width_and_height(w, h), bit_depth, cpu))
+  /*if w.is_power_of_two() && h.is_power_of_two() */
+  {
+    Distortion(get_weighted_sse(
+      src1,
+      src2,
+      buf,
+      w / CHUNK_SIZE,
+      BlockSize::from_width_and_height(w, h),
+      bit_depth,
+      cpu,
+    ))
   } /*else {
-    let mut sse = Distortion::zero();
-    for block_y in 0..h / block_h {
-      for block_x in 0..w / block_w {
-        let mut value = 0;
+      let mut sse = Distortion::zero();
+      for block_y in 0..h / block_h {
+        for block_x in 0..w / block_w {
+          let mut value = 0;
 
-        for j in 0..block_h {
-          let s1 = &src1[block_y * block_h + j]
-              [block_x * block_w..(block_x + 1) * block_w];
-          let s2 = &src2[block_y * block_h + j]
-              [block_x * block_w..(block_x + 1) * block_w];
+          for j in 0..block_h {
+            let s1 = &src1[block_y * block_h + j]
+                [block_x * block_w..(block_x + 1) * block_w];
+            let s2 = &src2[block_y * block_h + j]
+                [block_x * block_w..(block_x + 1) * block_w];
 
-          let row_sse = s1
-              .iter()
-              .zip(s2)
-              .map(|(&a, &b)| {
-                let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;
-                (c * c) as u32
-              })
-              .sum::<u32>();
-          value += row_sse as u64;
+            let row_sse = s1
+                .iter()
+                .zip(s2)
+                .map(|(&a, &b)| {
+                  let c = (i16::cast_from(a) - i16::cast_from(b)) as i32;
+                  (c * c) as u32
+                })
+                .sum::<u32>();
+            value += row_sse as u64;
+          }
+
+          let bias = compute_bias(
+            // StartingAt gives the correct block offset.
+            Area::StartingAt {
+              x: (block_x * block_w) as isize,
+              y: (block_y * block_h) as isize,
+            },
+            imp_bsize,
+          );
+          sse += RawDistortion::new(value) * bias;
         }
-
-        let bias = compute_bias(
-          // StartingAt gives the correct block offset.
-          Area::StartingAt {
-            x: (block_x * block_w) as isize,
-            y: (block_y * block_h) as isize,
-          },
-          imp_bsize,
-        );
-        sse += RawDistortion::new(value) * bias;
       }
-    }
-    sse
-  }*/
+      sse
+    }*/
 }
 
 // Compute the pixel-domain distortion for an encode
@@ -1965,9 +1980,14 @@ fn rdo_loop_plane_error<T: Pixel>(
           cdef_dist_wxh_8x8(&src_region, &test_region, fi.sequence.bit_depth)
             * bias
         } else {
-          sse_wxh(&src_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| bias,
-                  fi.sequence.bit_depth,
-                  fi.cpu_feature_level,
+          sse_wxh(
+            &src_region,
+            &test_region,
+            8 >> xdec,
+            8 >> ydec,
+            |_, _| bias,
+            fi.sequence.bit_depth,
+            fi.cpu_feature_level,
           )
         };
       }

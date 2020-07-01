@@ -17,10 +17,10 @@ use rav1e::bench::dist;
 use rav1e::bench::frame::*;
 use rav1e::bench::partition::BlockSize::*;
 use rav1e::bench::partition::*;
-use rav1e::bench::tiling::*;
-use rav1e::Pixel;
-use rav1e::bench::util::Aligned;
 use rav1e::bench::rdo::DistortionScale;
+use rav1e::bench::tiling::*;
+use rav1e::bench::util::Aligned;
+use rav1e::Pixel;
 
 const DIST_BENCH_SET: &[(BlockSize, usize)] = &[
   (BLOCK_4X4, 8),
@@ -142,7 +142,8 @@ pub fn get_satd(c: &mut Criterion) {
 /// Fill data for scaling of one
 fn fill_scaling(ra: &mut ChaChaRng, scales: &mut [u32]) {
   for a in scales.iter_mut() {
-    *a = ra.gen_range(DistortionScale::new(0.5).0, DistortionScale::new(1.5).0);
+    *a =
+      ra.gen_range(DistortionScale::new(0.5).0, DistortionScale::new(1.5).0);
   }
 }
 
@@ -157,7 +158,8 @@ type WeightedSseFn<T> = fn(
 ) -> u64;
 
 fn run_weighted_sse_bench<T: Pixel>(
-  b: &mut Bencher, &(bs, bit_depth): &(BlockSize, usize), func: WeightedSseFn<T>,
+  b: &mut Bencher, &(bs, bit_depth): &(BlockSize, usize),
+  func: WeightedSseFn<T>,
 ) {
   let mut ra = ChaChaRng::from_seed([0; 32]);
   let cpu = CpuFeatureLevel::default();
@@ -167,7 +169,7 @@ fn run_weighted_sse_bench<T: Pixel>(
   let rec_plane = new_plane::<T>(&mut ra, w, h);
 
   const SCALE_STRIDE: usize = 256;
-  let mut scaling_storage = Aligned::new([0u32; 256* SCALE_STRIDE]);
+  let mut scaling_storage = Aligned::new([0u32; 256 * SCALE_STRIDE]);
   let scaling = &mut scaling_storage.data;
   fill_scaling(&mut ra, scaling);
 
@@ -175,18 +177,40 @@ fn run_weighted_sse_bench<T: Pixel>(
   let plane_ref = rec_plane.as_region();
 
   b.iter(|| {
-    let _ = black_box(func(&plane_org, &plane_ref, scaling, SCALE_STRIDE, bs, bit_depth, cpu));
+    let _ = black_box(func(
+      &plane_org,
+      &plane_ref,
+      scaling,
+      SCALE_STRIDE,
+      bs,
+      bit_depth,
+      cpu,
+    ));
   })
 }
 
-fn bench_get_weighted_sse(b: &mut Bencher, &&(bs, bit_depth): &&(BlockSize, usize)) {
+fn bench_get_weighted_sse(
+  b: &mut Bencher, &&(bs, bit_depth): &&(BlockSize, usize),
+) {
   if bit_depth <= 8 {
-    run_weighted_sse_bench::<u8>(b, &(bs, bit_depth), dist::get_weighted_sse::<u8>)
+    run_weighted_sse_bench::<u8>(
+      b,
+      &(bs, bit_depth),
+      dist::get_weighted_sse::<u8>,
+    )
   } else {
-    run_weighted_sse_bench::<u16>(b, &(bs, bit_depth), dist::get_weighted_sse::<u16>)
+    run_weighted_sse_bench::<u16>(
+      b,
+      &(bs, bit_depth),
+      dist::get_weighted_sse::<u16>,
+    )
   }
 }
 
 pub fn get_weighted_sse(c: &mut Criterion) {
-  c.bench_function_over_inputs("get_weighted_sse", bench_get_weighted_sse, DIST_BENCH_SET);
+  c.bench_function_over_inputs(
+    "get_weighted_sse",
+    bench_get_weighted_sse,
+    DIST_BENCH_SET,
+  );
 }
