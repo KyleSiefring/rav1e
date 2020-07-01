@@ -270,12 +270,41 @@ pub fn sse_wxh<T: Pixel, F: Fn(Area, BlockSize) -> DistortionScale>(
   // TODO: This is slow and needs to be replaced
   for block_y in 0..h / CHUNK_SIZE {
     for block_x in 0..w / CHUNK_SIZE {
-      let block = Area::StartingAt {
+      let mut sum: f64 = 8.0 * f64::from(compute_bias(Area::StartingAt {
         x: (block_x * CHUNK_SIZE) as isize,
         y: (block_y * CHUNK_SIZE) as isize,
-      };
-      buf[block_y * (w / CHUNK_SIZE) + block_x] =
-        compute_bias(block, imp_bsize).0;
+      }, imp_bsize));
+      let mut div: f64 = 8.0;
+      if block_y != 0 {
+        sum += f64::from(compute_bias(Area::StartingAt {
+          x: (block_x * CHUNK_SIZE) as isize,
+          y: ((block_y - 1) * CHUNK_SIZE) as isize,
+        }, imp_bsize));
+        div += 1.0;
+      }
+      if block_x != 0 {
+        sum += f64::from(compute_bias(Area::StartingAt {
+          x: ((block_x - 1) * CHUNK_SIZE) as isize,
+          y: (block_y * CHUNK_SIZE) as isize,
+        }, imp_bsize));
+        div += 1.0;
+      }
+      if block_y + 1 < h / CHUNK_SIZE {
+        sum += f64::from(compute_bias(Area::StartingAt {
+          x: (block_x * CHUNK_SIZE) as isize,
+          y: ((block_y + 1) * CHUNK_SIZE) as isize,
+        }, imp_bsize));
+        div += 1.0;
+      }
+      if block_x + 1 < w / CHUNK_SIZE {
+        sum += f64::from(compute_bias(Area::StartingAt {
+          x: ((block_x + 1) * CHUNK_SIZE) as isize,
+          y: (block_y * CHUNK_SIZE) as isize,
+        }, imp_bsize));
+        div += 1.0;
+      }
+
+      buf[block_y * (w / CHUNK_SIZE) + block_x] = DistortionScale::new(sum / div).0;
     }
   }
 
