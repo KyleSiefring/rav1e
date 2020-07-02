@@ -278,14 +278,47 @@ impl PredictionMode {
     (row_frac, col_frac, rec_plane.slice(qo).clamp().subslice(3, 3))
   }
 
-  #[inline(never)]
-  pub fn predict_inter_compound<T: Pixel>(
-    self, fi: &FrameInvariants<T>, p: usize, frame_po: PlaneOffset,
-    dst: &mut PlaneRegionMut<'_, T>, width: usize,
-    height: usize, mode: FilterMode, ref_frames: [RefType; 2], mvs: [MotionVector; 2],
+  pub fn predict_inter_single<T: Pixel>(
+    self, fi: &FrameInvariants<T>, tile_rect: TileRect, p: usize,
+    po: PlaneOffset, dst: &mut PlaneRegionMut<'_, T>, width: usize,
+    height: usize, ref_frame: RefType, mv: MotionVector,
   ) {
-    let mut tmp: [Aligned<[i16; 128 * 128]>; 2] =
-        [Aligned::uninitialized(), Aligned::uninitialized()];
+    assert!(!self.is_intra());
+    let frame_po = tile_rect.to_frame_plane_offset(po);
+
+    let mode = fi.default_filter;
+
+    if let Some(ref rec) =
+    fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize]
+    {
+      let (row_frac, col_frac, src) =
+          PredictionMode::get_mv_params(&rec.frame.planes[p], frame_po, mv);
+      put_8tap(
+        dst,
+        src,
+        width,
+        height,
+        col_frac,
+        row_frac,
+        mode,
+        mode,
+        fi.sequence.bit_depth,
+        fi.cpu_feature_level,
+      );
+    }
+  }
+
+  pub fn predict_inter_compound<T: Pixel>(
+    self, fi: &FrameInvariants<T>, tile_rect: TileRect, p: usize, po: PlaneOffset,
+    dst: &mut PlaneRegionMut<'_, T>, width: usize,
+    height: usize, ref_frames: [RefType; 2], mvs: [MotionVector; 2],
+    buffer: &mut InterCompoundBuffers
+  ) {
+    assert!(!self.is_intra());
+    let frame_po = tile_rect.to_frame_plane_offset(po);
+
+    let mode = fi.default_filter;
+
     for i in 0..2 {
       if let Some(ref rec) = fi.rec_buffer.frames
           [fi.ref_frames[ref_frames[i].to_index()] as usize]
@@ -293,7 +326,7 @@ impl PredictionMode {
         let (row_frac, col_frac, src) =
             PredictionMode::get_mv_params(&rec.frame.planes[p], frame_po, mvs[i]);
         prep_8tap(
-          &mut tmp[i].data,
+          buffer.get_buffer_mut(i),
           src,
           width,
           height,
@@ -308,8 +341,8 @@ impl PredictionMode {
     }
     mc_avg(
       dst,
-      &tmp[0].data,
-      &tmp[1].data,
+      &buffer.get_buffer(0),
+      &buffer.get_buffer(1),
       width,
       height,
       fi.sequence.bit_depth,
@@ -321,35 +354,44 @@ impl PredictionMode {
     self, fi: &FrameInvariants<T>, tile_rect: TileRect, p: usize,
     po: PlaneOffset, dst: &mut PlaneRegionMut<'_, T>, width: usize,
     height: usize, ref_frames: [RefType; 2], mvs: [MotionVector; 2],
+    compound_buffer: &mut InterCompoundBuffers
   ) {
     assert!(!self.is_intra());
-    let frame_po = tile_rect.to_frame_plane_offset(po);
-
-    let mode = fi.default_filter;
     let is_compound = ref_frames[1] != RefType::INTRA_FRAME
       && ref_frames[1] != RefType::NONE_FRAME;
 
     if !is_compound {
-      if let Some(ref rec) =
-        fi.rec_buffer.frames[fi.ref_frames[ref_frames[0].to_index()] as usize]
-      {
-        let (row_frac, col_frac, src) =
-          PredictionMode::get_mv_params(&rec.frame.planes[p], frame_po, mvs[0]);
-        put_8tap(
-          dst,
-          src,
-          width,
-          height,
-          col_frac,
-          row_frac,
-          mode,
-          mode,
-          fi.sequence.bit_depth,
-          fi.cpu_feature_level,
-        );
-      }
+      self.predict_inter_single(fi, tile_rect, p, po, dst, width, height, ref_frames[0], mvs[0])
     } else {
-      self.predict_inter_compound(fi, p, frame_po, dst, width, height, mode, ref_frames, mvs);
+      self.predict_inter_compound(fi, tile_rect, p, po, dst, width, height, ref_frames, mvs, compound_buffer);
+    }
+  }
+}
+
+pub struct InterCompoundBuffers {
+  data: AlignedBoxedSlice<i16>,
+}
+
+impl InterCompoundBuffers {
+  pub fn new() -> Self {
+    Self { data: AlignedBoxedSlice::new(0, 2 * 128 * 128) }
+  }
+
+  #[inline]
+  fn get_buffer_mut(&mut self, i: usize) -> &mut [i16] {
+    match i {
+      0 => &mut self.data[0..128*128],
+      1 => &mut self.data[128*128..][..128*128],
+      _ => panic!()
+    }
+  }
+
+  #[inline]
+  fn get_buffer(&self, i: usize) -> &[i16] {
+    match i {
+      0 => &self.data[0..128*128],
+      1 => &self.data[128*128..][..128*128],
+      _ => panic!()
     }
   }
 }

@@ -15,7 +15,7 @@ use crate::frame::*;
 use crate::lrf::{IntegralImageBuffer, SOLVE_IMAGE_SIZE};
 use crate::mc::MotionVector;
 use crate::partition::{RefType, REF_FRAMES};
-use crate::predict::PredictionMode;
+use crate::predict::{PredictionMode, InterCompoundBuffers};
 use crate::quantize::*;
 use crate::rdo::*;
 use crate::stats::EncoderStats;
@@ -43,7 +43,7 @@ use std::sync::Arc;
 ///
 /// Some others (like "rec") are written tile-wise, but must be accessible
 /// frame-wise once the tile views vanish (e.g. for deblocking).
-#[derive(Debug)]
+//#[derive(Debug)]
 pub struct TileStateMut<'a, T: Pixel> {
   pub sbo: PlaneSuperBlockOffset,
   pub sb_size_log2: usize,
@@ -66,6 +66,7 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub mvs: Vec<TileMotionVectorsMut<'a>>,
   pub coded_block_info: MiTileState,
   pub integral_buffer: IntegralImageBuffer,
+  pub inter_compound_buffers: InterCompoundBuffers,
   pub enc_stats: EncoderStats,
 }
 
@@ -196,6 +197,7 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
         height >> MI_SIZE_LOG2,
       ),
       integral_buffer: IntegralImageBuffer::zeroed(SOLVE_IMAGE_SIZE),
+      inter_compound_buffers: InterCompoundBuffers::new(),
       enc_stats: EncoderStats::default(),
     }
   }
