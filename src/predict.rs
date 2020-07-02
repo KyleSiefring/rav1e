@@ -259,6 +259,64 @@ impl PredictionMode {
     }
   }
 
+  fn get_mv_params<'a, T: Pixel>(
+    rec_plane: &'a Plane<T>, po: PlaneOffset, mv: MotionVector,
+  ) -> (i32, i32, PlaneSlice<'a, T>) {
+    let rec_cfg = &rec_plane.cfg;
+    let shift_row = 3 + rec_cfg.ydec;
+    let shift_col = 3 + rec_cfg.xdec;
+    let row_offset = mv.row as i32 >> shift_row;
+    let col_offset = mv.col as i32 >> shift_col;
+    let row_frac =
+        (mv.row as i32 - (row_offset << shift_row)) << (4 - shift_row);
+    let col_frac =
+        (mv.col as i32 - (col_offset << shift_col)) << (4 - shift_col);
+    let qo = PlaneOffset {
+      x: po.x + col_offset as isize - 3,
+      y: po.y + row_offset as isize - 3,
+    };
+    (row_frac, col_frac, rec_plane.slice(qo).clamp().subslice(3, 3))
+  }
+
+  #[inline(never)]
+  pub fn predict_inter_compound<T: Pixel>(
+    self, fi: &FrameInvariants<T>, p: usize, frame_po: PlaneOffset,
+    dst: &mut PlaneRegionMut<'_, T>, width: usize,
+    height: usize, mode: FilterMode, ref_frames: [RefType; 2], mvs: [MotionVector; 2],
+  ) {
+    let mut tmp: [Aligned<[i16; 128 * 128]>; 2] =
+        [Aligned::uninitialized(), Aligned::uninitialized()];
+    for i in 0..2 {
+      if let Some(ref rec) = fi.rec_buffer.frames
+          [fi.ref_frames[ref_frames[i].to_index()] as usize]
+      {
+        let (row_frac, col_frac, src) =
+            PredictionMode::get_mv_params(&rec.frame.planes[p], frame_po, mvs[i]);
+        prep_8tap(
+          &mut tmp[i].data,
+          src,
+          width,
+          height,
+          col_frac,
+          row_frac,
+          mode,
+          mode,
+          fi.sequence.bit_depth,
+          fi.cpu_feature_level,
+        );
+      }
+    }
+    mc_avg(
+      dst,
+      &tmp[0].data,
+      &tmp[1].data,
+      width,
+      height,
+      fi.sequence.bit_depth,
+      fi.cpu_feature_level,
+    );
+  }
+
   pub fn predict_inter<T: Pixel>(
     self, fi: &FrameInvariants<T>, tile_rect: TileRect, p: usize,
     po: PlaneOffset, dst: &mut PlaneRegionMut<'_, T>, width: usize,
@@ -271,31 +329,12 @@ impl PredictionMode {
     let is_compound = ref_frames[1] != RefType::INTRA_FRAME
       && ref_frames[1] != RefType::NONE_FRAME;
 
-    fn get_params<'a, T: Pixel>(
-      rec_plane: &'a Plane<T>, po: PlaneOffset, mv: MotionVector,
-    ) -> (i32, i32, PlaneSlice<'a, T>) {
-      let rec_cfg = &rec_plane.cfg;
-      let shift_row = 3 + rec_cfg.ydec;
-      let shift_col = 3 + rec_cfg.xdec;
-      let row_offset = mv.row as i32 >> shift_row;
-      let col_offset = mv.col as i32 >> shift_col;
-      let row_frac =
-        (mv.row as i32 - (row_offset << shift_row)) << (4 - shift_row);
-      let col_frac =
-        (mv.col as i32 - (col_offset << shift_col)) << (4 - shift_col);
-      let qo = PlaneOffset {
-        x: po.x + col_offset as isize - 3,
-        y: po.y + row_offset as isize - 3,
-      };
-      (row_frac, col_frac, rec_plane.slice(qo).clamp().subslice(3, 3))
-    };
-
     if !is_compound {
       if let Some(ref rec) =
         fi.rec_buffer.frames[fi.ref_frames[ref_frames[0].to_index()] as usize]
       {
         let (row_frac, col_frac, src) =
-          get_params(&rec.frame.planes[p], frame_po, mvs[0]);
+          PredictionMode::get_mv_params(&rec.frame.planes[p], frame_po, mvs[0]);
         put_8tap(
           dst,
           src,
@@ -310,37 +349,7 @@ impl PredictionMode {
         );
       }
     } else {
-      let mut tmp: [Aligned<[i16; 128 * 128]>; 2] =
-        [Aligned::uninitialized(), Aligned::uninitialized()];
-      for i in 0..2 {
-        if let Some(ref rec) = fi.rec_buffer.frames
-          [fi.ref_frames[ref_frames[i].to_index()] as usize]
-        {
-          let (row_frac, col_frac, src) =
-            get_params(&rec.frame.planes[p], frame_po, mvs[i]);
-          prep_8tap(
-            &mut tmp[i].data,
-            src,
-            width,
-            height,
-            col_frac,
-            row_frac,
-            mode,
-            mode,
-            fi.sequence.bit_depth,
-            fi.cpu_feature_level,
-          );
-        }
-      }
-      mc_avg(
-        dst,
-        &tmp[0].data,
-        &tmp[1].data,
-        width,
-        height,
-        fi.sequence.bit_depth,
-        fi.cpu_feature_level,
-      );
+      self.predict_inter_compound(fi, p, frame_po, dst, width, height, mode, ref_frames, mvs);
     }
   }
 }
