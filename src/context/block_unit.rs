@@ -1860,12 +1860,11 @@ impl<'a> ContextWriter<'a> {
     let mut coeff_contexts: Aligned<[i8; MAX_CODED_TX_SQUARE]> =
       Aligned::uninitialized();
 
-    self.get_nz_map_contexts(
+    tx_class.get_nz_map_contexts(
       levels,
       scan,
       eob as u16,
       tx_size,
-      tx_class,
       &mut coeff_contexts.data,
     );
 
@@ -1875,7 +1874,6 @@ impl<'a> ContextWriter<'a> {
       let pos = pos as usize;
       let coeff_ctx = coeff_contexts.data[pos];
       let level = v.abs();
-
       if c == eob - 1 {
         symbol_with_update!(
           self,

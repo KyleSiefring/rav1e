@@ -522,6 +522,227 @@ pub struct TXB_CTX {
   pub dc_sign_ctx: usize,
 }
 
+pub static NZ_MAP_CONTEXT_OFFSET_SQUARE: [[i8; 16]; 5] = [
+  [ 0,  1,  6,  6, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21],
+  [ 1,  6,  6, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21],
+  [ 6,  6, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21],
+  [ 6, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21],
+  [21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21],
+];
+
+pub fn get_nz_map_contexts_2d(
+  levels: &[u8], scan: &[u16], eob: u16, tx_size: TxSize,
+  coeff_contexts: &mut [i8],
+) {
+  assert_ne!(eob, 0);
+
+  let bhl = ContextWriter::get_txb_bhl(tx_size);
+
+  // START
+  let coded = av1_get_coded_tx_size(tx_size);
+  if !tx_size.is_rect() && coded.height() >= 16 {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+    unsafe {
+      let lvl_stride = (1 << bhl) + TX_PAD_HOR;
+      for col in 0..coded.width() {
+        for row in (0..coded.height()).step_by(16) {
+          let lvl_ptr = levels[col * lvl_stride + row..].as_ptr();
+          let sample = |offset: usize| -> _ {
+            _mm_min_epu8(_mm_loadu_si128(lvl_ptr.add(offset) as _), _mm_set1_epi8(3))
+          };
+          let mag = _mm_add_epi8(_mm_add_epi8(_mm_add_epi8(
+            sample(1),
+            sample(2)
+          ),
+          _mm_add_epi8(
+            sample(lvl_stride),
+            sample(2 * lvl_stride)
+          )), sample(lvl_stride + 1)
+          );
+
+          let ctx = _mm_min_epu8(_mm_avg_epu8(mag, _mm_setzero_si128()), _mm_set1_epi8(4));
+          let tmp = if row != 0 { _mm_set1_epi8(21) } else { _mm_loadu_si128(NZ_MAP_CONTEXT_OFFSET_SQUARE[cmp::min(col, 4)].as_ptr() as _)};
+          _mm_storeu_si128(coeff_contexts[col * coded.height() + row..].as_ptr() as _, _mm_add_epi8(ctx, tmp));
+        }
+      }
+    }
+  }
+  // END
+  else {
+    for i in 1..eob - 1 {
+      let coeff_idx = scan[i as usize] as usize;
+
+      // Levels are transposed from how they work in the spec
+      let stride = (1 << bhl) + TX_PAD_HOR;
+      let padded_idx = coeff_idx + ((coeff_idx >> bhl) << TX_PAD_HOR_LOG2);
+
+      let levels = &levels[padded_idx..];
+      let mag = cmp::min(3, levels[1]) // { 1, 0 }
+          + cmp::min(3, levels[2]) // { 2, 0 }
+          + cmp::min(3, levels[stride]) // { 0, 1 }
+          + cmp::min(3, levels[2 * stride]) // { 0, 2 }
+          + cmp::min(3, levels[stride + 1]); // { 1, 1 }
+
+      let col: usize = coeff_idx >> bhl;
+      let row: usize = coeff_idx - (col << bhl);
+
+      let ctx = ((mag + 1) >> 1).min(4) as i8;
+
+      coeff_contexts[coeff_idx as usize] = ctx + av1_nz_map_ctx_offset[tx_size as usize][cmp::min(row, 4)]
+          [cmp::min(col, 4)];
+    }
+  }
+
+  // zero for DC context
+  coeff_contexts[0] = 0;
+
+  let scan_idx = eob as usize - 1;
+  let area = av1_get_coded_tx_size(tx_size).area();
+  let coeff_idx = scan[scan_idx] as usize;
+  coeff_contexts[coeff_idx] = if scan_idx == 0 {
+    0
+  } else if scan_idx <= area / 8 {
+    1
+  } else if scan_idx <= area / 4 {
+    2
+  } else {
+    3
+  };
+}
+
+impl TxClass {
+  fn get_nz_mag(&self, levels: &[u8], bhl: usize) -> usize {
+    // Levels are transposed from how they work in the spec
+
+    // May version.
+    // Note: AOMMIN(level, 3) is useless for decoder since level < 3.
+    let stride = (1 << bhl) + TX_PAD_HOR;
+    let mut mag = cmp::min(3, levels[1]); // { 1, 0 }
+    mag += cmp::min(3, levels[stride]); // { 0, 1 }
+
+    match self {
+      TX_CLASS_2D => {
+        mag += cmp::min(3, levels[stride + 1]); // { 1, 1 }
+        mag += cmp::min(3, levels[2]); // { 2, 0 }
+        mag += cmp::min(3, levels[2 * stride]); // { 0, 2 }
+      }
+      TX_CLASS_VERT => {
+        mag += cmp::min(3, levels[2]); // { 2, 0 }
+        mag += cmp::min(3, levels[3]); // { 3, 0 }
+        mag += cmp::min(3, levels[4]); // { 4, 0 }
+      }
+      TX_CLASS_HORIZ => {
+        mag += cmp::min(3, levels[2 * stride]); // { 0, 2 }
+        mag += cmp::min(3, levels[3 * stride]); // { 0, 3 }
+        mag += cmp::min(3, levels[4 * stride]); // { 0, 4 }
+      }
+    }
+
+    mag as usize
+  }
+
+  fn get_nz_map_ctx_from_stats(
+    &self,
+    stats: usize,
+    coeff_idx: usize, // raster order
+    bhl: usize,
+    tx_size: TxSize
+  ) -> usize {
+    if *self == TX_CLASS_2D && coeff_idx == 0 {
+      return 0;
+    };
+
+    // Coefficients are transposed from how they work in the spec
+    let col: usize = coeff_idx >> bhl;
+    let row: usize = coeff_idx - (col << bhl);
+
+    let ctx = ((stats + 1) >> 1).min(4);
+
+    ctx
+        + match self {
+      TX_CLASS_2D => {
+        // This is the algorithm to generate table av1_nz_map_ctx_offset[].
+        // const int width = tx_size_wide[tx_size];
+        // const int height = tx_size_high[tx_size];
+        // if (width < height) {
+        //   if (row < 2) return 11 + ctx;
+        // } else if (width > height) {
+        //   if (col < 2) return 16 + ctx;
+        // }
+        // if (row + col < 2) return ctx + 1;
+        // if (row + col < 4) return 5 + ctx + 1;
+        // return 21 + ctx;
+        av1_nz_map_ctx_offset[tx_size as usize][cmp::min(row, 4)]
+            [cmp::min(col, 4)] as usize
+      }
+      TX_CLASS_HORIZ => nz_map_ctx_offset_1d[col],
+      TX_CLASS_VERT => nz_map_ctx_offset_1d[row],
+    }
+  }
+
+  fn get_nz_map_ctx(
+    &self, levels: &[u8], coeff_idx: usize, bhl: usize, tx_size: TxSize
+  ) -> usize {
+    // Levels are transposed from how they work in the spec
+    let padded_idx = coeff_idx + ((coeff_idx >> bhl) << TX_PAD_HOR_LOG2);
+    let stats = self.get_nz_mag(&levels[padded_idx..], bhl);
+
+    self.get_nz_map_ctx_from_stats(stats, coeff_idx, bhl, tx_size)
+  }
+
+  pub fn get_nz_map_contexts(
+    &self, levels: &[u8], scan: &[u16], eob: u16, tx_size: TxSize,
+    coeff_contexts: &mut [i8],
+  ) {
+    assert_ne!(eob, 0);
+
+    let bhl = ContextWriter::get_txb_bhl(tx_size);
+    match self {
+      TX_CLASS_2D => {
+        get_nz_map_contexts_2d(levels, scan, eob, tx_size, coeff_contexts);
+      }
+      TX_CLASS_HORIZ => {
+        for i in 0..eob - 1 {
+          let pos = scan[i as usize];
+          coeff_contexts[pos as usize] = self.get_nz_map_ctx(
+            levels,
+            pos as usize,
+            bhl,
+            tx_size,
+          ) as i8;
+        }
+      },
+      TX_CLASS_VERT => {
+        for i in 0..eob - 1 {
+          let pos = scan[i as usize];
+          coeff_contexts[pos as usize] = self.get_nz_map_ctx(
+            levels,
+            pos as usize,
+            bhl,
+            tx_size,
+          ) as i8;
+        }
+      },
+    }
+
+    let scan_idx = eob as usize - 1;
+    let area = av1_get_coded_tx_size(tx_size).area();
+    let pos = scan[scan_idx];
+    coeff_contexts[pos as usize] = if scan_idx == 0 {
+      0
+    } else if scan_idx <= area / 8 {
+      1
+    } else if scan_idx <= area / 4 {
+      2
+    } else {
+      3
+    };
+  }
+}
+
 impl<'a> ContextWriter<'a> {
   pub fn write_tx_type(
     &mut self, w: &mut dyn Writer, tx_size: TxSize, tx_type: TxType,
@@ -802,115 +1023,6 @@ impl<'a> ContextWriter<'a> {
     *extra = eob as u32 - k_eob_group_start[t as usize] as u32;
 
     t
-  }
-
-  pub fn get_nz_mag(levels: &[u8], bhl: usize, tx_class: TxClass) -> usize {
-    // Levels are transposed from how they work in the spec
-
-    // May version.
-    // Note: AOMMIN(level, 3) is useless for decoder since level < 3.
-    let mut mag = cmp::min(3, levels[1]); // { 1, 0 }
-    mag += cmp::min(3, levels[(1 << bhl) + TX_PAD_HOR]); // { 0, 1 }
-
-    if tx_class == TX_CLASS_2D {
-      mag += cmp::min(3, levels[(1 << bhl) + TX_PAD_HOR + 1]); // { 1, 1 }
-      mag += cmp::min(3, levels[2]); // { 2, 0 }
-      mag += cmp::min(3, levels[(2 << bhl) + (2 << TX_PAD_HOR_LOG2)]); // { 0, 2 }
-    } else if tx_class == TX_CLASS_VERT {
-      mag += cmp::min(3, levels[2]); // { 2, 0 }
-      mag += cmp::min(3, levels[3]); // { 3, 0 }
-      mag += cmp::min(3, levels[4]); // { 4, 0 }
-    } else {
-      mag += cmp::min(3, levels[(2 << bhl) + (2 << TX_PAD_HOR_LOG2)]); // { 0, 2 }
-      mag += cmp::min(3, levels[(3 << bhl) + (3 << TX_PAD_HOR_LOG2)]); // { 0, 3 }
-      mag += cmp::min(3, levels[(4 << bhl) + (4 << TX_PAD_HOR_LOG2)]); // { 0, 4 }
-    }
-
-    mag as usize
-  }
-
-  fn get_nz_map_ctx_from_stats(
-    stats: usize,
-    coeff_idx: usize, // raster order
-    bhl: usize,
-    tx_size: TxSize,
-    tx_class: TxClass,
-  ) -> usize {
-    if (tx_class as u32 | coeff_idx as u32) == 0 {
-      return 0;
-    };
-
-    // Coefficients are transposed from how they work in the spec
-    let col: usize = coeff_idx >> bhl;
-    let row: usize = coeff_idx - (col << bhl);
-
-    let ctx = ((stats + 1) >> 1).min(4);
-
-    ctx
-      + match tx_class {
-        TX_CLASS_2D => {
-          // This is the algorithm to generate table av1_nz_map_ctx_offset[].
-          // const int width = tx_size_wide[tx_size];
-          // const int height = tx_size_high[tx_size];
-          // if (width < height) {
-          //   if (row < 2) return 11 + ctx;
-          // } else if (width > height) {
-          //   if (col < 2) return 16 + ctx;
-          // }
-          // if (row + col < 2) return ctx + 1;
-          // if (row + col < 4) return 5 + ctx + 1;
-          // return 21 + ctx;
-          av1_nz_map_ctx_offset[tx_size as usize][cmp::min(row, 4)]
-            [cmp::min(col, 4)] as usize
-        }
-        TX_CLASS_HORIZ => nz_map_ctx_offset_1d[col],
-        TX_CLASS_VERT => nz_map_ctx_offset_1d[row],
-      }
-  }
-
-  fn get_nz_map_ctx(
-    levels: &[u8], coeff_idx: usize, bhl: usize, area: usize, scan_idx: usize,
-    is_eob: bool, tx_size: TxSize, tx_class: TxClass,
-  ) -> usize {
-    if is_eob {
-      if scan_idx == 0 {
-        return 0;
-      }
-      if scan_idx <= area / 8 {
-        return 1;
-      }
-      if scan_idx <= area / 4 {
-        return 2;
-      }
-      return 3;
-    }
-
-    // Levels are transposed from how they work in the spec
-    let padded_idx = coeff_idx + ((coeff_idx >> bhl) << TX_PAD_HOR_LOG2);
-    let stats = Self::get_nz_mag(&levels[padded_idx..], bhl, tx_class);
-
-    Self::get_nz_map_ctx_from_stats(stats, coeff_idx, bhl, tx_size, tx_class)
-  }
-
-  pub fn get_nz_map_contexts(
-    &self, levels: &mut [u8], scan: &[u16], eob: u16, tx_size: TxSize,
-    tx_class: TxClass, coeff_contexts: &mut [i8],
-  ) {
-    let bhl = Self::get_txb_bhl(tx_size);
-    let area = av1_get_coded_tx_size(tx_size).area();
-    for i in 0..eob {
-      let pos = scan[i as usize];
-      coeff_contexts[pos as usize] = Self::get_nz_map_ctx(
-        levels,
-        pos as usize,
-        bhl,
-        area,
-        i as usize,
-        i == eob - 1,
-        tx_size,
-        tx_class,
-      ) as i8;
-    }
   }
 
   pub fn get_br_ctx(
