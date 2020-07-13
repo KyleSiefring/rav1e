@@ -288,10 +288,10 @@ impl PredictionMode {
     let row_frac = ((mv.row as i32) << (1 - ydec)) & 0xf;
     let col_frac = ((mv.col as i32) << (1 - xdec)) & 0xf;
     let qo = PlaneOffset {
-      x: po.x + col_offset as isize - 3,
-      y: po.y + row_offset as isize - 3,
+      x: po.x + col_offset as isize,
+      y: po.y + row_offset as isize,
     };
-    (row_frac, col_frac, rec_plane.slice(qo).clamp().subslice(3, 3))
+    (row_frac, col_frac, rec_plane.slice(qo))
   }
 
   /// Inter prediction with a single reference (i.e. not compound mode)
