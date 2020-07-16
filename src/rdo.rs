@@ -298,22 +298,6 @@ fn compute_distortion<T: Pixel>(
   let input_region = ts.input_tile.planes[0].subregion(area);
   let rec_region = ts.rec.planes[0].subregion(area);
   let mut distortion = match fi.config.tune {
-    Tune::Psychovisual if bsize.width() >= 8 && bsize.height() >= 8 => {
-      cdef_dist_wxh(
-        &input_region,
-        &rec_region,
-        bsize.width(),
-        bsize.height(),
-        fi.sequence.bit_depth,
-        |bias_area, bsize| {
-          distortion_scale(
-            fi,
-            input_region.subregion(bias_area).frame_block_offset(),
-            bsize,
-          )
-        },
-      )
-    }
     Tune::Psnr | Tune::Psychovisual => sse_wxh(
       &input_region,
       &rec_region,
