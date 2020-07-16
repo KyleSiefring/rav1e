@@ -1928,8 +1928,15 @@ fn rdo_loop_plane_error<T: Pixel>(
           // For loop filters, We intentionally use cdef_dist even with
           // `--tune Psnr`. Using SSE instead gives no PSNR gain but has a
           // significant negative impact on other metrics and visual quality.
-          cdef_dist_wxh_8x8(&src_region, &test_region, fi.sequence.bit_depth)
-            * bias
+          sse_wxh(
+            &src_region,
+            &test_region,
+            8,
+            8,
+            |_, _| bias,
+            fi.sequence.bit_depth,
+            fi.cpu_feature_level,
+          )
         } else {
           sse_wxh(
             &src_region,
