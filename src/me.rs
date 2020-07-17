@@ -422,7 +422,7 @@ impl MotionEstimation for DiamondSearch {
       mvy_min,
       mvy_max,
       bsize,
-      false,
+      true,
       best_mv,
       lowest_cost,
       false,
@@ -722,7 +722,7 @@ fn diamond_me_search<T: Pixel>(
       )
     } else {
       // Full pixel motion estimation
-      (32i16, 8i16, None)
+      (16i16, 8i16, None)
     }
   };
 
