@@ -204,7 +204,7 @@ pub trait MotionEstimation {
           get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo, blk_w, blk_h);
 
         // 0.5 is a fudge factor
-        let lambda = 0;
+        let lambda = (fi.me_lambda * 256.0 * 0.5) as u32;
 
         // Full-pixel motion estimation
 
