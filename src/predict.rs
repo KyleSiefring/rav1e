@@ -326,6 +326,36 @@ impl PredictionMode {
     }
   }
 
+  pub fn predict_inter_single_bilinear<T: Pixel>(
+    self, fi: &FrameInvariants<T>, tile_rect: TileRect, p: usize,
+    po: PlaneOffset, dst: &mut PlaneRegionMut<'_, T>, width: usize,
+    height: usize, ref_frame: RefType, mv: MotionVector,
+  ) {
+    assert!(!self.is_intra());
+    let frame_po = tile_rect.to_frame_plane_offset(po);
+
+    let mode = FilterMode::BILINEAR;
+
+    if let Some(ref rec) =
+    fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize]
+    {
+      let (row_frac, col_frac, src) =
+          PredictionMode::get_mv_params(&rec.frame.planes[p], frame_po, mv);
+      put_8tap(
+        dst,
+        src,
+        width,
+        height,
+        col_frac,
+        row_frac,
+        mode,
+        mode,
+        fi.sequence.bit_depth,
+        fi.cpu_feature_level,
+      );
+    }
+  }
+
   /// Inter prediction with two references.
   pub fn predict_inter_compound<T: Pixel>(
     self, fi: &FrameInvariants<T>, tile_rect: TileRect, p: usize,

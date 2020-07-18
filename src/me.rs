@@ -820,7 +820,7 @@ fn get_mv_rd_cost<T: Pixel>(
       width: region.plane_cfg.width,
       height: region.plane_cfg.height,
     };
-    PredictionMode::NEWMV.predict_inter_single(
+    PredictionMode::NEWMV.predict_inter_single_bilinear(
       fi,
       tile_rect,
       0,
