@@ -298,7 +298,7 @@ pub trait MotionEstimation {
       let mut best_mv = MotionVector::default();
 
       // Divide by 4 to account for subsampling, 0.125 is a fudge factor
-      let lambda = (fi.me_lambda * 256.0 / 4.0 * 0.25) as u32;
+      let lambda = (fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
 
       Self::me_ss2(
         fi,
@@ -357,7 +357,7 @@ pub trait MotionEstimation {
       let mut best_mv = MotionVector::default();
 
       // 0.5 is a fudge factor
-      let lambda = (fi.me_lambda * 256.0 * 0.25) as u32;
+      let lambda = (fi.me_lambda * 256.0 * 0.375) as u32;
 
       Self::full_pixel_me(
         fi,
