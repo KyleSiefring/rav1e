@@ -1058,7 +1058,7 @@ pub fn estimate_motion_ss4<T: Pixel>(
     let mut best_mv = MotionVector::default();
 
     // Divide by 16 to account for subsampling, 0.125 is a fudge factor
-    let lambda = (fi.me_lambda * 256.0 / 16.0 * 0.125) as u32;
+    let lambda = 0;
 
     full_search(
       fi,
