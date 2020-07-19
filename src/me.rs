@@ -377,7 +377,7 @@ pub trait MotionEstimation {
         &mut best_mv,
         &mut lowest_cost,
         ref_frame,
-        1
+        2
       );
 
       Some(MotionVector { row: best_mv.row, col: best_mv.col })
