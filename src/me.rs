@@ -228,7 +228,7 @@ pub trait MotionEstimation {
           &mut best_mv,
           &mut lowest_cost,
           ref_frame,
-          1
+          2
         );
 
         let use_satd: bool = fi.config.speed_settings.use_satd_subpel;
@@ -377,7 +377,7 @@ pub trait MotionEstimation {
         &mut best_mv,
         &mut lowest_cost,
         ref_frame,
-        2
+        1
       );
 
       Some(MotionVector { row: best_mv.row, col: best_mv.col })
