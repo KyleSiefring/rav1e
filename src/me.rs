@@ -228,7 +228,7 @@ pub trait MotionEstimation {
           &mut best_mv,
           &mut lowest_cost,
           ref_frame,
-          2
+          1
         );
 
         let use_satd: bool = fi.config.speed_settings.use_satd_subpel;
@@ -300,7 +300,7 @@ pub trait MotionEstimation {
       let mut best_mv = MotionVector::default();
 
       // Divide by 4 to account for subsampling, 0.125 is a fudge factor
-      let lambda = (fi.me_lambda * 256.0 / 4.0 * 0.125) as u32;
+      let lambda = (fi.me_lambda * 256.0 / 4.0 * 0.25) as u32;
 
       Self::me_ss2(
         fi,
