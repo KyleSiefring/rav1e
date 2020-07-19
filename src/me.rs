@@ -692,7 +692,7 @@ fn diamond_me_search<T: Pixel>(
   p_ref: &Plane<T>, predictors: &[MotionVector], bit_depth: usize,
   pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
   mvy_min: isize, mvy_max: isize, bsize: BlockSize, use_satd: bool,
-  center_mv: &mut MotionVector, center_mv_cost: &mut u64, subpixel: bool,
+  best_mv: &mut MotionVector, best_mv_cost: &mut u64, subpixel: bool,
   ref_frame: RefType,
 ) {
   use crate::util::Aligned;
@@ -726,75 +726,81 @@ fn diamond_me_search<T: Pixel>(
     }
   };
 
-  get_best_predictor(
-    fi,
-    po,
-    p_org,
-    p_ref,
-    predictors,
-    bit_depth,
-    pmv,
-    lambda,
-    use_satd,
-    mvx_min,
-    mvx_max,
-    mvy_min,
-    mvy_max,
-    bsize,
-    center_mv,
-    center_mv_cost,
-    &mut tmp_region_opt,
-    ref_frame,
-  );
+  for cand in predictors {
+    let mut center_mv: MotionVector = *cand;
+    let mut center_mv_cost: u64 = get_mv_rd_cost(
+      fi,
+      po,
+      p_org,
+      p_ref,
+      bit_depth,
+      pmv,
+      lambda,
+      use_satd,
+      mvx_min,
+      mvx_max,
+      mvy_min,
+      mvy_max,
+      bsize,
+      center_mv,
+      tmp_region_opt.as_mut(),
+      ref_frame,
+    );
 
-  loop {
-    let mut best_diamond_rd_cost = std::u64::MAX;
-    let mut best_diamond_mv = MotionVector::default();
+    loop {
+      let mut best_diamond_rd_cost = std::u64::MAX;
+      let mut best_diamond_mv = MotionVector::default();
 
-    for p in diamond_pattern.iter() {
-      let cand_mv = MotionVector {
-        row: center_mv.row + diamond_radius * p.0,
-        col: center_mv.col + diamond_radius * p.1,
-      };
+      for p in diamond_pattern.iter() {
+        let cand_mv = MotionVector {
+          row: center_mv.row + diamond_radius * p.0,
+          col: center_mv.col + diamond_radius * p.1,
+        };
 
-      let rd_cost = get_mv_rd_cost(
-        fi,
-        po,
-        p_org,
-        p_ref,
-        bit_depth,
-        pmv,
-        lambda,
-        use_satd,
-        mvx_min,
-        mvx_max,
-        mvy_min,
-        mvy_max,
-        bsize,
-        cand_mv,
-        tmp_region_opt.as_mut(),
-        ref_frame,
-      );
+        let rd_cost = get_mv_rd_cost(
+          fi,
+          po,
+          p_org,
+          p_ref,
+          bit_depth,
+          pmv,
+          lambda,
+          use_satd,
+          mvx_min,
+          mvx_max,
+          mvy_min,
+          mvy_max,
+          bsize,
+          cand_mv,
+          tmp_region_opt.as_mut(),
+          ref_frame,
+        );
 
-      if rd_cost < best_diamond_rd_cost {
-        best_diamond_rd_cost = rd_cost;
-        best_diamond_mv = cand_mv;
+        if rd_cost < best_diamond_rd_cost {
+          best_diamond_rd_cost = rd_cost;
+          best_diamond_mv = cand_mv;
+        }
+      }
+
+      if center_mv_cost <= best_diamond_rd_cost {
+        if diamond_radius == diamond_radius_end {
+          break;
+        } else {
+          diamond_radius /= 2;
+        }
+      } else {
+        center_mv = best_diamond_mv;
+        center_mv_cost = best_diamond_rd_cost;
       }
     }
 
-    if *center_mv_cost <= best_diamond_rd_cost {
-      if diamond_radius == diamond_radius_end {
-        break;
-      } else {
-        diamond_radius /= 2;
-      }
-    } else {
-      *center_mv = best_diamond_mv;
-      *center_mv_cost = best_diamond_rd_cost;
+    if center_mv_cost < *best_mv_cost {
+      *best_mv = center_mv;
+      *best_mv_cost = center_mv_cost;
     }
   }
 
-  assert!(*center_mv_cost < std::u64::MAX);
+  assert!(*best_mv_cost < std::u64::MAX);
 }
 
 fn get_mv_rd_cost<T: Pixel>(
