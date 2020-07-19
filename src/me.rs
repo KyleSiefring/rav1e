@@ -520,7 +520,7 @@ impl MotionEstimation for DiamondSearch {
       lowest_cost,
       false,
       ref_frame,
-      1,
+      2,
     );
   }
 }
