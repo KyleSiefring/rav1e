@@ -180,6 +180,7 @@ pub trait MotionEstimation {
     cmvs: ArrayVec<[MotionVector; 7]>, pmv: [MotionVector; 2], mvx_min: isize,
     mvx_max: isize, mvy_min: isize, mvy_max: isize, bsize: BlockSize,
     best_mv: &mut MotionVector, lowest_cost: &mut u64, ref_frame: RefType,
+    start_step_log2: u8,
   );
 
   fn sub_pixel_me<T: Pixel>(
@@ -227,6 +228,7 @@ pub trait MotionEstimation {
           &mut best_mv,
           &mut lowest_cost,
           ref_frame,
+          1
         );
 
         let use_satd: bool = fi.config.speed_settings.use_satd_subpel;
@@ -375,6 +377,7 @@ pub trait MotionEstimation {
         &mut best_mv,
         &mut lowest_cost,
         ref_frame,
+        1
       );
 
       Some(MotionVector { row: best_mv.row, col: best_mv.col })
@@ -394,6 +397,7 @@ impl MotionEstimation for DiamondSearch {
     cmvs: ArrayVec<[MotionVector; 7]>, pmv: [MotionVector; 2], mvx_min: isize,
     mvx_max: isize, mvy_min: isize, mvy_max: isize, bsize: BlockSize,
     best_mv: &mut MotionVector, lowest_cost: &mut u64, ref_frame: RefType,
+    start_step_log2: u8,
   ) {
     let tile_mvs = &ts.mvs[ref_frame.to_index()].as_const();
     let frame_ref = fi.rec_buffer.frames[fi.ref_frames[0] as usize]
@@ -408,7 +412,7 @@ impl MotionEstimation for DiamondSearch {
     );
 
     let frame_bo = ts.to_frame_block_offset(tile_bo);
-    diamond_me_search(
+    diamond_me_search_alt(
       fi,
       frame_bo.to_luma_plane_offset(),
       &ts.input.planes[0],
@@ -427,6 +431,7 @@ impl MotionEstimation for DiamondSearch {
       lowest_cost,
       false,
       ref_frame,
+      start_step_log2,
     );
   }
 
@@ -515,6 +520,7 @@ impl MotionEstimation for DiamondSearch {
       lowest_cost,
       false,
       ref_frame,
+      2
     );
   }
 }
@@ -526,6 +532,7 @@ impl MotionEstimation for FullSearch {
     cmvs: ArrayVec<[MotionVector; 7]>, pmv: [MotionVector; 2], mvx_min: isize,
     mvx_max: isize, mvy_min: isize, mvy_max: isize, bsize: BlockSize,
     best_mv: &mut MotionVector, lowest_cost: &mut u64, _ref_frame: RefType,
+    _start_step_log2: u8,
   ) {
     let frame_bo = ts.to_frame_block_offset(tile_bo);
     let frame_po = frame_bo.to_luma_plane_offset();
@@ -803,7 +810,7 @@ fn diamond_me_search_alt<T: Pixel>(
   pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
   mvy_min: isize, mvy_max: isize, bsize: BlockSize, use_satd: bool,
   center_mv: &mut MotionVector, center_mv_cost: &mut u64, subpixel: bool,
-  ref_frame: RefType,
+  ref_frame: RefType, start_step_log2: u8,
 ) {
   use crate::util::Aligned;
 
@@ -832,7 +839,7 @@ fn diamond_me_search_alt<T: Pixel>(
       )
     } else {
       // Full pixel motion estimation
-      (32i16, 8i16, None)
+      (1 << (start_step_log2 + 3), 8i16, None)
     }
   };
 
