@@ -726,11 +726,11 @@ fn diamond_me_search<T: Pixel>(
     }
   };
 
-  for i in 0..=3 {
+  for i in 0..=1 {
     let mut center_mv: MotionVector = MotionVector::default();
     let mut center_mv_cost: u64 = u64::MAX;
     if i == predictors.len() { break; }
-    if i == 0 {
+    if i == 1 {
       if predictors.len() <= 2 {
         continue;
       }
