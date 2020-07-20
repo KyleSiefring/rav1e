@@ -126,7 +126,7 @@ pub fn get_subset_predictors<T: Pixel>(
     median_mv = median_mv / (median_preds.len() as i16);
     let median_mv_quant = median_mv.quantize_to_fullpel();
     if !median_mv_quant.is_zero() {
-      predictors.push(median_mv_quant);
+      predictors.insert(2,median_mv_quant);
     }
   }
 
