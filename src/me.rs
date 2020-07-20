@@ -726,26 +726,51 @@ fn diamond_me_search<T: Pixel>(
     }
   };
 
-  for cand in predictors {
-    let mut center_mv: MotionVector = *cand;
-    let mut center_mv_cost: u64 = get_mv_rd_cost(
-      fi,
-      po,
-      p_org,
-      p_ref,
-      bit_depth,
-      pmv,
-      lambda,
-      use_satd,
-      mvx_min,
-      mvx_max,
-      mvy_min,
-      mvy_max,
-      bsize,
-      center_mv,
-      tmp_region_opt.as_mut(),
-      ref_frame,
-    );
+  for i in 0..=1 {
+    let mut center_mv: MotionVector = MotionVector::default();
+    let mut center_mv_cost: u64 = u64::MAX;
+    if i == 0 {
+      center_mv = predictors[0];
+      center_mv_cost = get_mv_rd_cost(
+        fi,
+        po,
+        p_org,
+        p_ref,
+        bit_depth,
+        pmv,
+        lambda,
+        use_satd,
+        mvx_min,
+        mvx_max,
+        mvy_min,
+        mvy_max,
+        bsize,
+        center_mv,
+        tmp_region_opt.as_mut(),
+        ref_frame,
+      );
+    } else {
+      get_best_predictor(
+        fi,
+        po,
+        p_org,
+        p_ref,
+        predictors,
+        bit_depth,
+        pmv,
+        lambda,
+        use_satd,
+        mvx_min,
+        mvx_max,
+        mvy_min,
+        mvy_max,
+        bsize,
+        &mut center_mv,
+        &mut center_mv_cost,
+        &mut tmp_region_opt,
+        ref_frame,
+      );
+    }
 
     loop {
       let mut best_diamond_rd_cost = std::u64::MAX;
