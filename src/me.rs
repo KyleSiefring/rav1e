@@ -726,15 +726,12 @@ fn diamond_me_search<T: Pixel>(
     }
   };
 
-  for i in 0..=1 {
+  for i in 0..=2 {
     let mut center_mv: MotionVector = MotionVector::default();
     let mut center_mv_cost: u64 = u64::MAX;
     if i == predictors.len() { break; }
-    if i == 1 {
-      if predictors.len() <= 2 {
-        continue;
-      }
-      center_mv = predictors[2];
+    if i != 0 {
+      center_mv = predictors[i];
       center_mv_cost = get_mv_rd_cost(
         fi,
         po,
