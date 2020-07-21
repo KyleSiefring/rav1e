@@ -51,8 +51,9 @@ impl ops::Div<i16> for MotionVector {
 
 impl MotionVector {
   #[inline]
-  pub const fn quantize_to_fullpel(self) -> Self {
-    Self { row: (self.row / 8) * 8, col: (self.col / 8) * 8 }
+  pub fn quantize_to_fullpel(self) -> Self {
+    let round = |n: i16| (n - if n < 0 { 0b100 } else { 0 }) & !0b111;
+    Self { row: round(self.row), col: round(self.col) }
   }
 
   #[inline]
