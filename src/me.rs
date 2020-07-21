@@ -98,6 +98,7 @@ pub fn get_subset_predictors<T: Pixel>(
   if tile_bo.0.x > 0 {
     let left = tile_mvs[tile_bo.0.y][tile_bo.0.x - 1];
     median_preds.push(left);
+    let left = left.quantize_to_fullpel();
     if !left.is_zero() {
       predictors.push(left);
     }
@@ -105,6 +106,7 @@ pub fn get_subset_predictors<T: Pixel>(
   if tile_bo.0.y > 0 {
     let top = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x];
     median_preds.push(top);
+    let top = top.quantize_to_fullpel();
     if !top.is_zero() {
       predictors.push(top);
     }
@@ -112,6 +114,7 @@ pub fn get_subset_predictors<T: Pixel>(
     if tile_bo.0.x < tile_mvs.cols() - 1 {
       let top_right = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + 1];
       median_preds.push(top_right);
+      let top_right = top_right.quantize_to_fullpel();
       if !top_right.is_zero() {
         predictors.push(top_right);
       }
@@ -140,31 +143,31 @@ pub fn get_subset_predictors<T: Pixel>(
       y: tile_mvs.y() + tile_bo.0.y,
     });
     if frame_bo.0.x > 0 {
-      let left = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x - 1];
+      let left = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x - 1].quantize_to_fullpel();
       if !left.is_zero() {
         predictors.push(left);
       }
     }
     if frame_bo.0.y > 0 {
-      let top = prev_frame_mvs[frame_bo.0.y - 1][frame_bo.0.x];
+      let top = prev_frame_mvs[frame_bo.0.y - 1][frame_bo.0.x].quantize_to_fullpel();
       if !top.is_zero() {
         predictors.push(top);
       }
     }
     if frame_bo.0.x < prev_frame_mvs.cols - 1 {
-      let right = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x + 1];
+      let right = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x + 1].quantize_to_fullpel();
       if !right.is_zero() {
         predictors.push(right);
       }
     }
     if frame_bo.0.y < prev_frame_mvs.rows - 1 {
-      let bottom = prev_frame_mvs[frame_bo.0.y + 1][frame_bo.0.x];
+      let bottom = prev_frame_mvs[frame_bo.0.y + 1][frame_bo.0.x].quantize_to_fullpel();
       if !bottom.is_zero() {
         predictors.push(bottom);
       }
     }
 
-    let previous = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x];
+    let previous = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x].quantize_to_fullpel();
     if !previous.is_zero() {
       predictors.push(previous);
     }
@@ -725,6 +728,8 @@ fn diamond_me_search<T: Pixel>(
       (16i16, 8i16, None)
     }
   };
+
+  assert!((center_mv.col & 7) == 0 && (center_mv.row & 7) == 0);
 
   get_best_predictor(
     fi,
