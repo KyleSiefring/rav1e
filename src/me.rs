@@ -85,15 +85,17 @@ pub fn get_subset_predictors<T: Pixel>(
   ref_frame_id: usize,
 ) -> ArrayVec<[MotionVector; 17]> {
   let mut predictors = ArrayVec::<[_; 17]>::new();
+
+  // Add a candidate predictor, aligning to fullpel and filtering out zero mvs.
   let add_cand = |predictors: &mut ArrayVec<[MotionVector; 17]>,
                   cand_mv: MotionVector| {
     let cand_mv = cand_mv.quantize_to_fullpel();
-    if cand_mv.is_zero() {
+    if !cand_mv.is_zero() {
       predictors.push(cand_mv)
     }
   };
 
-  // Zero motion vector
+  // Zero motion vector, don't use add_cand since it skips zero vectors.
   predictors.push(MotionVector::default());
 
   // Coarse motion estimation.
