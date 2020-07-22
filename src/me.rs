@@ -581,7 +581,6 @@ fn subpel_diamond_me_search<T: Pixel>(
   let (mut diamond_radius, diamond_radius_end, mut tmp_region) = {
     let rect = Rect { x: 0, y: 0, width: cfg.width, height: cfg.height };
 
-    // Sub-pixel motion estimation
     (
       4i16,
       if fi.allow_high_precision_mv { 1i16 } else { 2i16 },
