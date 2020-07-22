@@ -401,7 +401,6 @@ impl MotionEstimation for DiamondSearch {
       mvy_min,
       mvy_max,
       bsize,
-      ref_frame,
     )
   }
 
@@ -480,7 +479,6 @@ impl MotionEstimation for DiamondSearch {
         bsize.width() >> 1,
         bsize.height() >> 1,
       ),
-      ref_frame,
     )
   }
 }
@@ -489,15 +487,15 @@ fn get_best_predictor<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
   p_ref: &Plane<T>, predictors: &[MotionVector], bit_depth: usize,
   pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
-  mvy_min: isize, mvy_max: isize, bsize: BlockSize, ref_frame: RefType,
+  mvy_min: isize, mvy_max: isize, bsize: BlockSize,
 ) -> MVSearchResult {
   let mut best: MVSearchResult =
     MVSearchResult { mv: MotionVector::default(), cost: u64::MAX };
 
   for &init_mv in predictors.iter() {
-    let cost = get_mv_rd_cost(
-      fi, po, org_region, p_ref, bit_depth, pmv, lambda, false, mvx_min,
-      mvx_max, mvy_min, mvy_max, bsize, init_mv, None, ref_frame,
+    let cost = get_fullpel_mv_rd_cost(
+      fi, po, org_region, p_ref, bit_depth, pmv, lambda, mvx_min, mvx_max,
+      mvy_min, mvy_max, bsize, init_mv,
     );
 
     if cost < best.cost {
@@ -513,14 +511,14 @@ fn fullpel_diamond_me_search<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
   p_ref: &Plane<T>, predictors: &[MotionVector], bit_depth: usize,
   pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
-  mvy_min: isize, mvy_max: isize, bsize: BlockSize, ref_frame: RefType,
+  mvy_min: isize, mvy_max: isize, bsize: BlockSize,
 ) -> MVSearchResult {
   let diamond_pattern = [(1i16, 0i16), (0, 1), (-1, 0), (0, -1)];
   let (mut diamond_radius, diamond_radius_end) = (16i16, 8i16);
 
   let mut center = get_best_predictor(
     fi, po, org_region, p_ref, predictors, bit_depth, pmv, lambda, mvx_min,
-    mvx_max, mvy_min, mvy_max, bsize, ref_frame,
+    mvx_max, mvy_min, mvy_max, bsize,
   );
 
   loop {
@@ -533,32 +531,14 @@ fn fullpel_diamond_me_search<T: Pixel>(
         col: center.mv.col + diamond_radius * p.1,
       };
 
-      if !((cand_mv.col as isize) < mvx_min
-        || (cand_mv.col as isize) > mvx_max
-        || (cand_mv.row as isize) < mvy_min
-        || (cand_mv.row as isize) > mvy_max)
-      {
-        let ref_region = p_ref.region(Area::StartingAt {
-          x: po.x + (cand_mv.col / 8) as isize,
-          y: po.y + (cand_mv.row / 8) as isize,
-        });
+      let rd_cost = get_fullpel_mv_rd_cost(
+        fi, po, org_region, p_ref, bit_depth, pmv, lambda, mvx_min, mvx_max,
+        mvy_min, mvy_max, bsize, cand_mv,
+      );
 
-        let rd_cost = compute_mv_rd_cost(
-          fi,
-          pmv,
-          lambda,
-          false,
-          bit_depth,
-          bsize,
-          cand_mv,
-          org_region,
-          &ref_region,
-        );
-
-        if rd_cost < best_diamond.cost {
-          best_diamond.mv = cand_mv;
-          best_diamond.cost = rd_cost;
-        }
+      if rd_cost < best_diamond.cost {
+        best_diamond.mv = cand_mv;
+        best_diamond.cost = rd_cost;
       }
     }
 
@@ -660,6 +640,31 @@ fn subpel_diamond_me_search<T: Pixel>(
   assert!(center.cost < std::u64::MAX);
 }
 
+#[inline]
+fn get_fullpel_mv_rd_cost<T: Pixel>(
+  fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
+  p_ref: &Plane<T>, bit_depth: usize, pmv: [MotionVector; 2], lambda: u32,
+  mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
+  bsize: BlockSize, cand_mv: MotionVector,
+) -> u64 {
+  if (cand_mv.col as isize) < mvx_min
+    || (cand_mv.col as isize) > mvx_max
+    || (cand_mv.row as isize) < mvy_min
+    || (cand_mv.row as isize) > mvy_max
+  {
+    return std::u64::MAX;
+  }
+
+  // Full pixel motion vector
+  let plane_ref = p_ref.region(Area::StartingAt {
+    x: po.x + (cand_mv.col / 8) as isize,
+    y: po.y + (cand_mv.row / 8) as isize,
+  });
+  compute_mv_rd_cost(
+    fi, pmv, lambda, false, bit_depth, bsize, cand_mv, org_region, &plane_ref,
+  )
+}
+
 fn get_mv_rd_cost<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
   p_ref: &Plane<T>, bit_depth: usize, pmv: [MotionVector; 2], lambda: u32,
@@ -667,10 +672,11 @@ fn get_mv_rd_cost<T: Pixel>(
   mvy_max: isize, bsize: BlockSize, cand_mv: MotionVector,
   tmp_region_opt: Option<&mut PlaneRegionMut<T>>, ref_frame: RefType,
 ) -> u64 {
-  if (cand_mv.col as isize) < mvx_min || (cand_mv.col as isize) > mvx_max {
-    return std::u64::MAX;
-  }
-  if (cand_mv.row as isize) < mvy_min || (cand_mv.row as isize) > mvy_max {
+  if (cand_mv.col as isize) < mvx_min
+    || (cand_mv.col as isize) > mvx_max
+    || (cand_mv.row as isize) < mvy_min
+    || (cand_mv.row as isize) > mvy_max
+  {
     return std::u64::MAX;
   }
 
