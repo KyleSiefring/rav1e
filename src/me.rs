@@ -855,7 +855,7 @@ fn get_mv_rate(
 
 pub fn estimate_motion_ss4<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, bsize: BlockSize,
-  ref_idx: usize, tile_bo: TileBlockOffset, subset_b: [Option<(MotionVector, u32)>; 3]
+  ref_idx: usize, tile_bo: TileBlockOffset, subset_b: [Option<(MotionVector, u32)>; 3] // TODO: Rename, subset_b contains 0 mv
 ) -> Option<(MotionVector, u32)> {
   if let Some(ref rec) = fi.rec_buffer.frames[ref_idx] {
     let blk_w = bsize.width();
@@ -886,35 +886,44 @@ pub fn estimate_motion_ss4<T: Pixel>(
 
       let global_mv = [MotionVector::default(); 2];
 
-      let predictors = &mut [median_mv];
+      let mut predictors = [ArrayVec::<[MotionVector; 4]>::new(), ArrayVec::<[MotionVector; 4]>::new()];
+      predictors[0].push(median_mv);
+      for cand_mv in subset_b.iter().filter_map(|&a| a).map(|a| a.0) {
+        predictors[1].push(cand_mv);
+      }
+      predictors[1].push(MotionVector::default());
 
-      for predictor in predictors.iter_mut() {
+      for predictor in predictors.iter_mut().flatten() {
         predictor.row >>= 2;
         predictor.col >>= 2;
       }
 
-      let results = fullpel_diamond_me_search(
-        fi,
-        po,
-        org_region,
-        &rec.input_qres,
-        predictors,
-        fi.sequence.bit_depth,
-        global_mv,
-        lambda,
-        mvx_min >> 2,
-        mvx_max >> 2,
-        mvy_min >> 2,
-        mvy_max >> 2,
-        BlockSize::from_width_and_height(
-          bsize.width() >> 2,
-          bsize.height() >> 2,
-        )
-      );
+      for subset in predictors.iter() {
+        let results = fullpel_diamond_me_search(
+          fi,
+          po,
+          org_region,
+          &rec.input_qres,
+          &subset,
+          fi.sequence.bit_depth,
+          global_mv,
+          lambda,
+          mvx_min >> 2,
+          mvx_max >> 2,
+          mvy_min >> 2,
+          mvy_max >> 2,
+          BlockSize::from_width_and_height(
+            bsize.width() >> 2,
+            bsize.height() >> 2,
+          )
+        );
 
-      if results.dist < thresh {
-        return Some((MotionVector { row: results.mv.row * 4, col: results.mv.col * 4 }, results.dist));
+        if results.dist < thresh {
+          return Some((MotionVector { row: results.mv.row * 4, col: results.mv.col * 4 }, results.dist));
+        }
       }
+
+      // TODO: save best mv from before and use if it beats full search
     }
 
     let range_x = 192 * fi.me_range_scale as isize;
