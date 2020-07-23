@@ -899,27 +899,37 @@ pub fn estimate_motion_ss4<T: Pixel>(
       }
 
       for subset in predictors.iter() {
-        let results = fullpel_diamond_me_search(
-          fi,
-          po,
-          org_region,
-          &rec.input_qres,
-          &subset,
-          fi.sequence.bit_depth,
-          global_mv,
-          lambda,
-          mvx_min >> 2,
-          mvx_max >> 2,
-          mvy_min >> 2,
-          mvy_max >> 2,
-          BlockSize::from_width_and_height(
-            bsize.width() >> 2,
-            bsize.height() >> 2,
-          )
-        );
+        let mut best = FullpelMVSearchResult {
+          mv: MotionVector::default(),
+          dist: u32::MAX,
+          cost: u64::MAX
+        };
+        for &cand in subset {
+          let results = fullpel_diamond_me_search(
+            fi,
+            po,
+            org_region,
+            &rec.input_qres,
+            &[cand],
+            fi.sequence.bit_depth,
+            global_mv,
+            lambda,
+            mvx_min >> 2,
+            mvx_max >> 2,
+            mvy_min >> 2,
+            mvy_max >> 2,
+            BlockSize::from_width_and_height(
+              bsize.width() >> 2,
+              bsize.height() >> 2,
+            )
+          );
+          if results.cost < best.cost {
+            best = results;
+          }
+        }
 
-        if results.dist < thresh {
-          return Some((MotionVector { row: results.mv.row * 4, col: results.mv.col * 4 }, results.dist));
+        if best.dist < thresh {
+          return Some((MotionVector { row: best.mv.row * 4, col: best.mv.col * 4 }, best.dist));
         }
       }
 
