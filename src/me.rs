@@ -134,7 +134,6 @@ pub fn get_subset_predictors<T: Pixel>(
 
   // EPZS subset C predictors.
 
-  /*
   if let Some(frame_ref) = frame_ref_opt {
     let prev_frame_mvs = &frame_ref.frame_mvs[ref_frame_id];
 
@@ -150,19 +149,18 @@ pub fn get_subset_predictors<T: Pixel>(
       let top = prev_frame_mvs[frame_bo.0.y - 1][frame_bo.0.x];
       add_cand(&mut predictors, top);
     }
-    if frame_bo.0.x < prev_frame_mvs.cols - 1 {
+    /*if frame_bo.0.x < prev_frame_mvs.cols - 1 {
       let right = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x + 1];
       add_cand(&mut predictors, right);
     }
     if frame_bo.0.y < prev_frame_mvs.rows - 1 {
       let bottom = prev_frame_mvs[frame_bo.0.y + 1][frame_bo.0.x];
       add_cand(&mut predictors, bottom);
-    }
+    }*/
 
     let previous = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x];
     add_cand(&mut predictors, previous);
   }
-  */
 
   predictors
 }
