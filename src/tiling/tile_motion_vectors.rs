@@ -137,3 +137,127 @@ impl IndexMut<usize> for TileMotionVectorsMut<'_> {
     }
   }
 }
+
+/// Tiled view of TODO
+#[derive(Debug)]
+pub struct TileMotionStats<'a> {
+  data: *const u32,
+  // expressed in mi blocks
+  // private to guarantee borrowing rules
+  x: usize,
+  y: usize,
+  cols: usize,
+  rows: usize,
+  stride: usize, // number of cols in the underlying FrameMotionVectors
+  phantom: PhantomData<&'a MotionVector>,
+}
+
+/// Mutable tiled view of TODO
+#[derive(Debug)]
+pub struct TileMotionStatsMut<'a> {
+  data: *mut u32,
+  // expressed in mi blocks
+  // private to guarantee borrowing rules
+  x: usize,
+  y: usize,
+  cols: usize,
+  rows: usize,
+  stride: usize, // number of cols in the underlying FrameMotionVectors
+  phantom: PhantomData<&'a mut MotionVector>,
+}
+
+// common impl for TODO and TODO
+macro_rules! tile_motion_stats_common {
+  // $name: TODO or TODO
+  // $opt_mut: nothing or mut
+  ($name:ident $(,$opt_mut:tt)?) => {
+    impl<'a> $name<'a> {
+
+      #[inline(always)]
+      pub fn new(
+        frame_stats: &'a $($opt_mut)? FrameMotionEstimationStats,
+        x: usize,
+        y: usize,
+        cols: usize,
+        rows: usize,
+      ) -> Self {
+        assert!(x + cols <= frame_stats.cols);
+        assert!(y + rows <= frame_stats.rows);
+        Self {
+          data: & $($opt_mut)? frame_stats[y][x],
+          x,
+          y,
+          cols,
+          rows,
+          stride: frame_stats.cols,
+          phantom: PhantomData,
+        }
+      }
+
+      #[inline(always)]
+      pub const fn x(&self) -> usize {
+        self.x
+      }
+
+      #[inline(always)]
+      pub const fn y(&self) -> usize {
+        self.y
+      }
+
+      #[inline(always)]
+      pub const fn cols(&self) -> usize {
+        self.cols
+      }
+
+      #[inline(always)]
+      pub const fn rows(&self) -> usize {
+        self.rows
+      }
+    }
+
+    unsafe impl Send for $name<'_> {}
+    unsafe impl Sync for $name<'_> {}
+
+    impl Index<usize> for $name<'_> {
+      type Output = [u32];
+
+      #[inline(always)]
+      fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.rows);
+        unsafe {
+          let ptr = self.data.add(index * self.stride);
+          slice::from_raw_parts(ptr, self.cols)
+        }
+      }
+    }
+  }
+}
+
+tile_motion_stats_common!(TileMotionStats);
+tile_motion_stats_common!(TileMotionStatsMut, mut);
+
+impl TileMotionStatsMut<'_> {
+  #[inline(always)]
+  pub const fn as_const(&self) -> TileMotionStats<'_> {
+    TileMotionStats {
+      data: self.data,
+      x: self.x,
+      y: self.y,
+      cols: self.cols,
+      rows: self.rows,
+      stride: self.stride,
+      phantom: PhantomData,
+    }
+  }
+}
+
+impl IndexMut<usize> for TileMotionStatsMut<'_> {
+  #[inline(always)]
+  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+    assert!(index < self.rows);
+    unsafe {
+      let ptr = self.data.add(index * self.stride);
+      slice::from_raw_parts_mut(ptr, self.cols)
+    }
+  }
+}

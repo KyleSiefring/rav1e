@@ -361,6 +361,7 @@ pub struct FrameState<T: Pixel> {
   // these are stored per-tile for easier access.
   pub half_res_pmvs: Vec<(PlaneSuperBlockOffset, Vec<BlockPmv>)>,
   pub frame_mvs: Arc<Vec<FrameMotionVectors>>,
+  pub frame_mv_stats: Arc<Vec<FrameMotionEstimationStats>>,
   pub enc_stats: EncoderStats,
 }
 
@@ -404,6 +405,13 @@ impl<T: Pixel> FrameState<T> {
         let mut vec = Vec::with_capacity(REF_FRAMES);
         for _ in 0..REF_FRAMES {
           vec.push(FrameMotionVectors::new(fi.w_in_b, fi.h_in_b));
+        }
+        Arc::new(vec)
+      },
+      frame_mv_stats: {
+        let mut vec = Vec::with_capacity(REF_FRAMES);
+        for _ in 0..REF_FRAMES {
+          vec.push(FrameMotionEstimationStats::new(fi.w_in_b, fi.h_in_b));
         }
         Arc::new(vec)
       },
@@ -2879,21 +2887,29 @@ pub(crate) fn build_coarse_pmvs<T: Pixel>(
   assert!(!fi.sequence.use_128x128_superblock);
   if ts.mi_width >= 16 && ts.mi_height >= 16 {
     let mut frame_pmvs = Vec::with_capacity(ts.sb_width * ts.sb_height);
+    let mut this_row: Vec<[Option<(MotionVector, u32)>; REF_FRAMES]> = vec![[None; REF_FRAMES]; ts.sb_width + 2];
+    let mut prev_row: Vec<[Option<(MotionVector, u32)>; REF_FRAMES]> = vec![[None; REF_FRAMES]; ts.sb_width + 2];
     for sby in 0..ts.sb_height {
       for sbx in 0..ts.sb_width {
         let sbo = TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby });
         let bo = sbo.block_offset(0, 0);
         let mut pmvs: [Option<MotionVector>; REF_FRAMES] = [None; REF_FRAMES];
+        let left = this_row[sbx];
+        let top = prev_row[sbx + 1];
+        let top_right = prev_row[sbx + 2];
         for i in inter_cfg.allowed_ref_frames().iter().map(|rf| rf.to_index())
         {
           let r = fi.ref_frames[i] as usize;
           if pmvs[r].is_none() {
-            pmvs[r] =
-              estimate_motion_ss4(fi, ts, BlockSize::BLOCK_64X64, r, bo);
+            let results = estimate_motion_ss4(fi, ts, BlockSize::BLOCK_64X64, r, bo, [left[r], top[r], top_right[r]]);
+            pmvs[r] = results.and_then(|a| Some(a.0));
+            this_row[sbx + 1][r] = results;
           }
         }
         frame_pmvs.push(pmvs);
       }
+      // The same ref_frames will be used, don't need to reset to None
+      mem::swap(&mut this_row, &mut prev_row);
     }
     frame_pmvs
   } else {
@@ -3321,7 +3337,7 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
                   BlockSize::BLOCK_16X16,
                   bo,
                   i.to_index(),
-                  mv,
+                  mv.0,
                 );
               }
             }

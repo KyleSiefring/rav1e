@@ -64,6 +64,7 @@ pub struct TileStateMut<'a, T: Pixel> {
   pub restoration: TileRestorationStateMut<'a>,
   pub half_res_pmvs: &'a mut Vec<BlockPmv>,
   pub mvs: Vec<TileMotionVectorsMut<'a>>,
+  pub mv_stats: Vec<TileMotionStatsMut<'a>>,
   pub coded_block_info: MiTileState,
   pub integral_buffer: IntegralImageBuffer,
   pub inter_compound_buffers: InterCompoundBuffers,
@@ -192,6 +193,18 @@ impl<'a, T: Pixel> TileStateMut<'a, T> {
           )
         })
         .collect(),
+      mv_stats: Arc::make_mut(&mut fs.frame_mv_stats)
+          .iter_mut()
+          .map(|fmvs| {
+            TileMotionStatsMut::new(
+              fmvs,
+              sbo.0.x << (sb_size_log2 - MI_SIZE_LOG2),
+              sbo.0.y << (sb_size_log2 - MI_SIZE_LOG2),
+              width >> MI_SIZE_LOG2,
+              height >> MI_SIZE_LOG2,
+            )
+          })
+          .collect(),
       coded_block_info: MiTileState::new(
         width >> MI_SIZE_LOG2,
         height >> MI_SIZE_LOG2,
