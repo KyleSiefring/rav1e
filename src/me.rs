@@ -141,23 +141,23 @@ pub fn get_subset_predictors<T: Pixel>(
       y: tile_mvs.y() + tile_bo.0.y,
     });
     if frame_bo.0.x > 0 {
-      let left = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x - 1];
+      let left = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x - 1];
       add_cand(&mut predictors, left);
     }
     if frame_bo.0.y > 0 {
-      let top = prev_frame_mvs[frame_bo.0.y - 1][frame_bo.0.x];
+      let top = prev_frame_mvs[frame_bo.0.y - 1][frame_bo.0.x + (w >> 1)];
       add_cand(&mut predictors, top);
     }
     if frame_bo.0.x < prev_frame_mvs.cols - w {
-      let right = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x + w];
+      let right = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x + w];
       add_cand(&mut predictors, right);
     }
     if frame_bo.0.y < prev_frame_mvs.rows - h {
-      let bottom = prev_frame_mvs[frame_bo.0.y + h][frame_bo.0.x];
+      let bottom = prev_frame_mvs[frame_bo.0.y + h][frame_bo.0.x + (w >> 1)];
       add_cand(&mut predictors, bottom);
     }
 
-    let previous = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x];
+    let previous = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x + (w >> 1)];
     add_cand(&mut predictors, previous);
   }
 
