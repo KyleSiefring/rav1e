@@ -104,11 +104,17 @@ pub fn get_subset_predictors<T: Pixel>(
 
   // EPZS subset A and B predictors.
 
-  let mut median_preds = ArrayVec::<[_; 3]>::new();
+  let mut median_preds = ArrayVec::<[_; 4]>::new();
   if tile_bo.0.x > 0 {
     let left = tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1];
     median_preds.push(left);
     add_cand(&mut predictors, left);
+
+    if tile_bo.0.y > 0 {
+      let top_left = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x - 1];
+      median_preds.push(top_left);
+      add_cand(&mut predictors, top_left);
+    }
   }
   if tile_bo.0.y > 0 {
     let top = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)];
