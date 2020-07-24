@@ -106,7 +106,7 @@ pub fn get_subset_predictors<T: Pixel>(
 
   let mut median_preds = ArrayVec::<[_; 3]>::new();
   if tile_bo.0.x > 0 {
-    let left = tile_mvs[tile_bo.0.y][tile_bo.0.x - 1];
+    let left = tile_mvs[tile_bo.0.y + h - 1][tile_bo.0.x - 1];
     median_preds.push(left);
     add_cand(&mut predictors, left);
   }
