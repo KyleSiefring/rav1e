@@ -80,13 +80,13 @@ pub fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
   ref_frame_id: usize, bsize: BlockSize,
-) -> ArrayVec<[MotionVector; 18]> {
-  let mut predictors = ArrayVec::<[_; 18]>::new();
+) -> ArrayVec<[MotionVector; 17]> {
+  let mut predictors = ArrayVec::<[_; 17]>::new();
   let w = bsize.width_mi();
   let h = bsize.height_mi();
 
   // Add a candidate predictor, aligning to fullpel and filtering out zero mvs.
-  let add_cand = |predictors: &mut ArrayVec<[MotionVector; 18]>,
+  let add_cand = |predictors: &mut ArrayVec<[MotionVector; 17]>,
                   cand_mv: MotionVector| {
     let cand_mv = cand_mv.quantize_to_fullpel();
     if !cand_mv.is_zero() {
@@ -124,15 +124,11 @@ pub fn get_subset_predictors<T: Pixel>(
 
   if !median_preds.is_empty() {
     let mut median_mv = MotionVector::default();
-    let mut zeros = 0;
-    for &mv in median_preds.iter() {
-      median_mv = median_mv + mv;
-      zeros += (mv.row == 0 || mv.col == 0) as i16;
+    for mv in median_preds.iter() {
+      median_mv = median_mv + *mv;
     }
-    if zeros != median_preds.len() as i16 {
-      add_cand(&mut predictors, median_mv / (median_preds.len() as i16));
-      add_cand(&mut predictors, median_mv / (median_preds.len() as i16 - zeros));
-    }
+    median_mv = median_mv / (median_preds.len() as i16);
+    add_cand(&mut predictors, median_mv);
   }
 
   // EPZS subset C predictors.
