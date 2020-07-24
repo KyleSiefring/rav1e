@@ -7,7 +7,10 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
-use crate::context::{BlockOffset, PlaneBlockOffset, TileBlockOffset, BLOCK_TO_PLANE_SHIFT, MI_SIZE};
+use crate::context::{
+  BlockOffset, PlaneBlockOffset, TileBlockOffset, BLOCK_TO_PLANE_SHIFT,
+  MI_SIZE,
+};
 use crate::dist::*;
 use crate::encoder::ReferenceFrame;
 use crate::frame::*;
@@ -79,7 +82,7 @@ const fn get_mv_range(
 pub fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
-  ref_frame_id: usize, bsize: BlockSize,
+  ref_frame_id: usize,
 ) -> ArrayVec<[MotionVector; 17]> {
   let mut predictors = ArrayVec::<[_; 17]>::new();
 
@@ -155,17 +158,8 @@ pub fn get_subset_predictors<T: Pixel>(
       add_cand(&mut predictors, bottom);
     }*/
 
-    let mut col: i32 = 0;
-    let mut row: i32 = 0;
-    let count_log2 = bsize.height_mi_log2() + bsize.width_mi_log2();
-    for y in 0..bsize.height_mi() {
-      for &mv in prev_frame_mvs[frame_bo.0.y + y].iter() {
-        col += mv.col as i32;
-        row += mv.row as i32;
-      }
-    }
-
-    add_cand(&mut predictors, MotionVector { row: (row >> count_log2) as i16, col: (col >> count_log2) as i16 } );
+    let previous = prev_frame_mvs[frame_bo.0.y][frame_bo.0.x];
+    add_cand(&mut predictors, previous);
   }
 
   predictors
@@ -402,7 +396,6 @@ impl MotionEstimation for DiamondSearch {
       tile_mvs,
       frame_ref,
       ref_frame.to_index(),
-      bsize,
     );
 
     let frame_bo = ts.to_frame_block_offset(tile_bo);
@@ -484,7 +477,6 @@ impl MotionEstimation for DiamondSearch {
       tile_mvs,
       frame_ref,
       ref_frame.to_index(),
-      bsize
     );
 
     for predictor in &mut predictors {
