@@ -60,7 +60,7 @@ pub struct InterConfig {
 
 impl InterConfig {
   pub(crate) fn new(enc_config: &EncoderConfig) -> InterConfig {
-    let reorder = !enc_config.low_latency;
+    let reorder = false;
     // A group always starts with (group_output_len - group_input_len) hidden
     //  frames, followed by group_input_len shown frames.
     // The shown frames iterate over the input frames in order, with frames
