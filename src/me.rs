@@ -76,6 +76,109 @@ const fn get_mv_range(
   (mvx_min, mvx_max, mvy_min, mvy_max)
 }
 
+pub fn get_subset_predictors_blocks<T: Pixel>(
+  tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>, blocks: &TileBlocksMut,
+  tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
+  ref_frame: RefType, bsize: BlockSize,
+) -> ArrayVec<[MotionVector; 18]> {
+  let ref_frame_id: usize = ref_frame.to_index();
+  let mut predictors = ArrayVec::<[_; 18]>::new();
+  let w = bsize.width_mi();
+  let h = bsize.height_mi();
+
+  // Add a candidate predictor, aligning to fullpel and filtering out zero mvs.
+  let add_cand = |predictors: &mut ArrayVec<[MotionVector; 18]>,
+                  cand_mv: MotionVector| {
+    let cand_mv = cand_mv.quantize_to_fullpel();
+    if !cand_mv.is_zero() {
+      predictors.push(cand_mv)
+    }
+  };
+  let get_mv = |y: usize, x: usize| -> Option<MotionVector> {
+    let blocks = blocks[y][x];
+    blocks.ref_frames.iter().zip(&blocks.mv).find(|(&sample_frame, _)| sample_frame == ref_frame).and_then(|(_, &mv)| Some(mv))
+  };
+
+  // Zero motion vector, don't use add_cand since it skips zero vectors.
+  predictors.push(MotionVector::default());
+
+  // Coarse motion estimation.
+  for mv in cmvs {
+    add_cand(&mut predictors, mv);
+  }
+
+  // EPZS subset A and B predictors.
+
+  let mut median_preds = ArrayVec::<[_; 4]>::new();
+  if tile_bo.0.x > 0 {
+    if let Some(left) = get_mv(tile_bo.0.y + (h >> 1), tile_bo.0.x - 1) {
+      median_preds.push(left);
+      add_cand(&mut predictors, left);
+    }
+
+    if tile_bo.0.y > 0 {
+      if let Some(top_left) = get_mv(tile_bo.0.y - 1, tile_bo.0.x - 1) {
+        median_preds.push(top_left);
+        add_cand(&mut predictors, top_left);
+      }
+    }
+  }
+  if tile_bo.0.y > 0 {
+    if let Some(top) = get_mv(tile_bo.0.y - 1, tile_bo.0.x + (w >> 1)) {
+      median_preds.push(top);
+      add_cand(&mut predictors, top);
+    }
+
+    if tile_bo.0.x < tile_mvs.cols() - w {
+      if let Some(top_right) = get_mv(tile_bo.0.y - 1, tile_bo.0.x + w) {
+        median_preds.push(top_right);
+        add_cand(&mut predictors, top_right);
+      }
+    }
+  }
+
+  if !median_preds.is_empty() {
+    let mut median_mv = MotionVector::default();
+    for mv in median_preds.iter() {
+      median_mv = median_mv + *mv;
+    }
+    median_mv = median_mv / (median_preds.len() as i16);
+    add_cand(&mut predictors, median_mv);
+  }
+
+  // EPZS subset C predictors.
+
+  if let Some(frame_ref) = frame_ref_opt {
+    let prev_frame_mvs = &frame_ref.frame_mvs[ref_frame_id];
+
+    let frame_bo = PlaneBlockOffset(BlockOffset {
+      x: tile_mvs.x() + tile_bo.0.x,
+      y: tile_mvs.y() + tile_bo.0.y,
+    });
+    if frame_bo.0.x > 0 {
+      let left = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x - 1];
+      add_cand(&mut predictors, left);
+    }
+    if frame_bo.0.y > 0 {
+      let top = prev_frame_mvs[frame_bo.0.y - 1][frame_bo.0.x + (w >> 1)];
+      add_cand(&mut predictors, top);
+    }
+    if frame_bo.0.x < prev_frame_mvs.cols - w {
+      let right = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x + w];
+      add_cand(&mut predictors, right);
+    }
+    if frame_bo.0.y < prev_frame_mvs.rows - h {
+      let bottom = prev_frame_mvs[frame_bo.0.y + h][frame_bo.0.x + (w >> 1)];
+      add_cand(&mut predictors, bottom);
+    }
+
+    let previous = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x + (w >> 1)];
+    add_cand(&mut predictors, previous);
+  }
+
+  predictors
+}
+
 pub fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
@@ -188,9 +291,9 @@ pub trait MotionEstimation {
   );
 
   fn motion_estimation<T: Pixel>(
-    fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, bsize: BlockSize,
-    tile_bo: TileBlockOffset, ref_frame: RefType, cmv: MotionVector,
-    pmv: [MotionVector; 2],
+    fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, blocks: &TileBlocksMut,
+    bsize: BlockSize, tile_bo: TileBlockOffset, ref_frame: RefType,
+    cmv: MotionVector, pmv: [MotionVector; 2],
   ) -> MotionVector {
     match fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize] {
       Some(ref rec) => {
@@ -208,7 +311,7 @@ pub trait MotionEstimation {
         let mut lowest_cost = std::u64::MAX;
         let mut best_mv = MotionVector::default();
 
-        Self::full_pixel_me(
+        /*Self::full_pixel_me(
           fi,
           ts,
           rec,
@@ -223,6 +326,42 @@ pub trait MotionEstimation {
           bsize,
           &mut best_mv,
           &mut lowest_cost,
+          ref_frame,
+        );*/
+
+        let tile_mvs = &ts.mvs[ref_frame.to_index()].as_const();
+        let frame_ref = fi.rec_buffer.frames[fi.ref_frames[0] as usize]
+            .as_ref()
+            .map(Arc::as_ref);
+        let predictors = get_subset_predictors_blocks(
+          tile_bo,
+          iter::once(cmv).collect(),
+          blocks,
+          tile_mvs,
+          frame_ref,
+          ref_frame,
+          bsize,
+        );
+
+        let frame_bo = ts.to_frame_block_offset(tile_bo);
+        diamond_me_search(
+          fi,
+          frame_bo.to_luma_plane_offset(),
+          &ts.input.planes[0],
+          &rec.frame.planes[0],
+          &predictors,
+          fi.sequence.bit_depth,
+          pmv,
+          lambda,
+          mvx_min,
+          mvx_max,
+          mvy_min,
+          mvy_max,
+          bsize,
+          false,
+          &mut best_mv,
+          &mut lowest_cost,
+          false,
           ref_frame,
         );
 

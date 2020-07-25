@@ -1054,7 +1054,7 @@ fn inter_frame_rdo_mode_decision<T: Pixel>(
     let cmv = pmvs[ref_slot].unwrap_or_else(Default::default);
 
     let b_me =
-      motion_estimation(fi, ts, bsize, tile_bo, ref_frames[0], cmv, pmv);
+      motion_estimation(fi, ts, cw.bc.blocks, bsize, tile_bo, ref_frames[0], cmv, pmv);
 
     if !fi.config.speed_settings.encode_bottomup
       && (bsize == BlockSize::BLOCK_32X32 || bsize == BlockSize::BLOCK_64X64)
