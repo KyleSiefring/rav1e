@@ -80,13 +80,13 @@ pub fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
   ref_frame_id: usize, bsize: BlockSize,
-) -> ArrayVec<[MotionVector; 18]> {
-  let mut predictors = ArrayVec::<[_; 18]>::new();
+) -> ArrayVec<[MotionVector; 17]> {
+  let mut predictors = ArrayVec::<[_; 17]>::new();
   let w = bsize.width_mi();
   let h = bsize.height_mi();
 
   // Add a candidate predictor, aligning to fullpel and filtering out zero mvs.
-  let add_cand = |predictors: &mut ArrayVec<[MotionVector; 18]>,
+  let add_cand = |predictors: &mut ArrayVec<[MotionVector; 17]>,
                   cand_mv: MotionVector| {
     let cand_mv = cand_mv.quantize_to_fullpel();
     if !cand_mv.is_zero() {
@@ -146,21 +146,17 @@ pub fn get_subset_predictors<T: Pixel>(
       x: tile_mvs.x() + tile_bo.0.x,
       y: tile_mvs.y() + tile_bo.0.y,
     });
-    if frame_bo.0.x > 0 {
-      let left = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x - 1];
-      add_cand(&mut predictors, left);
-    }
-    if frame_bo.0.y > 0 {
-      let top = prev_frame_mvs[frame_bo.0.y - 1][frame_bo.0.x + (w >> 1)];
-      add_cand(&mut predictors, top);
+    if frame_bo.0.y < prev_frame_mvs.rows - h && frame_bo.0.x > 0 {
+      let bottom = prev_frame_mvs[frame_bo.0.y + h as usize][0.max(frame_bo.0.x as isize - 2) as usize];
+      add_cand(&mut predictors, bottom);
     }
     if frame_bo.0.x < prev_frame_mvs.cols - w {
-      let right = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x + w];
+      if frame_bo.0.y < prev_frame_mvs.rows - h {
+        let bottom_right = prev_frame_mvs[frame_bo.0.y + h][frame_bo.0.x + w];
+        add_cand(&mut predictors, bottom_right);
+      }
+      let right = prev_frame_mvs[frame_bo.0.y + (h as isize - 2).max(0) as usize][frame_bo.0.x + w];
       add_cand(&mut predictors, right);
-    }
-    if frame_bo.0.y < prev_frame_mvs.rows - h {
-      let bottom = prev_frame_mvs[frame_bo.0.y + h][frame_bo.0.x + (w >> 1)];
-      add_cand(&mut predictors, bottom);
     }
 
     let previous = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x + (w >> 1)];
