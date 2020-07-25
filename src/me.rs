@@ -96,7 +96,7 @@ pub fn get_subset_predictors_blocks<T: Pixel>(
   };
   let get_mv = |y: usize, x: usize| -> Option<MotionVector> {
     let blocks = blocks[y][x];
-    blocks.ref_frames.iter().zip(&blocks.mv).find(|(&sample_frame, _)| sample_frame == ref_frame).and_then(|(_, &mv)| Some(mv)).or(Some(MotionVector::default()))
+    blocks.ref_frames.iter().zip(&blocks.mv).find(|(&sample_frame, _)| sample_frame == ref_frame).and_then(|(_, &mv)| Some(tile_mvs[y][x]))
   };
 
   // Zero motion vector, don't use add_cand since it skips zero vectors.
