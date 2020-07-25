@@ -2765,6 +2765,16 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
           part_decision.ref_frames[0].to_index(),
           part_decision.mvs[0],
         );
+
+        /*if mode_luma.is_compound() {
+          save_block_motion(
+            ts,
+            part_decision.bsize,
+            part_decision.bo,
+            part_decision.ref_frames[1].to_index(),
+            part_decision.mvs[1],
+          );
+        }*/
       }
 
       // FIXME: every final block that has gone through the RDO decision process is encoded twice
