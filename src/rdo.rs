@@ -17,7 +17,7 @@ use crate::deblock::*;
 use crate::dist::*;
 use crate::ec::{Writer, WriterCounter, OD_BITRES};
 use crate::encode_block_with_modes;
-use crate::encoder::{FrameInvariants, IMPORTANCE_BLOCK_SIZE};
+use crate::encoder::{FrameInvariants, IMPORTANCE_BLOCK_SIZE, save_block_motion};
 use crate::frame::Frame;
 use crate::frame::*;
 use crate::header::ReferenceMode;
@@ -1784,6 +1784,27 @@ fn rdo_partition_simple<T: Pixel, W: Writer>(
 
     if fi.enable_early_exit && rd_cost_sum > best_rd {
       return None;
+    }
+
+    let mode_luma = mode_decision.pred_mode_luma;
+    if !mode_luma.is_intra() {
+      save_block_motion(
+        ts,
+        mode_decision.bsize,
+        mode_decision.bo,
+        mode_decision.ref_frames[0].to_index(),
+        mode_decision.mvs[0],
+      );
+
+      if mode_luma.is_compound() {
+        save_block_motion(
+          ts,
+          mode_decision.bsize,
+          mode_decision.bo,
+          mode_decision.ref_frames[1].to_index(),
+          mode_decision.mvs[1],
+        );
+      }
     }
 
     if subsize >= BlockSize::BLOCK_8X8 && subsize.is_sqr() {

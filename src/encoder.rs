@@ -2766,7 +2766,7 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
           part_decision.mvs[0],
         );
 
-        if mode_luma.is_compound() {
+        if is_compound {
           save_block_motion(
             ts,
             part_decision.bsize,
