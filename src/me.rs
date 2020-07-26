@@ -99,8 +99,8 @@ pub fn get_subset_predictors_blocks<T: Pixel>(
     /*if let Some(bmv) = block.ref_frames.iter().zip(&block.mv).find(|(&sample_frame, _)| sample_frame == ref_frame).and_then(|(_, &mv)| Some(mv)) {
       assert_eq!(bmv, tile_mvs[y][x]);
     }*/
-    //Some(tile_mvs[y][x])
-    block.ref_frames.iter().zip(&block.mv).find(|(&sample_frame, _)| sample_frame == ref_frame).and_then(|(_, &mv)| Some(mv)).or(Some(tile_mvs[y][x]))
+    Some(tile_mvs[y][x])
+    //block.ref_frames.iter().zip(&block.mv).find(|(&sample_frame, _)| sample_frame == ref_frame).and_then(|(_, &mv)| Some(mv)).or(Some(tile_mvs[y][x]))
   };
 
   // Zero motion vector, don't use add_cand since it skips zero vectors.
