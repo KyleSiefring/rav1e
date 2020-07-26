@@ -17,9 +17,7 @@ use crate::deblock::*;
 use crate::dist::*;
 use crate::ec::{Writer, WriterCounter, OD_BITRES};
 use crate::encode_block_with_modes;
-use crate::encoder::{
-  save_block_motion, FrameInvariants, IMPORTANCE_BLOCK_SIZE,
-};
+use crate::encoder::{FrameInvariants, IMPORTANCE_BLOCK_SIZE, save_block_motion};
 use crate::frame::Frame;
 use crate::frame::*;
 use crate::header::ReferenceMode;
@@ -1055,16 +1053,8 @@ fn inter_frame_rdo_mode_decision<T: Pixel>(
     let ref_slot = ref_slot_set[i] as usize;
     let cmv = pmvs[ref_slot].unwrap_or_else(Default::default);
 
-    let b_me = motion_estimation(
-      fi,
-      ts,
-      cw.bc.blocks,
-      bsize,
-      tile_bo,
-      ref_frames[0],
-      cmv,
-      pmv,
-    );
+    let b_me =
+      motion_estimation(fi, ts, cw.bc.blocks, bsize, tile_bo, ref_frames[0], cmv, pmv);
 
     if !fi.config.speed_settings.encode_bottomup
       && (bsize == BlockSize::BLOCK_32X32 || bsize == BlockSize::BLOCK_64X64)
