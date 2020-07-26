@@ -79,7 +79,7 @@ const fn get_mv_range(
 pub fn get_subset_predictors_blocks<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>, blocks: &TileBlocksMut,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
-  ref_frame: RefType, bsize: BlockSize,
+  ref_frame: RefType, bsize: BlockSize, pmv: [MotionVector; 2]
 ) -> ArrayVec<[MotionVector; 18]> {
   let ref_frame_id: usize = ref_frame.to_index();
   let mut predictors = ArrayVec::<[_; 18]>::new();
@@ -94,6 +94,7 @@ pub fn get_subset_predictors_blocks<T: Pixel>(
       predictors.push(cand_mv)
     }
   };
+
   let get_mv = |y: usize, x: usize| -> Option<MotionVector> {
     /*let block = blocks[y][x];
     if let Some(bmv) = block.ref_frames.iter().zip(&block.mv).find(|(&sample_frame, _)| sample_frame == ref_frame).and_then(|(_, &mv)| Some(mv)) {
@@ -108,6 +109,10 @@ pub fn get_subset_predictors_blocks<T: Pixel>(
 
   // Coarse motion estimation.
   for mv in cmvs {
+    add_cand(&mut predictors, mv);
+  }
+
+  for &mv in &pmv {
     add_cand(&mut predictors, mv);
   }
 
@@ -345,6 +350,7 @@ pub trait MotionEstimation {
           frame_ref,
           ref_frame,
           bsize,
+          pmv
         );
 
         let frame_bo = ts.to_frame_block_offset(tile_bo);
