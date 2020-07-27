@@ -222,7 +222,7 @@ pub trait MotionEstimation {
           rec,
           tile_bo,
           lambda,
-          iter::once(cmv).collect(),
+          iter::once(cmv).chain(pmv.iter().map(|&a| a).take(1)).collect(),
           pmv,
           mvx_min,
           mvx_max,
