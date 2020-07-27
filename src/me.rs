@@ -105,7 +105,8 @@ pub fn get_subset_predictors<T: Pixel>(
     add_cand(&mut predictors, mv);
   }
 
-  // EPZS subset A and B predictors.
+  // EPZS subset A and B predictors with the addition of a top left predictor.
+  // Sample the middle of bordering side of the left and top blocks
 
   let mut median_preds = ArrayVec::<[_; 4]>::new();
   if tile_bo.0.x > 0 {
@@ -115,7 +116,7 @@ pub fn get_subset_predictors<T: Pixel>(
 
     if tile_bo.0.y > 0 {
       let top_left = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x - 1];
-      //median_preds.push(top_left);
+      median_preds.push(top_left);
       add_cand(&mut predictors, top_left);
     }
   }
@@ -141,6 +142,9 @@ pub fn get_subset_predictors<T: Pixel>(
   }
 
   // EPZS subset C predictors.
+  // Sample the middle of bordering side of the left, right, top and bottom
+  // blocks of the previous frame.
+  // Sample the middle of this block in the previous frame.
 
   if let Some(frame_ref) = frame_ref_opt {
     let prev_frame_mvs = &frame_ref.frame_mvs[ref_frame_id];
