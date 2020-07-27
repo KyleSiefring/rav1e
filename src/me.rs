@@ -82,7 +82,7 @@ const fn get_mv_range(
 pub fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
-  ref_frame_id: usize, bsize: BlockSize,
+  ref_frame_id: usize, bsize: BlockSize
 ) -> ArrayVec<[MotionVector; 18]> {
   let mut predictors = ArrayVec::<[_; 18]>::new();
   let w = bsize.width_mi();
@@ -114,11 +114,11 @@ pub fn get_subset_predictors<T: Pixel>(
     median_preds.push(left);
     add_cand(&mut predictors, left);
 
-    if tile_bo.0.y > 0 {
+    /*if tile_bo.0.y > 0 {
       let top_left = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x - 1];
       median_preds.push(top_left);
       add_cand(&mut predictors, top_left);
-    }
+    }*/
   }
   if tile_bo.0.y > 0 {
     let top = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)];
