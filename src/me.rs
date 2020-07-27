@@ -132,14 +132,14 @@ pub fn get_subset_predictors<T: Pixel>(
     }
   }
 
-  if !median_preds.is_empty() {
+  /*if !median_preds.is_empty() {
     let mut median_mv = MotionVector::default();
     for mv in median_preds.iter() {
       median_mv = median_mv + *mv;
     }
     median_mv = median_mv / (median_preds.len() as i16);
     add_cand(&mut predictors, median_mv);
-  }
+  }*/
 
   // EPZS subset C predictors.
   // Sample the middle of bordering side of the left, right, top and bottom
