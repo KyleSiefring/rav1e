@@ -1526,6 +1526,20 @@ pub fn save_block_motion<T: Pixel>(
   }
 }
 
+pub fn save_block_motion_odd<T: Pixel>(
+  ts: &mut TileStateMut<'_, T>, bsize: BlockSize, tile_bo: TileBlockOffset,
+  ref_frame: usize, mv: MotionVector,
+) {
+  let tile_mvs = &mut ts.mvs[ref_frame];
+  let tile_bo_x_end = (tile_bo.0.x + bsize.width_mi()).min(ts.mi_width);
+  let tile_bo_y_end = (tile_bo.0.y + bsize.height_mi()).min(ts.mi_height);
+  for mi_y in (tile_bo.0.y..tile_bo_y_end).skip(1).step_by(2) {
+    for mi_x in tile_bo.0.x..tile_bo_x_end {
+      tile_mvs[mi_y][mi_x] = mv;
+    }
+  }
+}
+
 pub fn encode_block_pre_cdef<T: Pixel>(
   seq: &Sequence, ts: &TileStateMut<'_, T>, cw: &mut ContextWriter,
   w: &mut dyn Writer, bsize: BlockSize, tile_bo: TileBlockOffset, skip: bool,
@@ -2758,7 +2772,7 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
           mode_chroma = mode_luma;
         }
 
-        save_block_motion(
+        save_block_motion_odd(
           ts,
           part_decision.bsize,
           part_decision.bo,

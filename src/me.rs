@@ -117,16 +117,17 @@ pub fn get_subset_predictors<T: Pixel>(
   // for subset A.
   // Sample the middle of bordering side of the left and top blocks.
 
+  let m = if h > 1 { !1usize } else { !0 };
   if tile_bo.0.x > 0 {
-    let left = tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1];
+    let left = tile_mvs[(tile_bo.0.y + (h >> 1) & m)][tile_bo.0.x - 1];
     add_cand(&mut predictors, left);
   }
   if tile_bo.0.y > 0 {
-    let top = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)];
+    let top = tile_mvs[(tile_bo.0.y - 1) & m][tile_bo.0.x + (w >> 1)];
     add_cand(&mut predictors, top);
 
     if tile_bo.0.x < tile_mvs.cols() - w {
-      let top_right = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + w];
+      let top_right = tile_mvs[(tile_bo.0.y - 1) & m][tile_bo.0.x + w];
       add_cand(&mut predictors, top_right);
     }
   }
@@ -143,8 +144,9 @@ pub fn get_subset_predictors<T: Pixel>(
       x: tile_mvs.x() + tile_bo.0.x,
       y: tile_mvs.y() + tile_bo.0.y,
     });
+    let a = if h > 1 && frame_bo.0.y < prev_frame_mvs.rows - (h >> 1) - 1 { 1 } else { 0 };
     if frame_bo.0.x > 0 {
-      let left = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x - 1];
+      let left = prev_frame_mvs[frame_bo.0.y + (h >> 1) + a][frame_bo.0.x - 1];
       add_cand(&mut predictors, left);
     }
     if frame_bo.0.y > 0 {
@@ -152,11 +154,11 @@ pub fn get_subset_predictors<T: Pixel>(
       add_cand(&mut predictors, top);
     }
     if frame_bo.0.x < prev_frame_mvs.cols - w {
-      let right = prev_frame_mvs[frame_bo.0.y + (h >> 1)][frame_bo.0.x + w];
+      let right = prev_frame_mvs[frame_bo.0.y + (h >> 1) + a][frame_bo.0.x + w];
       add_cand(&mut predictors, right);
     }
-    if frame_bo.0.y < prev_frame_mvs.rows - h {
-      let bottom = prev_frame_mvs[frame_bo.0.y + h][frame_bo.0.x + (w >> 1)];
+    if frame_bo.0.y < prev_frame_mvs.rows - h - a {
+      let bottom = prev_frame_mvs[frame_bo.0.y + h + a][frame_bo.0.x + (w >> 1)];
       add_cand(&mut predictors, bottom);
     }
 
