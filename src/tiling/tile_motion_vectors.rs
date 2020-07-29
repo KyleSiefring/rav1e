@@ -137,3 +137,127 @@ impl IndexMut<usize> for TileMotionVectorsMut<'_> {
     }
   }
 }
+
+/// Tiled view of FrameMotionVectors
+#[derive(Debug)]
+pub struct TileMEStats<'a> {
+  data: *const MEStats,
+  // expressed in mi blocks
+  // private to guarantee borrowing rules
+  x: usize,
+  y: usize,
+  cols: usize,
+  rows: usize,
+  stride: usize, // number of cols in the underlying FrameMotionVectors
+  phantom: PhantomData<&'a MotionVector>,
+}
+
+/// Mutable tiled view of FrameMotionVectors
+#[derive(Debug)]
+pub struct TileMEStatsMut<'a> {
+  data: *mut MEStats,
+  // expressed in mi blocks
+  // private to guarantee borrowing rules
+  x: usize,
+  y: usize,
+  cols: usize,
+  rows: usize,
+  stride: usize, // number of cols in the underlying FrameMotionVectors
+  phantom: PhantomData<&'a mut MotionVector>,
+}
+
+// common impl for TileMotionVectors and TileMotionVectorsMut
+macro_rules! tile_me_stats_common {
+  // $name: TileMotionVectors or TileMotionVectorsMut
+  // $opt_mut: nothing or mut
+  ($name:ident $(,$opt_mut:tt)?) => {
+    impl<'a> $name<'a> {
+
+      #[inline(always)]
+      pub fn new(
+        frame_mvs: &'a $($opt_mut)? FrameMEStats,
+        x: usize,
+        y: usize,
+        cols: usize,
+        rows: usize,
+      ) -> Self {
+        assert!(x + cols <= frame_mvs.cols);
+        assert!(y + rows <= frame_mvs.rows);
+        Self {
+          data: & $($opt_mut)? frame_mvs[y][x],
+          x,
+          y,
+          cols,
+          rows,
+          stride: frame_mvs.cols,
+          phantom: PhantomData,
+        }
+      }
+
+      #[inline(always)]
+      pub const fn x(&self) -> usize {
+        self.x
+      }
+
+      #[inline(always)]
+      pub const fn y(&self) -> usize {
+        self.y
+      }
+
+      #[inline(always)]
+      pub const fn cols(&self) -> usize {
+        self.cols
+      }
+
+      #[inline(always)]
+      pub const fn rows(&self) -> usize {
+        self.rows
+      }
+    }
+
+    unsafe impl Send for $name<'_> {}
+    unsafe impl Sync for $name<'_> {}
+
+    impl Index<usize> for $name<'_> {
+      type Output = [MEStats];
+
+      #[inline(always)]
+      fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.rows);
+        unsafe {
+          let ptr = self.data.add(index * self.stride);
+          slice::from_raw_parts(ptr, self.cols)
+        }
+      }
+    }
+  }
+}
+
+tile_me_stats_common!(TileMEStats);
+tile_me_stats_common!(TileMEStatsMut, mut);
+
+impl TileMEStatsMut<'_> {
+  #[inline(always)]
+  pub const fn as_const(&self) -> TileMEStats<'_> {
+    TileMEStats {
+      data: self.data,
+      x: self.x,
+      y: self.y,
+      cols: self.cols,
+      rows: self.rows,
+      stride: self.stride,
+      phantom: PhantomData,
+    }
+  }
+}
+
+impl IndexMut<usize> for TileMEStatsMut<'_> {
+  #[inline(always)]
+  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+    assert!(index < self.rows);
+    unsafe {
+      let ptr = self.data.add(index * self.stride);
+      slice::from_raw_parts_mut(ptr, self.cols)
+    }
+  }
+}

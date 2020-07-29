@@ -637,6 +637,7 @@ impl<T: Pixel> ContextInner<T> {
         input_qres: fs.input_qres.clone(),
         cdfs: fs.cdfs,
         frame_mvs: fs.frame_mvs.clone(),
+        frame_me_stats: fs.frame_me_stats.clone(),
         output_frameno,
         segmentation: fs.segmentation,
       });
@@ -716,6 +717,7 @@ impl<T: Pixel> ContextInner<T> {
       input_qres: fs.input_qres.clone(),
       cdfs: fs.cdfs,
       frame_mvs: fs.frame_mvs.clone(),
+      frame_me_stats: fs.frame_me_stats.clone(),
       output_frameno,
       segmentation: fs.segmentation,
     });

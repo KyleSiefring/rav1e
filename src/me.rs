@@ -8,8 +8,8 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 use crate::context::{
-  BlockOffset, PlaneBlockOffset, TileBlockOffset, BLOCK_TO_PLANE_SHIFT,
-  MI_SIZE,
+  BlockOffset, PlaneBlockOffset, SuperBlockOffset, TileBlockOffset,
+  TileSuperBlockOffset, BLOCK_TO_PLANE_SHIFT, MI_SIZE, MI_SIZE_LOG2,
 };
 use crate::dist::*;
 use crate::encoder::ReferenceFrame;
@@ -18,11 +18,12 @@ use crate::mc::MotionVector;
 use crate::partition::*;
 use crate::predict::PredictionMode;
 use crate::tiling::*;
-use crate::util::Pixel;
+use crate::util::{Pixel, clamp};
 use crate::FrameInvariants;
 
 use arrayvec::*;
 
+use crate::api::InterConfig;
 use crate::util::ILog;
 use std::convert::identity;
 use std::iter;
@@ -63,9 +64,401 @@ impl IndexMut<usize> for FrameMotionVectors {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct MVSearchResult {
+pub struct MEStats {
+  pub mv: MotionVector,
+  pub sad: u32,
+}
+
+impl Default for MEStats {
+  fn default() -> Self {
+    Self { mv: MotionVector::default(), sad: 0 }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct FrameMEStats {
+  stats: Box<[MEStats]>,
+  pub cols: usize,
+  pub rows: usize,
+}
+
+impl FrameMEStats {
+  pub fn new(cols: usize, rows: usize) -> Self {
+    Self {
+      // dynamic allocation: once per frame
+      stats: vec![MEStats::default(); cols * rows].into_boxed_slice(),
+      cols,
+      rows,
+    }
+  }
+}
+
+impl Index<usize> for FrameMEStats {
+  type Output = [MEStats];
+  #[inline]
+  fn index(&self, index: usize) -> &Self::Output {
+    &self.stats[index * self.cols..(index + 1) * self.cols]
+  }
+}
+
+impl IndexMut<usize> for FrameMEStats {
+  #[inline]
+  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+    &mut self.stats[index * self.cols..(index + 1) * self.cols]
+  }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct MVSearchResult {
   mv: MotionVector,
   cost: u64,
+}
+
+#[derive(Debug, Copy, Clone)]
+struct FullpelSearchResult {
+  mv: MotionVector,
+  cost: u64,
+  sad: u32,
+}
+
+pub fn prep_tile_motion_estimation<T: Pixel>(
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
+  inter_cfg: &InterConfig,
+) {
+  for sby in 0..ts.sb_height {
+    for sbx in 0..ts.sb_width {
+      prep_square_block_motion_estimation(
+        fi,
+        ts,
+        inter_cfg,
+        BlockSize::BLOCK_64X64.width_mi(),
+        TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
+          .block_offset(0, 0),
+      );
+    }
+  }
+}
+
+fn prep_square_block_motion_estimation<T: Pixel>(
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
+  inter_cfg: &InterConfig, size_mi: usize, tile_bo: TileBlockOffset,
+) {
+  let mut block_len = BlockSize::BLOCK_16X16.width_mi();//size_mi;
+  let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
+  let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
+  loop {
+    let bsize = BlockSize::from_width_and_height(
+      block_len << MI_SIZE_LOG2,
+      block_len << MI_SIZE_LOG2,
+    );
+
+    for &r in inter_cfg.allowed_ref_frames() {
+      for y in (0..h_in_b).step_by(block_len) {
+        for x in (0..w_in_b).step_by(block_len) {
+          let bo = tile_bo.with_offset(x as isize, y as isize);
+          if let Some(stats) = estimate_motion_alt(fi, ts, bsize, bo, r) {
+            save_me_stats(ts, bsize, bo, r, stats);
+          }
+        }
+      }
+    }
+
+    if block_len == 2 {
+      break;
+    }
+    block_len >>= 1;
+  }
+}
+
+pub fn save_me_stats<T: Pixel>(
+  ts: &mut TileStateMut<'_, T>, bsize: BlockSize, tile_bo: TileBlockOffset,
+  ref_frame: RefType, stats: MEStats,
+) {
+  let tile_me_stats = &mut ts.me_stats[ref_frame.to_index()];
+  let tile_bo_x_end = (tile_bo.0.x + bsize.width_mi()).min(ts.mi_width);
+  let tile_bo_y_end = (tile_bo.0.y + bsize.height_mi()).min(ts.mi_height);
+  for mi_y in tile_bo.0.y..tile_bo_y_end {
+    for mi_x in tile_bo.0.x..tile_bo_x_end {
+      tile_me_stats[mi_y][mi_x] = stats;
+    }
+  }
+}
+
+pub fn estimate_motion_alt<T: Pixel>(
+  fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, bsize: BlockSize,
+  tile_bo: TileBlockOffset, ref_frame: RefType,
+) -> Option<MEStats> {
+  if let Some(ref rec) =
+  fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize]
+  {
+    let blk_w = bsize.width();
+    let blk_h = bsize.height();
+    let tile_bo_adj =
+        adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
+    let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
+    let (mvx_min, mvx_max, mvy_min, mvy_max) =
+        get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo_adj, blk_w, blk_h);
+
+    let global_mv = [MotionVector { row: 0, col: 0 }; 2];
+
+    // 0.5 is a fudge factor
+    let lambda = (fi.me_lambda * 256.0 * 0.5) as u32;
+
+    let po = frame_bo_adj.to_luma_plane_offset();
+    let org_region =
+        &ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
+
+    let results: FullpelSearchResult = full_pixel_me_alt(
+      fi,
+      ts,
+      org_region,
+      &rec.frame.planes[0],
+      tile_bo_adj,
+      lambda,
+      global_mv,
+      mvx_min,
+      mvx_max,
+      mvy_min,
+      mvy_max,
+      bsize,
+      ref_frame,
+    );
+
+    Some( MEStats { mv: results.mv, sad: results.sad } )
+  } else {
+    None
+  }
+}
+
+fn full_pixel_me_alt<T: Pixel>(
+  fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>,
+  org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
+  lambda: u32, pmv: [MotionVector; 2],
+  mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
+  bsize: BlockSize, ref_frame: RefType,
+) -> FullpelSearchResult {
+  let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
+  let frame_ref =
+      fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
+  let subsets = get_subset_predictors_alt(
+    tile_bo,
+    tile_me_stats,
+    frame_ref,
+    ref_frame.to_index(),
+    bsize,
+    mvx_min,
+    mvx_max,
+    mvy_min,
+    mvy_max,
+  );
+
+  let thresh = (subsets.min_sad as f32 * 1.2) as u32 + (1 << (bsize.height_log2() + bsize.width_log2()));
+
+  let frame_bo = ts.to_frame_block_offset(tile_bo);
+  let po = frame_bo.to_luma_plane_offset();
+
+  let mut best = FullpelSearchResult {
+    mv: Default::default(),
+    cost: u64::MAX,
+    sad: u32::MAX,
+  };
+
+  let try_cand = |predictors: &[MotionVector], best: &mut FullpelSearchResult| {
+    // Clamp instead???
+    let results = fullpel_diamond_me_search(
+      fi,
+      po,
+      org_region,
+      p_ref,
+      predictors,
+      fi.sequence.bit_depth,
+      pmv,
+      lambda,
+      mvx_min,
+      mvx_max,
+      mvy_min,
+      mvy_max,
+      bsize,
+    );
+
+    if results.cost < best.cost {
+      *best = results;
+    }
+  };
+
+  if let Some(median) = subsets.median {
+    try_cand(&[median], &mut best);
+
+    if best.sad < thresh {
+      return best;
+    }
+  }
+
+  try_cand(&subsets.subset_b, &mut best);
+
+  if best.sad < thresh {
+    return best;
+  }
+
+  try_cand(&subsets.subset_c, &mut best);
+
+  best
+}
+
+struct MotionEstimationSubsets {
+  min_sad: u32,
+  median: Option<MotionVector>,
+  subset_b: ArrayVec<[MotionVector; 4]>,
+  subset_c: ArrayVec<[MotionVector; 5]>,
+}
+
+fn get_subset_predictors_alt<T: Pixel>(
+  tile_bo: TileBlockOffset, tile_me_stats: &TileMEStats<'_>,
+  frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize, bsize: BlockSize,
+  mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
+) -> MotionEstimationSubsets {
+  let mut min_sad: u32 = u32::MAX;
+  let mut subset_b = ArrayVec::<[MotionVector; 4]>::new();
+  let mut subset_c = ArrayVec::<[MotionVector; 5]>::new();
+  let w = bsize.width_mi();
+  let h = bsize.height_mi();
+
+  // EPZS subset A and B predictors.
+  // Since everything is being pushed, a median doesn't need to be calculated
+  // for subset A.
+  // Sample the middle of bordering side of the left and top blocks.
+
+  let mut process_cand = |stats: MEStats| -> MotionVector {
+    min_sad = min_sad.min(stats.sad);
+    let mv = stats.mv.quantize_to_fullpel();
+    MotionVector { col: clamp(mv.col as isize, mvx_min, mvx_max) as i16, row: clamp(mv.row as isize, mvy_min, mvy_max) as i16}
+  };
+
+  if tile_bo.0.x > 0 {
+    // left
+    subset_b.push(process_cand(tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1]));
+  }
+  if tile_bo.0.y > 0 {
+    // top
+    subset_b.push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)]));
+
+    if tile_bo.0.x < tile_me_stats.cols() - w {
+      subset_b.push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
+    }
+  }
+
+  let median = if subset_b.len() < 3 {
+    None
+  } else {
+    let mut rows: ArrayVec<[i16; 3]> = subset_b.iter().map(|&a| a.row).collect();
+    let mut cols: ArrayVec<[i16; 3]> = subset_b.iter().map(|&a| a.col).collect();
+    rows.as_mut_slice().sort();
+    cols.as_mut_slice().sort();
+    Some(MotionVector { row: rows[1], col: cols[1] })
+  };
+
+  // Zero motion vector, don't use add_cand since it skips zero vectors.
+  subset_b.push(MotionVector::default());
+
+  // EPZS subset C predictors.
+  // Sample the middle of bordering side of the left, right, top and bottom
+  // blocks of the previous frame.
+  // Sample the middle of this block in the previous frame.
+
+  if let Some(frame_ref) = frame_ref_opt {
+    let prev_frame = &frame_ref.frame_me_stats[ref_frame_id];
+
+    let frame_bo = PlaneBlockOffset(BlockOffset {
+      x: tile_me_stats.x() + tile_bo.0.x,
+      y: tile_me_stats.y() + tile_bo.0.y,
+    });
+    if frame_bo.0.x > 0 {
+      // left
+      subset_c.push(process_cand(prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x - 1]));
+    }
+    if frame_bo.0.y > 0 {
+      // top
+      subset_c.push(process_cand(prev_frame[frame_bo.0.y - 1][frame_bo.0.x + (w >> 1)]));
+    }
+    if frame_bo.0.x < prev_frame.cols - w {
+      // right
+      subset_c.push(process_cand(prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x + w]));
+    }
+    if frame_bo.0.y < prev_frame.rows - h {
+      // bottom
+      subset_c.push(process_cand(prev_frame[frame_bo.0.y + h][frame_bo.0.x + (w >> 1)]));
+    }
+
+    subset_c.push(process_cand(prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x + (w >> 1)]));
+  }
+
+  MotionEstimationSubsets {
+    min_sad,
+    median,
+    subset_b,
+    subset_c
+  }
+}
+
+fn fullpel_diamond_me_search_alt<T: Pixel>(
+  fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
+  p_ref: &Plane<T>, init_mv: MotionVector, bit_depth: usize,
+  pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
+  mvy_min: isize, mvy_max: isize, bsize: BlockSize,
+) -> FullpelSearchResult {
+  let diamond_pattern = [(1i16, 0i16), (0, 1), (-1, 0), (0, -1)];
+  let (mut diamond_radius, diamond_radius_end) = (4u8, 3u8);
+
+  let cost_sad = get_fullpel_mv_rd_cost(
+    fi, po, org_region, p_ref, bit_depth, pmv, lambda, false, mvx_min,
+    mvx_max, mvy_min, mvy_max, bsize, init_mv,
+  );
+
+  let mut center = FullpelSearchResult {
+    mv: init_mv,
+    cost: cost_sad.0,
+    sad: cost_sad.1,
+  };
+
+  loop {
+    let mut best_diamond: FullpelSearchResult = FullpelSearchResult {
+      mv: MotionVector::default(),
+      sad: u32::MAX,
+      cost: u64::MAX,
+    };
+
+    for p in diamond_pattern.iter() {
+      let cand_mv = MotionVector {
+        row: center.mv.row + (p.0 << diamond_radius),
+        col: center.mv.col + (p.1 << diamond_radius),
+      };
+
+      let rd_cost = get_fullpel_mv_rd_cost(
+        fi, po, org_region, p_ref, bit_depth, pmv, lambda, false, mvx_min,
+        mvx_max, mvy_min, mvy_max, bsize, cand_mv,
+      );
+
+      if rd_cost.0 < best_diamond.cost {
+        best_diamond.mv = cand_mv;
+        best_diamond.cost = rd_cost.0;
+        best_diamond.sad = rd_cost.1;
+      }
+    }
+
+    if center.cost <= best_diamond.cost {
+      if diamond_radius == diamond_radius_end {
+        break;
+      } else {
+        diamond_radius -= 1;
+      }
+    } else {
+      center = best_diamond;
+    }
+  }
+
+  assert!(center.cost < std::u64::MAX);
+
+  center
 }
 
 const fn get_mv_range(
@@ -172,7 +565,7 @@ pub fn motion_estimation<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, bsize: BlockSize,
   tile_bo: TileBlockOffset, ref_frame: RefType, cmv: MotionVector,
   pmv: [MotionVector; 2],
-) -> MotionVector {
+) -> (MotionVector, u32) {
   match fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize] {
     Some(ref rec) => {
       let blk_w = bsize.width();
@@ -191,14 +584,14 @@ pub fn motion_estimation<T: Pixel>(
         &ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
       let p_ref: &Plane<T> = &rec.frame.planes[0];
 
-      let mut best = full_pixel_me(
+      let best = full_pixel_me_alt(
         fi,
         ts,
         org_region,
         p_ref,
         tile_bo,
         lambda,
-        iter::once(cmv).collect(),
+        //iter::once(cmv).collect(),
         pmv,
         mvx_min,
         mvx_max,
@@ -207,6 +600,10 @@ pub fn motion_estimation<T: Pixel>(
         bsize,
         ref_frame,
       );
+
+      let sad = best.sad;
+
+      let mut best = MVSearchResult { mv: best.mv, cost: best.cost };
 
       let use_satd: bool = fi.config.speed_settings.use_satd_subpel;
       if use_satd {
@@ -225,7 +622,8 @@ pub fn motion_estimation<T: Pixel>(
           mvy_max,
           bsize,
           best.mv,
-        );
+        )
+        .0;
       }
 
       sub_pixel_me(
@@ -233,10 +631,10 @@ pub fn motion_estimation<T: Pixel>(
         mvy_max, bsize, use_satd, &mut best, ref_frame,
       );
 
-      best.mv
+      (best.mv, sad)
     }
 
-    None => MotionVector::default(),
+    None => (MotionVector::default(), u32::MAX),
   }
 }
 
@@ -309,7 +707,7 @@ pub fn estimate_motion<T: Pixel>(
     let org_region =
       &ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
 
-    let MVSearchResult { mv: best_mv, .. } = full_pixel_me(
+    let FullpelSearchResult { mv: best_mv, .. } = full_pixel_me(
       fi,
       ts,
       org_region,
@@ -338,7 +736,7 @@ fn full_pixel_me<T: Pixel>(
   lambda: u32, cmvs: ArrayVec<[MotionVector; 7]>, pmv: [MotionVector; 2],
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
   bsize: BlockSize, ref_frame: RefType,
-) -> MVSearchResult {
+) -> FullpelSearchResult {
   let tile_mvs = &ts.mvs[ref_frame.to_index()].as_const();
   let frame_ref =
     fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
@@ -401,7 +799,7 @@ fn me_ss2<T: Pixel>(
   rec: &ReferenceFrame<T>, global_mv: [MotionVector; 2], lambda: u32,
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
   bsize: BlockSize, ref_frame: RefType,
-) -> MVSearchResult {
+) -> FullpelSearchResult {
   let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
   let po = PlaneOffset {
     x: (frame_bo_adj.0.x as isize) << BLOCK_TO_PLANE_SHIFT >> 1,
@@ -450,9 +848,12 @@ fn get_best_predictor<T: Pixel>(
   p_ref: &Plane<T>, predictors: &[MotionVector], bit_depth: usize,
   pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
   mvy_min: isize, mvy_max: isize, bsize: BlockSize,
-) -> MVSearchResult {
-  let mut best: MVSearchResult =
-    MVSearchResult { mv: MotionVector::default(), cost: u64::MAX };
+) -> FullpelSearchResult {
+  let mut best: FullpelSearchResult = FullpelSearchResult {
+    mv: MotionVector::default(),
+    cost: u64::MAX,
+    sad: u32::MAX,
+  };
 
   for &init_mv in predictors.iter() {
     let cost = get_fullpel_mv_rd_cost(
@@ -460,9 +861,10 @@ fn get_best_predictor<T: Pixel>(
       mvx_max, mvy_min, mvy_max, bsize, init_mv,
     );
 
-    if cost < best.cost {
+    if cost.0 < best.cost {
       best.mv = init_mv;
-      best.cost = cost;
+      best.cost = cost.0;
+      best.sad = cost.1;
     }
   }
 
@@ -474,7 +876,7 @@ fn fullpel_diamond_me_search<T: Pixel>(
   p_ref: &Plane<T>, predictors: &[MotionVector], bit_depth: usize,
   pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
   mvy_min: isize, mvy_max: isize, bsize: BlockSize,
-) -> MVSearchResult {
+) -> FullpelSearchResult {
   let diamond_pattern = [(1i16, 0i16), (0, 1), (-1, 0), (0, -1)];
   let (mut diamond_radius, diamond_radius_end) = (4u8, 3u8);
 
@@ -484,8 +886,11 @@ fn fullpel_diamond_me_search<T: Pixel>(
   );
 
   loop {
-    let mut best_diamond: MVSearchResult =
-      MVSearchResult { mv: MotionVector::default(), cost: u64::MAX };
+    let mut best_diamond: FullpelSearchResult = FullpelSearchResult {
+      mv: MotionVector::default(),
+      sad: u32::MAX,
+      cost: u64::MAX,
+    };
 
     for p in diamond_pattern.iter() {
       let cand_mv = MotionVector {
@@ -498,9 +903,10 @@ fn fullpel_diamond_me_search<T: Pixel>(
         mvx_max, mvy_min, mvy_max, bsize, cand_mv,
       );
 
-      if rd_cost < best_diamond.cost {
+      if rd_cost.0 < best_diamond.cost {
         best_diamond.mv = cand_mv;
-        best_diamond.cost = rd_cost;
+        best_diamond.cost = rd_cost.0;
+        best_diamond.sad = rd_cost.1;
       }
     }
 
@@ -607,13 +1013,13 @@ fn get_fullpel_mv_rd_cost<T: Pixel>(
   p_ref: &Plane<T>, bit_depth: usize, pmv: [MotionVector; 2], lambda: u32,
   use_satd: bool, mvx_min: isize, mvx_max: isize, mvy_min: isize,
   mvy_max: isize, bsize: BlockSize, cand_mv: MotionVector,
-) -> u64 {
+) -> (u64, u32) {
   if (cand_mv.col as isize) < mvx_min
     || (cand_mv.col as isize) > mvx_max
     || (cand_mv.row as isize) < mvy_min
     || (cand_mv.row as isize) > mvy_max
   {
-    return std::u64::MAX;
+    return (u64::MAX, u32::MAX);
   }
 
   // Full pixel motion vector
@@ -664,6 +1070,7 @@ fn get_subpel_mv_rd_cost<T: Pixel>(
     fi, pmv, lambda, use_satd, bit_depth, bsize, cand_mv, org_region,
     &plane_ref,
   )
+  .0
 }
 
 #[inline(always)]
@@ -671,7 +1078,7 @@ fn compute_mv_rd_cost<T: Pixel>(
   fi: &FrameInvariants<T>, pmv: [MotionVector; 2], lambda: u32,
   use_satd: bool, bit_depth: usize, bsize: BlockSize, cand_mv: MotionVector,
   plane_org: &PlaneRegion<'_, T>, plane_ref: &PlaneRegion<'_, T>,
-) -> u64 {
+) -> (u64, u32) {
   let sad = if use_satd {
     get_satd(plane_org, plane_ref, bsize, bit_depth, fi.cpu_feature_level)
   } else {
@@ -682,7 +1089,7 @@ fn compute_mv_rd_cost<T: Pixel>(
   let rate2 = get_mv_rate(cand_mv, pmv[1], fi.allow_high_precision_mv);
   let rate = rate1.min(rate2 + 1);
 
-  256 * sad as u64 + rate as u64 * lambda as u64
+  (256 * sad as u64 + rate as u64 * lambda as u64, sad)
 }
 
 fn full_search<T: Pixel>(
@@ -723,8 +1130,8 @@ fn full_search<T: Pixel>(
         &ref_window,
       );
 
-      if cost < *lowest_cost {
-        *lowest_cost = cost;
+      if cost.0 < *lowest_cost {
+        *lowest_cost = cost.0;
         *best_mv = mv;
       }
     }

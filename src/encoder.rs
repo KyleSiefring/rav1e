@@ -82,6 +82,7 @@ pub struct ReferenceFrame<T: Pixel> {
   pub input_qres: Arc<Plane<T>>,
   pub cdfs: CDFContext,
   pub frame_mvs: Arc<Vec<FrameMotionVectors>>,
+  pub frame_me_stats: Arc<Vec<FrameMEStats>>,
   pub output_frameno: u64,
   pub segmentation: SegmentationState,
 }
@@ -361,6 +362,7 @@ pub struct FrameState<T: Pixel> {
   // these are stored per-tile for easier access.
   pub half_res_pmvs: Vec<(PlaneSuperBlockOffset, Vec<BlockPmv>)>,
   pub frame_mvs: Arc<Vec<FrameMotionVectors>>,
+  pub frame_me_stats: Arc<Vec<FrameMEStats>>,
   pub enc_stats: EncoderStats,
 }
 
@@ -404,6 +406,13 @@ impl<T: Pixel> FrameState<T> {
         let mut vec = Vec::with_capacity(REF_FRAMES);
         for _ in 0..REF_FRAMES {
           vec.push(FrameMotionVectors::new(fi.w_in_b, fi.h_in_b));
+        }
+        Arc::new(vec)
+      },
+      frame_me_stats: {
+        let mut vec = Vec::with_capacity(REF_FRAMES);
+        for _ in 0..REF_FRAMES {
+          vec.push(FrameMEStats::new(fi.w_in_b, fi.h_in_b));
         }
         Arc::new(vec)
       },
@@ -1517,11 +1526,13 @@ pub fn save_block_motion<T: Pixel>(
   ref_frame: usize, mv: MotionVector,
 ) {
   let tile_mvs = &mut ts.mvs[ref_frame];
+  let tile_me_stats = &mut ts.me_stats[ref_frame];
   let tile_bo_x_end = (tile_bo.0.x + bsize.width_mi()).min(ts.mi_width);
   let tile_bo_y_end = (tile_bo.0.y + bsize.height_mi()).min(ts.mi_height);
   for mi_y in tile_bo.0.y..tile_bo_y_end {
     for mi_x in tile_bo.0.x..tile_bo_x_end {
       tile_mvs[mi_y][mi_x] = mv;
+      tile_me_stats[mi_y][mi_x].mv = mv;
     }
   }
 }
@@ -3443,6 +3454,8 @@ fn encode_tile<'a, T: Pixel>(
   let mut last_lru_rdoed = [-1; 3];
   let mut last_lru_coded = [-1; 3];
 
+  prep_tile_motion_estimation(fi, ts, inter_cfg);
+
   // main loop
   for sby in 0..ts.sb_height {
     cw.bc.reset_left_contexts(planes);
@@ -3711,6 +3724,7 @@ pub fn update_rec_buffer<T: Pixel>(
     input_qres: fs.input_qres.clone(),
     cdfs: fs.cdfs,
     frame_mvs: fs.frame_mvs.clone(),
+    frame_me_stats: fs.frame_me_stats.clone(),
     output_frameno,
     segmentation: fs.segmentation,
   });
