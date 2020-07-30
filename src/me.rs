@@ -9,7 +9,8 @@
 
 use crate::context::{
   BlockOffset, PlaneBlockOffset, SuperBlockOffset, TileBlockOffset,
-  TileSuperBlockOffset, BLOCK_TO_PLANE_SHIFT, MI_SIZE, MI_SIZE_LOG2,
+  TileSuperBlockOffset, BLOCK_TO_PLANE_SHIFT, MAX_MIB_SIZE_LOG2, MI_SIZE,
+  MI_SIZE_LOG2,
 };
 use crate::dist::*;
 use crate::encoder::ReferenceFrame;
@@ -18,7 +19,7 @@ use crate::mc::MotionVector;
 use crate::partition::*;
 use crate::predict::PredictionMode;
 use crate::tiling::*;
-use crate::util::{Pixel, clamp};
+use crate::util::{clamp, Pixel};
 use crate::FrameInvariants;
 
 use arrayvec::*;
@@ -131,7 +132,7 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
         fi,
         ts,
         inter_cfg,
-        BlockSize::BLOCK_64X64.width_mi(),
+        BlockSize::BLOCK_64X64.width_mi_log2(),
         TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
           .block_offset(0, 0),
       );
@@ -141,36 +142,39 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
 
 fn prep_square_block_motion_estimation<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
-  inter_cfg: &InterConfig, size_mi: usize, tile_bo: TileBlockOffset,
+  inter_cfg: &InterConfig, size_mi_log2: usize, tile_bo: TileBlockOffset,
 ) {
-  let mut block_len = BlockSize::BLOCK_16X16.width_mi();//size_mi;
+  let size_mi = 1 << size_mi_log2;
+  let mut mv_size_log2 = BlockSize::BLOCK_16X16.width_mi_log2(); // size_mi_log2;
   let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
   let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
   loop {
+    let mv_size = 1 << mv_size_log2;
     let bsize = BlockSize::from_width_and_height(
-      block_len << MI_SIZE_LOG2,
-      block_len << MI_SIZE_LOG2,
+      mv_size << MI_SIZE_LOG2,
+      mv_size << MI_SIZE_LOG2,
     );
 
     for &r in inter_cfg.allowed_ref_frames() {
-      for y in (0..h_in_b).step_by(block_len) {
-        for x in (0..w_in_b).step_by(block_len) {
+      for y in (0..h_in_b).step_by(mv_size) {
+        for x in (0..w_in_b).step_by(mv_size) {
           let bo = tile_bo.with_offset(x as isize, y as isize);
-          if let Some(stats) = estimate_motion_alt(fi, ts, bsize, bo, r) {
-            save_me_stats(ts, bsize, bo, r, stats);
+          if let Some(results) = estimate_motion_alt(fi, ts, bsize, bo, r) {
+            let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
+            save_me_stats(ts, bsize, bo, r, MEStats { mv: results.mv, sad });
           }
         }
       }
     }
 
-    if block_len == 2 {
+    if mv_size_log2 == 1 {
       break;
     }
-    block_len >>= 1;
+    mv_size_log2 -= 1;
   }
 }
 
-pub fn save_me_stats<T: Pixel>(
+fn save_me_stats<T: Pixel>(
   ts: &mut TileStateMut<'_, T>, bsize: BlockSize, tile_bo: TileBlockOffset,
   ref_frame: RefType, stats: MEStats,
 ) {
@@ -184,20 +188,20 @@ pub fn save_me_stats<T: Pixel>(
   }
 }
 
-pub fn estimate_motion_alt<T: Pixel>(
+fn estimate_motion_alt<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, bsize: BlockSize,
   tile_bo: TileBlockOffset, ref_frame: RefType,
-) -> Option<MEStats> {
+) -> Option<FullpelSearchResult> {
   if let Some(ref rec) =
-  fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize]
+    fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize]
   {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
     let tile_bo_adj =
-        adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
+      adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
     let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
     let (mvx_min, mvx_max, mvy_min, mvy_max) =
-        get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo_adj, blk_w, blk_h);
+      get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo_adj, blk_w, blk_h);
 
     let global_mv = [MotionVector { row: 0, col: 0 }; 2];
 
@@ -206,7 +210,7 @@ pub fn estimate_motion_alt<T: Pixel>(
 
     let po = frame_bo_adj.to_luma_plane_offset();
     let org_region =
-        &ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
+      &ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
 
     let results: FullpelSearchResult = full_pixel_me_alt(
       fi,
@@ -224,7 +228,7 @@ pub fn estimate_motion_alt<T: Pixel>(
       ref_frame,
     );
 
-    Some( MEStats { mv: results.mv, sad: results.sad } )
+    Some(results)
   } else {
     None
   }
@@ -233,13 +237,12 @@ pub fn estimate_motion_alt<T: Pixel>(
 fn full_pixel_me_alt<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>,
   org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
-  lambda: u32, pmv: [MotionVector; 2],
-  mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
-  bsize: BlockSize, ref_frame: RefType,
+  lambda: u32, pmv: [MotionVector; 2], mvx_min: isize, mvx_max: isize,
+  mvy_min: isize, mvy_max: isize, bsize: BlockSize, ref_frame: RefType,
 ) -> FullpelSearchResult {
   let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
   let frame_ref =
-      fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
+    fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
   let subsets = get_subset_predictors_alt(
     tile_bo,
     tile_me_stats,
@@ -252,7 +255,8 @@ fn full_pixel_me_alt<T: Pixel>(
     mvy_max,
   );
 
-  let thresh = (subsets.min_sad as f32 * 1.2) as u32 + (1 << (bsize.height_log2() + bsize.width_log2()));
+  let thresh = (subsets.min_sad as f32 * 1.2) as u32
+    + (1 << (bsize.height_log2() + bsize.width_log2()));
 
   let frame_bo = ts.to_frame_block_offset(tile_bo);
   let po = frame_bo.to_luma_plane_offset();
@@ -263,7 +267,8 @@ fn full_pixel_me_alt<T: Pixel>(
     sad: u32::MAX,
   };
 
-  let try_cand = |predictors: &[MotionVector], best: &mut FullpelSearchResult| {
+  let try_cand = |predictors: &[MotionVector],
+                  best: &mut FullpelSearchResult| {
     // Clamp instead???
     let results = fullpel_diamond_me_search(
       fi,
@@ -314,8 +319,9 @@ struct MotionEstimationSubsets {
 
 fn get_subset_predictors_alt<T: Pixel>(
   tile_bo: TileBlockOffset, tile_me_stats: &TileMEStats<'_>,
-  frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize, bsize: BlockSize,
-  mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
+  frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize,
+  bsize: BlockSize, mvx_min: isize, mvx_max: isize, mvy_min: isize,
+  mvy_max: isize,
 ) -> MotionEstimationSubsets {
   let mut min_sad: u32 = u32::MAX;
   let mut subset_b = ArrayVec::<[MotionVector; 4]>::new();
@@ -331,27 +337,37 @@ fn get_subset_predictors_alt<T: Pixel>(
   let mut process_cand = |stats: MEStats| -> MotionVector {
     min_sad = min_sad.min(stats.sad);
     let mv = stats.mv.quantize_to_fullpel();
-    MotionVector { col: clamp(mv.col as isize, mvx_min, mvx_max) as i16, row: clamp(mv.row as isize, mvy_min, mvy_max) as i16}
+    MotionVector {
+      col: clamp(mv.col as isize, mvx_min, mvx_max) as i16,
+      row: clamp(mv.row as isize, mvy_min, mvy_max) as i16,
+    }
   };
 
   if tile_bo.0.x > 0 {
     // left
-    subset_b.push(process_cand(tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1]));
+    subset_b.push(process_cand(
+      tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1],
+    ));
   }
   if tile_bo.0.y > 0 {
     // top
-    subset_b.push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)]));
+    subset_b.push(process_cand(
+      tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)],
+    ));
 
     if tile_bo.0.x < tile_me_stats.cols() - w {
-      subset_b.push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
+      subset_b
+        .push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
     }
   }
 
   let median = if subset_b.len() < 3 {
     None
   } else {
-    let mut rows: ArrayVec<[i16; 3]> = subset_b.iter().map(|&a| a.row).collect();
-    let mut cols: ArrayVec<[i16; 3]> = subset_b.iter().map(|&a| a.col).collect();
+    let mut rows: ArrayVec<[i16; 3]> =
+      subset_b.iter().map(|&a| a.row).collect();
+    let mut cols: ArrayVec<[i16; 3]> =
+      subset_b.iter().map(|&a| a.col).collect();
     rows.as_mut_slice().sort();
     cols.as_mut_slice().sort();
     Some(MotionVector { row: rows[1], col: cols[1] })
@@ -374,30 +390,39 @@ fn get_subset_predictors_alt<T: Pixel>(
     });
     if frame_bo.0.x > 0 {
       // left
-      subset_c.push(process_cand(prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x - 1]));
+      subset_c.push(process_cand(
+        prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x - 1],
+      ));
     }
     if frame_bo.0.y > 0 {
       // top
-      subset_c.push(process_cand(prev_frame[frame_bo.0.y - 1][frame_bo.0.x + (w >> 1)]));
+      subset_c.push(process_cand(
+        prev_frame[frame_bo.0.y - 1][frame_bo.0.x + (w >> 1)],
+      ));
     }
     if frame_bo.0.x < prev_frame.cols - w {
       // right
-      subset_c.push(process_cand(prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x + w]));
+      subset_c.push(process_cand(
+        prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x + w],
+      ));
     }
     if frame_bo.0.y < prev_frame.rows - h {
       // bottom
-      subset_c.push(process_cand(prev_frame[frame_bo.0.y + h][frame_bo.0.x + (w >> 1)]));
+      subset_c.push(process_cand(
+        prev_frame[frame_bo.0.y + h][frame_bo.0.x + (w >> 1)],
+      ));
     }
 
-    subset_c.push(process_cand(prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x + (w >> 1)]));
+    subset_c.push(process_cand(
+      prev_frame[frame_bo.0.y + (h >> 1)][frame_bo.0.x + (w >> 1)],
+    ));
   }
 
-  MotionEstimationSubsets {
-    min_sad,
-    median,
-    subset_b,
-    subset_c
-  }
+  let min_sad = min_sad
+    >> (MAX_MIB_SIZE_LOG2 * 2
+      - (bsize.width_mi_log2() + bsize.height_mi_log2()));
+
+  MotionEstimationSubsets { min_sad, median, subset_b, subset_c }
 }
 
 fn fullpel_diamond_me_search_alt<T: Pixel>(
@@ -414,11 +439,8 @@ fn fullpel_diamond_me_search_alt<T: Pixel>(
     mvx_max, mvy_min, mvy_max, bsize, init_mv,
   );
 
-  let mut center = FullpelSearchResult {
-    mv: init_mv,
-    cost: cost_sad.0,
-    sad: cost_sad.1,
-  };
+  let mut center =
+    FullpelSearchResult { mv: init_mv, cost: cost_sad.0, sad: cost_sad.1 };
 
   loop {
     let mut best_diamond: FullpelSearchResult = FullpelSearchResult {
@@ -585,20 +607,9 @@ pub fn motion_estimation<T: Pixel>(
       let p_ref: &Plane<T> = &rec.frame.planes[0];
 
       let best = full_pixel_me_alt(
-        fi,
-        ts,
-        org_region,
-        p_ref,
-        tile_bo,
-        lambda,
+        fi, ts, org_region, p_ref, tile_bo, lambda,
         //iter::once(cmv).collect(),
-        pmv,
-        mvx_min,
-        mvx_max,
-        mvy_min,
-        mvy_max,
-        bsize,
-        ref_frame,
+        pmv, mvx_min, mvx_max, mvy_min, mvy_max, bsize, ref_frame,
       );
 
       let sad = best.sad;
