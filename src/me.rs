@@ -182,8 +182,8 @@ fn save_me_stats<T: Pixel>(
   let tile_bo_x_end = (tile_bo.0.x + bsize.width_mi()).min(ts.mi_width);
   let tile_bo_y_end = (tile_bo.0.y + bsize.height_mi()).min(ts.mi_height);
   for mi_y in tile_bo.0.y..tile_bo_y_end {
-    for mi_x in tile_bo.0.x..tile_bo_x_end {
-      tile_me_stats[mi_y][mi_x] = stats;
+    for a in tile_me_stats[mi_y][tile_bo.0.x..tile_bo_x_end].iter_mut() {
+      *a = stats;
     }
   }
 }
@@ -269,13 +269,27 @@ fn full_pixel_me_alt<T: Pixel>(
 
   let try_cand = |predictors: &[MotionVector],
                   best: &mut FullpelSearchResult| {
-    // Clamp instead???
-    let results = fullpel_diamond_me_search(
+    let mut results = get_best_predictor(
       fi,
       po,
       org_region,
       p_ref,
       predictors,
+      fi.sequence.bit_depth,
+      pmv,
+      lambda,
+      mvx_min,
+      mvx_max,
+      mvy_min,
+      mvy_max,
+      bsize,
+    );
+    fullpel_diamond_me_search_alt(
+      fi,
+      po,
+      org_region,
+      p_ref,
+      &mut results,
       fi.sequence.bit_depth,
       pmv,
       lambda,
@@ -427,20 +441,12 @@ fn get_subset_predictors_alt<T: Pixel>(
 
 fn fullpel_diamond_me_search_alt<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
-  p_ref: &Plane<T>, init_mv: MotionVector, bit_depth: usize,
+  p_ref: &Plane<T>, center: &mut FullpelSearchResult, bit_depth: usize,
   pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
   mvy_min: isize, mvy_max: isize, bsize: BlockSize,
-) -> FullpelSearchResult {
+) {
   let diamond_pattern = [(1i16, 0i16), (0, 1), (-1, 0), (0, -1)];
   let (mut diamond_radius, diamond_radius_end) = (4u8, 3u8);
-
-  let cost_sad = get_fullpel_mv_rd_cost(
-    fi, po, org_region, p_ref, bit_depth, pmv, lambda, false, mvx_min,
-    mvx_max, mvy_min, mvy_max, bsize, init_mv,
-  );
-
-  let mut center =
-    FullpelSearchResult { mv: init_mv, cost: cost_sad.0, sad: cost_sad.1 };
 
   loop {
     let mut best_diamond: FullpelSearchResult = FullpelSearchResult {
@@ -474,13 +480,11 @@ fn fullpel_diamond_me_search_alt<T: Pixel>(
         diamond_radius -= 1;
       }
     } else {
-      center = best_diamond;
+      *center = best_diamond;
     }
   }
 
   assert!(center.cost < std::u64::MAX);
-
-  center
 }
 
 const fn get_mv_range(
