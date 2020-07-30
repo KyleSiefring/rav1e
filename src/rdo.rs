@@ -1028,7 +1028,7 @@ fn inter_frame_rdo_mode_decision<T: Pixel>(
     };
     (sby * ts.sb_width + sbx, inner_idx)
   };
-  let pmvs = ts.half_res_pmvs[pmv_idxs.0][pmv_idxs.1];
+  //let pmvs = ts.half_res_pmvs[pmv_idxs.0][pmv_idxs.1];
 
   for (i, &ref_frames) in ref_frames_set.iter().enumerate() {
     let mut mv_stack = ArrayVec::<[CandidateMV; 9]>::new();
@@ -1049,17 +1049,18 @@ fn inter_frame_rdo_mode_decision<T: Pixel>(
       pmv[1] = mv_stack[1].this_mv;
     }
     let ref_slot = ref_slot_set[i] as usize;
-    let cmv = pmvs[ref_slot].unwrap_or_else(Default::default);
+    //let cmv = pmvs[ref_slot].unwrap_or_else(Default::default);
 
-    let res =
-      motion_estimation(fi, ts, bsize, tile_bo, ref_frames[0], cmv, pmv);
+    let res = motion_estimation(
+      fi,
+      ts,
+      bsize,
+      tile_bo,
+      ref_frames[0],
+      MotionVector::default(),
+      pmv,
+    );
     let b_me = res.0;
-
-    if !fi.config.speed_settings.encode_bottomup
-      && (bsize == BlockSize::BLOCK_32X32 || bsize == BlockSize::BLOCK_64X64)
-    {
-      ts.half_res_pmvs[pmv_idxs.0][pmv_idxs.1][ref_slot] = Some(b_me);
-    };
 
     mvs_from_me.push([b_me, MotionVector::default()]);
 

@@ -12,6 +12,7 @@ use crate::encoder::{
 };
 use crate::frame::{AsRegion, PlaneOffset};
 use crate::hawktracer::*;
+use crate::me::prep_tile_motion_estimation;
 use crate::partition::{get_intra_edges, BlockSize};
 use crate::predict::{IntraParam, PredictionMode};
 use crate::rayon::iter::*;
@@ -210,14 +211,14 @@ pub(crate) fn compute_motion_vectors<T: Pixel>(
   fi: &mut FrameInvariants<T>, fs: &mut FrameState<T>, inter_cfg: &InterConfig,
 ) {
   let mut blocks = FrameBlocks::new(fi.w_in_b, fi.h_in_b);
-  fs.half_res_pmvs = fi
-    .tiling
+  fi.tiling
     .tile_iter_mut(fs, &mut blocks)
     .collect::<Vec<_>>()
     .into_par_iter()
     .map(|mut ctx| {
       let ts = &mut ctx.ts;
-      compute_motion_vectors_per_tile(ts, fi, inter_cfg)
+      prep_tile_motion_estimation(fi, ts, inter_cfg);
+      //compute_motion_vectors_per_tile(ts, fi, inter_cfg)
     })
     .collect::<Vec<_>>();
 }

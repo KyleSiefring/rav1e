@@ -3454,8 +3454,6 @@ fn encode_tile<'a, T: Pixel>(
   let mut last_lru_rdoed = [-1; 3];
   let mut last_lru_coded = [-1; 3];
 
-  prep_tile_motion_estimation(fi, ts, inter_cfg);
-
   // main loop
   for sby in 0..ts.sb_height {
     cw.bc.reset_left_contexts(planes);
