@@ -138,6 +138,18 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
       );
     }
   }
+  for sby in (0..ts.sb_height).rev() {
+    for sbx in (0..ts.sb_width).rev() {
+      prep_square_block_fixup(
+        fi,
+        ts,
+        inter_cfg,
+        BlockSize::BLOCK_64X64.width_mi_log2(),
+        TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
+            .block_offset(0, 0),
+      );
+    }
+  }
 }
 
 fn prep_square_block_motion_estimation<T: Pixel>(
@@ -173,6 +185,41 @@ fn prep_square_block_motion_estimation<T: Pixel>(
         }
       }
     }
+
+    if mv_size_log2 == 2 {
+      /*for &r in inter_cfg.allowed_ref_frames() {
+        for y in (0..h_in_b).step_by(mv_size).rev().skip(1) {
+          for x in (0..w_in_b).step_by(mv_size).rev().skip(1) {
+            let bo = tile_bo.with_offset(x as isize, y as isize);
+            if let Some(results) = estimate_motion_rev(fi, ts, bsize, bo, r) {
+              let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
+              save_me_stats(ts, bsize, bo, r, MEStats { mv: results.mv, sad });
+            }
+          }
+        }
+      }*/
+
+      break;
+    }
+    mv_size_log2 -= 1;
+  }
+}
+
+
+fn prep_square_block_fixup<T: Pixel>(
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
+  inter_cfg: &InterConfig, size_mi_log2: usize, tile_bo: TileBlockOffset,
+) {
+  let size_mi = 1 << size_mi_log2;
+  let mut mv_size_log2 = size_mi_log2;
+  let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
+  let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
+  loop {
+    let mv_size = 1 << mv_size_log2;
+    let bsize = BlockSize::from_width_and_height(
+      mv_size << MI_SIZE_LOG2,
+      mv_size << MI_SIZE_LOG2,
+    );
 
     if mv_size_log2 == 2 {
       for &r in inter_cfg.allowed_ref_frames() {
@@ -271,6 +318,15 @@ fn full_pixel_me_rev<T: Pixel>(
     mvy_min,
     mvy_max,
   );
+
+  /*let pmv = [
+    if let Some(median) = subsets.median {
+      median
+    } else {
+      MotionVector::default()
+    },
+    MotionVector::default(),
+  ];*/
 
   let frame_bo = ts.to_frame_block_offset(tile_bo);
   let po = frame_bo.to_luma_plane_offset();
@@ -467,6 +523,15 @@ fn full_pixel_me_alt<T: Pixel>(
     mvy_min,
     mvy_max,
   );
+
+  /*let pmv = [
+    if let Some(median) = subsets.median {
+      median
+    } else {
+      MotionVector::default()
+    },
+    MotionVector::default(),
+  ];*/
 
   let thresh = (subsets.min_sad as f32 * 1.2) as u32
     + (1 << (bsize.height_log2() + bsize.width_log2()));
