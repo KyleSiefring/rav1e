@@ -319,14 +319,14 @@ fn full_pixel_me_rev<T: Pixel>(
     mvy_max,
   );
 
-  /*let pmv = [
+  let pmv = [
     if let Some(median) = subsets.median {
       median
     } else {
       MotionVector::default()
     },
     MotionVector::default(),
-  ];*/
+  ];
 
   let frame_bo = ts.to_frame_block_offset(tile_bo);
   let po = frame_bo.to_luma_plane_offset();
@@ -524,14 +524,14 @@ fn full_pixel_me_alt<T: Pixel>(
     mvy_max,
   );
 
-  /*let pmv = [
+  let pmv = [
     if let Some(median) = subsets.median {
       median
     } else {
       MotionVector::default()
     },
     MotionVector::default(),
-  ];*/
+  ];
 
   let thresh = (subsets.min_sad as f32 * 1.2) as u32
     + (1 << (bsize.height_log2() + bsize.width_log2()));
