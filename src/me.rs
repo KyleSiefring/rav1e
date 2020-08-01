@@ -426,16 +426,6 @@ fn get_subset_predictors_alt<T: Pixel>(
     }
   };
 
-  if corner != BlockCorner::INIT {
-    subset_b.push(process_cand(tile_me_stats[tile_bo.0.y][tile_bo.0.x]));
-  } else {
-    if tile_bo.0.y > 0 && tile_bo.0.x < tile_me_stats.cols() - w {
-      // top right
-      subset_b
-        .push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
-    }
-  }
-
   match corner {
     BlockCorner::NW | BlockCorner::SW => {
       if tile_bo.0.x < tile_me_stats.cols() - w {
@@ -473,17 +463,34 @@ fn get_subset_predictors_alt<T: Pixel>(
     ));
   }
 
-  let median = if subset_b.len() < 3 {
-    None
+  let median = if corner != BlockCorner::INIT {
+    Some(process_cand(tile_me_stats[tile_bo.0.y][tile_bo.0.x]))
   } else {
-    let mut rows: ArrayVec<[i16; 4]> =
-      subset_b.iter().map(|&a| a.row).collect();
-    let mut cols: ArrayVec<[i16; 4]> =
-      subset_b.iter().map(|&a| a.col).collect();
-    rows.as_mut_slice().sort();
-    cols.as_mut_slice().sort();
-    Some(MotionVector { row: rows[1], col: cols[1] })
+    if tile_bo.0.y > 0 && tile_bo.0.x < tile_me_stats.cols() - w {
+      // top right
+      subset_b
+        .push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
+    }
+
+    if subset_b.len() < 3 {
+      None
+    } else {
+      let mut rows: ArrayVec<[i16; 4]> =
+        subset_b.iter().map(|&a| a.row).collect();
+      let mut cols: ArrayVec<[i16; 4]> =
+        subset_b.iter().map(|&a| a.col).collect();
+      rows.as_mut_slice().sort();
+      cols.as_mut_slice().sort();
+      Some(MotionVector { row: rows[1], col: cols[1] })
+    }
   };
+
+  /*if corner == BlockCorner::NW
+    && tile_bo.0.x < tile_me_stats.cols() - (w << 1)
+    && tile_bo.0.y < tile_me_stats.rows() - (h << 1)
+  {
+    subset_b.push(process_cand());
+  }*/
 
   // Zero motion vector, don't use add_cand since it skips zero vectors.
   subset_b.push(MotionVector::default());
