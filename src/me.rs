@@ -238,7 +238,7 @@ fn estimate_motion_alt<T: Pixel>(
   {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
-    let ssdec = if blk_w == 64 { 2 } else { 0 };
+    let ssdec = if blk_w == 64 { 2 } else if blk_w == 32 { 1 } else { 0 };
     let tile_bo_adj =
       adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
     let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
