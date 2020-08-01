@@ -185,7 +185,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
     for &r in inter_cfg.allowed_ref_frames() {
       for y in (0..h_in_b).step_by(mv_size) {
         for x in (0..w_in_b).step_by(mv_size) {
-          let corner: BlockCorner = match (init, y & 1 == 1, x & 1 == 1) {
+          let corner: BlockCorner = match (init, y & mv_size == mv_size, x & mv_size == mv_size) {
             (true, _, _) => BlockCorner::INIT,
             (_, false, false) => BlockCorner::NW,
             (_, false, true) => BlockCorner::NE,
