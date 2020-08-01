@@ -137,15 +137,14 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
 ) {
   for sby in 0..ts.sb_height {
     for sbx in 0..ts.sb_width {
-      // Will require different partitioning
       prep_square_block_motion_estimation(
         fi,
         ts,
         inter_cfg,
         BlockSize::BLOCK_64X64.width_mi_log2(),
         TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
-            .block_offset(0, 0),
-        true
+          .block_offset(0, 0),
+        true,
       );
     }
   }
@@ -156,10 +155,11 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
         fi,
         ts,
         inter_cfg,
-        BlockSize::BLOCK_32X32.width_mi_log2(),
+        // TODO: Awkward with starting with splitting into 32x32
+        BlockSize::BLOCK_64X64.width_mi_log2(),
         TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
           .block_offset(0, 0),
-        false
+        false,
       );
     }
   }
@@ -171,9 +171,10 @@ fn prep_square_block_motion_estimation<T: Pixel>(
   init: bool,
 ) {
   let size_mi = 1 << size_mi_log2;
-  let mut mv_size_log2 = size_mi_log2;
+  let mut mv_size_log2 = size_mi_log2 - if init { 0 } else { 1 };
   let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
   let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
+  // TODO: change to while loop since mv_size_log2 subtracted if not init
   loop {
     let mv_size = 1 << mv_size_log2;
     let bsize = BlockSize::from_width_and_height(
@@ -184,24 +185,17 @@ fn prep_square_block_motion_estimation<T: Pixel>(
     for &r in inter_cfg.allowed_ref_frames() {
       for y in (0..h_in_b).step_by(mv_size) {
         for x in (0..w_in_b).step_by(mv_size) {
-          let corner: BlockCorner =
-            match (init, y & 1 == 1, x & 1 == 1) {
-              (true, _, _) => BlockCorner::INIT,
-              (_, false, false) => BlockCorner::NW,
-              (_, false, true) => BlockCorner::NE,
-              (_, true, false) => BlockCorner::SW,
-              (_, true, true) => BlockCorner::SE,
-            };
+          let corner: BlockCorner = match (init, y & 1 == 1, x & 1 == 1) {
+            (true, _, _) => BlockCorner::INIT,
+            (_, false, false) => BlockCorner::NW,
+            (_, false, true) => BlockCorner::NE,
+            (_, true, false) => BlockCorner::SW,
+            (_, true, true) => BlockCorner::SE,
+          };
           let bo = tile_bo.with_offset(x as isize, y as isize);
-          if let Some(results) = estimate_motion_alt(
-            fi,
-            ts,
-            bsize,
-            bo,
-            r,
-            corner,
-            init,
-          ) {
+          if let Some(results) =
+            estimate_motion_alt(fi, ts, bsize, bo, r, corner, init)
+          {
             let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
             save_me_stats(ts, bsize, bo, r, MEStats { mv: results.mv, sad });
           }
