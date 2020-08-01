@@ -497,13 +497,13 @@ fn get_subset_predictors_alt<T: Pixel>(
   };
 
   // Try to propagate from outside adjacent blocks
-  /*if corner == BlockCorner::NW
+  if corner == BlockCorner::NW
     && tile_bo.0.x < tile_me_stats.cols() - (w << 1)
     && tile_bo.0.y < tile_me_stats.rows() - (h << 1)
   {
     // far bottom right
     subset_b.push(process_cand(tile_me_stats[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w << 1)]));
-  }*/
+  }
 
   // Zero motion vector, don't use add_cand since it skips zero vectors.
   subset_b.push(MotionVector::default());
