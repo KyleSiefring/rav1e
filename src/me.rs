@@ -122,6 +122,15 @@ struct FullpelSearchResult {
   sad: u32,
 }
 
+#[derive(Eq, PartialEq)]
+enum BlockCorner {
+  INIT,
+  NW,
+  NE,
+  SW,
+  SE,
+}
+
 pub fn prep_tile_motion_estimation<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   inter_cfg: &InterConfig,
@@ -158,6 +167,14 @@ fn prep_square_block_motion_estimation<T: Pixel>(
     for &r in inter_cfg.allowed_ref_frames() {
       for y in (0..h_in_b).step_by(mv_size) {
         for x in (0..w_in_b).step_by(mv_size) {
+          let corner: BlockCorner =
+            match (mv_size_log2 == size_mi_log2, y & 1 == 1, x & 1 == 1) {
+              (true, _, _) => BlockCorner::INIT,
+              (_, false, false) => BlockCorner::NW,
+              (_, false, true) => BlockCorner::NE,
+              (_, true, false) => BlockCorner::SW,
+              (_, true, true) => BlockCorner::SE,
+            };
           let bo = tile_bo.with_offset(x as isize, y as isize);
           if let Some(results) = estimate_motion_alt(
             fi,
@@ -165,6 +182,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
             bsize,
             bo,
             r,
+            corner,
             mv_size_log2 == size_mi_log2,
           ) {
             let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
@@ -201,7 +219,8 @@ fn save_me_stats<T: Pixel>(
 
 fn estimate_motion_alt<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, bsize: BlockSize,
-  tile_bo: TileBlockOffset, ref_frame: RefType, can_full_search: bool,
+  tile_bo: TileBlockOffset, ref_frame: RefType, corner: BlockCorner,
+  can_full_search: bool,
 ) -> Option<FullpelSearchResult> {
   if let Some(ref rec) =
     fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize]
@@ -237,6 +256,7 @@ fn estimate_motion_alt<T: Pixel>(
       mvy_max,
       bsize,
       ref_frame,
+      corner,
       can_full_search,
     );
 
@@ -251,7 +271,7 @@ fn full_pixel_me_alt<T: Pixel>(
   org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
   lambda: u32, pmv: [MotionVector; 2], mvx_min: isize, mvx_max: isize,
   mvy_min: isize, mvy_max: isize, bsize: BlockSize, ref_frame: RefType,
-  can_full_search: bool,
+  corner: BlockCorner, can_full_search: bool,
 ) -> FullpelSearchResult {
   let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
   let frame_ref =
@@ -266,6 +286,7 @@ fn full_pixel_me_alt<T: Pixel>(
     mvx_max,
     mvy_min,
     mvy_max,
+    corner,
   );
 
   let thresh = (subsets.min_sad as f32 * 1.2) as u32
@@ -375,7 +396,7 @@ fn full_pixel_me_alt<T: Pixel>(
 struct MotionEstimationSubsets {
   min_sad: u32,
   median: Option<MotionVector>,
-  subset_b: ArrayVec<[MotionVector; 4]>,
+  subset_b: ArrayVec<[MotionVector; 5]>,
   subset_c: ArrayVec<[MotionVector; 5]>,
 }
 
@@ -383,10 +404,10 @@ fn get_subset_predictors_alt<T: Pixel>(
   tile_bo: TileBlockOffset, tile_me_stats: &TileMEStats<'_>,
   frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize,
   bsize: BlockSize, mvx_min: isize, mvx_max: isize, mvy_min: isize,
-  mvy_max: isize,
+  mvy_max: isize, corner: BlockCorner,
 ) -> MotionEstimationSubsets {
   let mut min_sad: u32 = u32::MAX;
-  let mut subset_b = ArrayVec::<[MotionVector; 4]>::new();
+  let mut subset_b = ArrayVec::<[MotionVector; 5]>::new();
   let mut subset_c = ArrayVec::<[MotionVector; 5]>::new();
   let w = bsize.width_mi();
   let h = bsize.height_mi();
@@ -405,6 +426,40 @@ fn get_subset_predictors_alt<T: Pixel>(
     }
   };
 
+  if corner != BlockCorner::INIT {
+    subset_b.push(process_cand(tile_me_stats[tile_bo.0.y][tile_bo.0.x]));
+  } else {
+    if tile_bo.0.y > 0 && tile_bo.0.x < tile_me_stats.cols() - w {
+      // top right
+      subset_b
+        .push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
+    }
+  }
+
+  match corner {
+    BlockCorner::NW | BlockCorner::SW => {
+      if tile_bo.0.x < tile_me_stats.cols() - w {
+        // right
+        subset_b.push(process_cand(
+          tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w],
+        ));
+      }
+    }
+    _ => {}
+  }
+
+  match corner {
+    BlockCorner::SW | BlockCorner::SE => {
+      if tile_bo.0.y < tile_me_stats.rows() - h {
+        // right
+        subset_b.push(process_cand(
+          tile_me_stats[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)],
+        ));
+      }
+    }
+    _ => {}
+  }
+
   if tile_bo.0.x > 0 {
     // left
     subset_b.push(process_cand(
@@ -416,19 +471,14 @@ fn get_subset_predictors_alt<T: Pixel>(
     subset_b.push(process_cand(
       tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)],
     ));
-
-    if tile_bo.0.x < tile_me_stats.cols() - w {
-      subset_b
-        .push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
-    }
   }
 
   let median = if subset_b.len() < 3 {
     None
   } else {
-    let mut rows: ArrayVec<[i16; 3]> =
+    let mut rows: ArrayVec<[i16; 4]> =
       subset_b.iter().map(|&a| a.row).collect();
-    let mut cols: ArrayVec<[i16; 3]> =
+    let mut cols: ArrayVec<[i16; 4]> =
       subset_b.iter().map(|&a| a.col).collect();
     rows.as_mut_slice().sort();
     cols.as_mut_slice().sort();
