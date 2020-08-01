@@ -137,13 +137,29 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
 ) {
   for sby in 0..ts.sb_height {
     for sbx in 0..ts.sb_width {
+      // Will require different partitioning
       prep_square_block_motion_estimation(
         fi,
         ts,
         inter_cfg,
         BlockSize::BLOCK_64X64.width_mi_log2(),
         TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
+            .block_offset(0, 0),
+        true
+      );
+    }
+  }
+
+  for sby in 0..ts.sb_height {
+    for sbx in 0..ts.sb_width {
+      prep_square_block_motion_estimation(
+        fi,
+        ts,
+        inter_cfg,
+        BlockSize::BLOCK_32X32.width_mi_log2(),
+        TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
           .block_offset(0, 0),
+        false
       );
     }
   }
@@ -152,6 +168,7 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
 fn prep_square_block_motion_estimation<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   inter_cfg: &InterConfig, size_mi_log2: usize, tile_bo: TileBlockOffset,
+  init: bool,
 ) {
   let size_mi = 1 << size_mi_log2;
   let mut mv_size_log2 = size_mi_log2;
@@ -168,7 +185,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       for y in (0..h_in_b).step_by(mv_size) {
         for x in (0..w_in_b).step_by(mv_size) {
           let corner: BlockCorner =
-            match (mv_size_log2 == size_mi_log2, y & 1 == 1, x & 1 == 1) {
+            match (init, y & 1 == 1, x & 1 == 1) {
               (true, _, _) => BlockCorner::INIT,
               (_, false, false) => BlockCorner::NW,
               (_, false, true) => BlockCorner::NE,
@@ -183,7 +200,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
             bo,
             r,
             corner,
-            mv_size_log2 == size_mi_log2,
+            init,
           ) {
             let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
             save_me_stats(ts, bsize, bo, r, MEStats { mv: results.mv, sad });
@@ -192,7 +209,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       }
     }
 
-    if mv_size_log2 == 2 {
+    if init || mv_size_log2 == 2 {
       break;
     }
     mv_size_log2 -= 1;
@@ -485,11 +502,13 @@ fn get_subset_predictors_alt<T: Pixel>(
     }
   };
 
+  // Try to propagate from outside adjacent blocks
   /*if corner == BlockCorner::NW
     && tile_bo.0.x < tile_me_stats.cols() - (w << 1)
     && tile_bo.0.y < tile_me_stats.rows() - (h << 1)
   {
-    subset_b.push(process_cand());
+    // far bottom right
+    subset_b.push(process_cand(tile_me_stats[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w << 1)]));
   }*/
 
   // Zero motion vector, don't use add_cand since it skips zero vectors.
