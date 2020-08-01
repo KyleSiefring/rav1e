@@ -238,6 +238,7 @@ fn estimate_motion_alt<T: Pixel>(
   {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
+    let ssdec = if blk_w == 64 { 2 } else { 0 };
     let tile_bo_adj =
       adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
     let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
@@ -250,15 +251,31 @@ fn estimate_motion_alt<T: Pixel>(
     let lambda = (fi.me_lambda * 256.0 * if blk_w <= 16 { 0.5 } else { 0.125 } ) as u32;
 
     let po = frame_bo_adj.to_luma_plane_offset();
-    let org_region =
-      &ts.input.planes[0].region(Area::StartingAt { x: po.x, y: po.y });
 
-    let results: FullpelSearchResult = full_pixel_me_alt(
+    let (mvx_min, mvx_max, mvy_min, mvy_max) = (mvx_min >> ssdec, mvx_max >> ssdec, mvy_min >> ssdec, mvy_max >> ssdec);
+    let bsize = BlockSize::from_width_and_height(blk_w >> ssdec, blk_h >> ssdec);
+    let po = PlaneOffset { x: po.x >> ssdec, y: po.y >> ssdec };
+    let p_ref = match ssdec {
+      0 => &rec.frame.planes[0],
+      1 => &rec.input_hres,
+      2 => &rec.input_qres,
+      _ => unimplemented!()
+    };
+
+    let org_region = &match ssdec {
+      0 => &ts.input.planes[0],
+      1 => ts.input_hres,
+      2 => ts.input_qres,
+      _ => unimplemented!()
+    }.region(Area::StartingAt { x: po.x, y: po.y });
+
+    let mut results: FullpelSearchResult = full_pixel_me_alt(
       fi,
       ts,
       org_region,
-      &rec.frame.planes[0],
+      p_ref,
       tile_bo_adj,
+      po,
       lambda,
       global_mv,
       mvx_min,
@@ -269,7 +286,11 @@ fn estimate_motion_alt<T: Pixel>(
       ref_frame,
       corner,
       can_full_search,
+      ssdec,
     );
+
+    results.sad <<= ssdec * 2;
+    results.mv = MotionVector { col: results.mv.col << ssdec, row: results.mv.row << ssdec };
 
     Some(results)
   } else {
@@ -280,14 +301,15 @@ fn estimate_motion_alt<T: Pixel>(
 fn full_pixel_me_alt<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>,
   org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
+  po: PlaneOffset,
   lambda: u32, pmv: [MotionVector; 2], mvx_min: isize, mvx_max: isize,
   mvy_min: isize, mvy_max: isize, bsize: BlockSize, ref_frame: RefType,
-  corner: BlockCorner, can_full_search: bool,
+  corner: BlockCorner, can_full_search: bool, ssdec: u8,
 ) -> FullpelSearchResult {
   let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
   let frame_ref =
     fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
-  let subsets = get_subset_predictors_alt(
+  let mut subsets = get_subset_predictors_alt(
     tile_bo,
     tile_me_stats,
     frame_ref,
@@ -298,13 +320,11 @@ fn full_pixel_me_alt<T: Pixel>(
     mvy_min,
     mvy_max,
     corner,
+    ssdec,
   );
 
   let thresh = (subsets.min_sad as f32 * 1.2) as u32
     + (1 << (bsize.height_log2() + bsize.width_log2()));
-
-  let frame_bo = ts.to_frame_block_offset(tile_bo);
-  let po = frame_bo.to_luma_plane_offset();
 
   let mut best = FullpelSearchResult {
     mv: Default::default(),
@@ -371,8 +391,8 @@ fn full_pixel_me_alt<T: Pixel>(
   }
 
   if can_full_search {
-    let range_x = 192 * fi.me_range_scale as isize;
-    let range_y = 64 * fi.me_range_scale as isize;
+    let range_x = 192 * fi.me_range_scale as isize >> ssdec;
+    let range_y = 64 * fi.me_range_scale as isize >> ssdec;
     let x_lo = po.x + (-range_x).max(mvx_min / 8);
     let x_hi = po.x + (range_x).min(mvx_max / 8);
     let y_lo = po.y + (-range_y).max(mvy_min / 8);
@@ -388,7 +408,7 @@ fn full_pixel_me_alt<T: Pixel>(
       org_region,
       p_ref,
       po,
-      4,
+      4 >> ssdec,
       lambda,
       [MotionVector::default(); 2],
     );
@@ -412,13 +432,13 @@ fn get_subset_predictors_alt<T: Pixel>(
   tile_bo: TileBlockOffset, tile_me_stats: &TileMEStats<'_>,
   frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize,
   bsize: BlockSize, mvx_min: isize, mvx_max: isize, mvy_min: isize,
-  mvy_max: isize, corner: BlockCorner,
+  mvy_max: isize, corner: BlockCorner, ssdec: u8
 ) -> MotionEstimationSubsets {
   let mut min_sad: u32 = u32::MAX;
   let mut subset_b = ArrayVec::<[MotionVector; 5]>::new();
   let mut subset_c = ArrayVec::<[MotionVector; 5]>::new();
-  let w = bsize.width_mi();
-  let h = bsize.height_mi();
+  let w = bsize.width_mi() << ssdec;
+  let h = bsize.height_mi() << ssdec;
 
   // EPZS subset A and B predictors.
   // Since everything is being pushed, a median doesn't need to be calculated
@@ -549,7 +569,16 @@ fn get_subset_predictors_alt<T: Pixel>(
 
   let min_sad = min_sad
     >> (MAX_MIB_SIZE_LOG2 * 2
-      - (bsize.width_mi_log2() + bsize.height_mi_log2()));
+      - (bsize.width_mi_log2() + bsize.height_mi_log2() + ssdec as usize * 2));
+
+  let dec_mv = |mv: MotionVector| MotionVector { col: mv.col >> ssdec, row: mv.row >> ssdec };
+  let median = median.and_then(|mv| Some(dec_mv(mv)) );
+  for mv in subset_b.iter_mut() {
+    *mv = dec_mv(*mv);
+  }
+  for mv in subset_c.iter_mut() {
+    *mv = dec_mv(*mv);
+  }
 
   MotionEstimationSubsets { min_sad, median, subset_b, subset_c }
 }
