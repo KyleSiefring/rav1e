@@ -246,8 +246,8 @@ fn estimate_motion_alt<T: Pixel>(
 
     let global_mv = [MotionVector { row: 0, col: 0 }; 2];
 
-    // 0.5 is a fudge factor
-    let lambda = (fi.me_lambda * 256.0 * 0.5) as u32;
+    // 0.5 and 0.125 are a fudge factors
+    let lambda = (fi.me_lambda * 256.0 * if blk_w <= 16 { 0.5 } else { 0.125 } ) as u32;
 
     let po = frame_bo_adj.to_luma_plane_offset();
     let org_region =
@@ -377,9 +377,6 @@ fn full_pixel_me_alt<T: Pixel>(
     let x_hi = po.x + (range_x).min(mvx_max / 8);
     let y_lo = po.y + (-range_y).max(mvy_min / 8);
     let y_hi = po.y + (range_y).min(mvy_max / 8);
-
-    // 0.125 is a fudge factor
-    let lambda = (fi.me_lambda * 256.0 * 0.125) as u32;
 
     let results = full_search(
       fi,
