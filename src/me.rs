@@ -248,7 +248,8 @@ fn estimate_motion_alt<T: Pixel>(
     let global_mv = [MotionVector { row: 0, col: 0 }; 2];
 
     // 0.5 and 0.125 are a fudge factors
-    let lambda = (fi.me_lambda * 256.0 * if blk_w <= 16 { 0.5 } else { 0.125 } ) as u32;
+    let lambda = (fi.me_lambda * 256.0 / (1 << (2 * ssdec)) as f64
+        * if blk_w <= 16 { 0.5 } else { 0.125 }) as u32;
 
     let po = frame_bo_adj.to_luma_plane_offset();
 
