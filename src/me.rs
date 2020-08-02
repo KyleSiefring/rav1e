@@ -469,7 +469,7 @@ fn get_subset_predictors_alt<T: Pixel>(
   match corner {
     BlockCorner::SW | BlockCorner::SE => {
       if tile_bo.0.y < tile_me_stats.rows() - h {
-        // right
+        // bottom
         subset_b.push(process_cand(
           tile_me_stats[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)],
         ));
@@ -667,6 +667,13 @@ pub fn get_subset_predictors<T: Pixel>(
     }
   };
 
+  let corner: BlockCorner = match (tile_bo.0.y & h == h, tile_bo.0.x & h == h) {
+    (false, false) => BlockCorner::NW,
+    (false, true) => BlockCorner::NE,
+    (true, false) => BlockCorner::SW,
+    (true, true) => BlockCorner::SE,
+  };
+
   // Zero motion vector, don't use add_cand since it skips zero vectors.
   predictors.push(MotionVector::default());
 
@@ -680,7 +687,39 @@ pub fn get_subset_predictors<T: Pixel>(
   // for subset A.
   // Sample the middle of bordering side of the left and top blocks.
 
+  match corner {
+    BlockCorner::NW | BlockCorner::SW => {
+      if tile_bo.0.x < tile_mvs.cols() - w {
+        // right
+        add_cand(&mut predictors, tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w]);
+      }
+    }
+    _ => {}
+  }
+
+  match corner {
+    BlockCorner::SW | BlockCorner::SE => {
+      if tile_bo.0.y < tile_mvs.rows() - h {
+        // bottom
+        add_cand(&mut predictors, tile_mvs[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)]);
+      }
+    }
+    _ => {}
+  }
+
   if tile_bo.0.x > 0 {
+    // left
+    add_cand(&mut predictors, tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1]);
+  }
+  if tile_bo.0.y > 0 {
+    // top
+    add_cand(&mut predictors, tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)]);
+  }
+
+  // median or middle sample
+  add_cand(&mut predictors, tile_mvs[tile_bo.0.y][tile_bo.0.x]);
+
+  /*if tile_bo.0.x > 0 {
     let left = tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1];
     add_cand(&mut predictors, left);
   }
@@ -692,7 +731,7 @@ pub fn get_subset_predictors<T: Pixel>(
       let top_right = tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + w];
       add_cand(&mut predictors, top_right);
     }
-  }
+  }*/
 
   // EPZS subset C predictors.
   // Sample the middle of bordering side of the left, right, top and bottom
