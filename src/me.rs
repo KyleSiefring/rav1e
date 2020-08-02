@@ -370,55 +370,63 @@ fn full_pixel_me_alt<T: Pixel>(
     }
   };
 
-  if let Some(median) = subsets.median {
-    try_cand(&[median], &mut best);
+  if !can_full_search {
+    let allmvs: ArrayVec<[MotionVector; 11]> = subsets.median.into_iter().chain(subsets.subset_b).chain(subsets.subset_c).collect();
+    try_cand(&allmvs, &mut best);
+    best
+  } else {
+    if let Some(median) = subsets.median {
+      try_cand(&[median], &mut best);
+
+      if best.sad < thresh {
+        return best;
+      }
+    }
+
+    try_cand(&subsets.subset_b, &mut best);
 
     if best.sad < thresh {
       return best;
     }
-  }
 
-  try_cand(&subsets.subset_b, &mut best);
+    try_cand(&subsets.subset_c, &mut best);
 
-  if best.sad < thresh {
-    return best;
-  }
+    if best.sad < thresh {
+      return best;
+    }
 
-  try_cand(&subsets.subset_c, &mut best);
+    {
+      let range_x = 192 * fi.me_range_scale as isize >> ssdec;
+      let range_y = 64 * fi.me_range_scale as isize >> ssdec;
+      let x_lo = po.x + (-range_x).max(mvx_min / 8);
+      let x_hi = po.x + (range_x).min(mvx_max / 8);
+      let y_lo = po.y + (-range_y).max(mvy_min / 8);
+      let y_hi = po.y + (range_y).min(mvy_max / 8);
 
-  if best.sad < thresh {
-    return best;
-  }
+      let results = full_search(
+        fi,
+        x_lo,
+        x_hi,
+        y_lo,
+        y_hi,
+        bsize,
+        org_region,
+        p_ref,
+        po,
+        4 >> ssdec,
+        lambda,
+        [MotionVector::default(); 2],
+      );
 
-  if can_full_search {
-    let range_x = 192 * fi.me_range_scale as isize >> ssdec;
-    let range_y = 64 * fi.me_range_scale as isize >> ssdec;
-    let x_lo = po.x + (-range_x).max(mvx_min / 8);
-    let x_hi = po.x + (range_x).min(mvx_max / 8);
-    let y_lo = po.y + (-range_y).max(mvy_min / 8);
-    let y_hi = po.y + (range_y).min(mvy_max / 8);
-
-    let results = full_search(
-      fi,
-      x_lo,
-      x_hi,
-      y_lo,
-      y_hi,
-      bsize,
-      org_region,
-      p_ref,
-      po,
-      4 >> ssdec,
-      lambda,
-      [MotionVector::default(); 2],
-    );
-
-    if results.cost < best.cost {
-      best = results;
+      if results.cost < best.cost {
+        results
+      }
+      else {
+        best
+      }
     }
   }
 
-  best
 }
 
 struct MotionEstimationSubsets {
