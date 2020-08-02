@@ -349,9 +349,6 @@ fn full_pixel_me_alt<T: Pixel>(
       mvy_max,
       bsize,
     );
-
-    let pmv = [results.mv, MotionVector::default()];
-
     fullpel_diamond_me_search_alt(
       fi,
       po,
@@ -472,7 +469,7 @@ fn get_subset_predictors_alt<T: Pixel>(
   match corner {
     BlockCorner::SW | BlockCorner::SE => {
       if tile_bo.0.y < tile_me_stats.rows() - h {
-        // bottom
+        // right
         subset_b.push(process_cand(
           tile_me_stats[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)],
         ));
@@ -593,7 +590,7 @@ fn fullpel_diamond_me_search_alt<T: Pixel>(
   mvy_min: isize, mvy_max: isize, bsize: BlockSize,
 ) {
   let diamond_pattern = [(1i16, 0i16), (0, 1), (-1, 0), (0, -1)];
-  let (mut diamond_radius, diamond_radius_end) = (3u8, 3u8);
+  let (mut diamond_radius, diamond_radius_end) = (4u8, 3u8);
 
   loop {
     let mut best_diamond: FullpelSearchResult = FullpelSearchResult {
