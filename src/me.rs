@@ -182,7 +182,14 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       mv_size << MI_SIZE_LOG2,
     );
 
-    for &r in inter_cfg.allowed_ref_frames() {
+    let mut tested_frames_flags = 0;
+    for &ref_frame in inter_cfg.allowed_ref_frames() {
+      let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
+      if tested_frames_flags & frame_flag == frame_flag {
+        continue;
+      }
+      tested_frames_flags |= frame_flag;
+
       for y in (0..h_in_b).step_by(mv_size) {
         for x in (0..w_in_b).step_by(mv_size) {
           let corner: BlockCorner = match (init, y & mv_size == mv_size, x & mv_size == mv_size) {
@@ -194,10 +201,10 @@ fn prep_square_block_motion_estimation<T: Pixel>(
           };
           let bo = tile_bo.with_offset(x as isize, y as isize);
           if let Some(results) =
-            estimate_motion_alt(fi, ts, bsize, bo, r, corner, init)
+            estimate_motion_alt(fi, ts, bsize, bo, ref_frame, corner, init)
           {
             let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
-            save_me_stats(ts, bsize, bo, r, MEStats { mv: results.mv, sad });
+            save_me_stats(ts, bsize, bo, ref_frame, MEStats { mv: results.mv, sad });
           }
         }
       }
@@ -1225,7 +1232,7 @@ fn subpel_diamond_me_search<T: Pixel>(
   assert!(center.cost < std::u64::MAX);
 }
 
-#[inline(always)]
+#[inline]
 fn get_fullpel_mv_rd_cost<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
   p_ref: &Plane<T>, bit_depth: usize, pmv: [MotionVector; 2], lambda: u32,
