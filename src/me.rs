@@ -203,7 +203,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       }
     }
 
-    if init || mv_size_log2 == 1 {
+    if init || mv_size_log2 == 2 {
       break;
     }
     mv_size_log2 -= 1;
