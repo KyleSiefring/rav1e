@@ -7,10 +7,7 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
-use crate::context::{
-  BlockOffset, PlaneBlockOffset, TileBlockOffset, BLOCK_TO_PLANE_SHIFT,
-  MI_SIZE,
-};
+use crate::context::{BlockOffset, PlaneBlockOffset, TileBlockOffset, BLOCK_TO_PLANE_SHIFT, MI_SIZE, MAX_MIB_SIZE_LOG2};
 use crate::dist::*;
 use crate::encoder::ReferenceFrame;
 use crate::frame::*;
@@ -59,6 +56,42 @@ impl IndexMut<usize> for FrameMotionVectors {
   #[inline]
   fn index_mut(&mut self, index: usize) -> &mut Self::Output {
     &mut self.mvs[index * self.cols..(index + 1) * self.cols]
+  }
+}
+
+pub struct BlockMotionVectorsCheckpoint {
+  mvs: ArrayVec<[ArrayVec<[MotionVector; 1 << (MAX_MIB_SIZE_LOG2 * 2)]>; REF_FRAMES]>,
+  cols: usize,
+  rows: usize,
+}
+
+impl BlockMotionVectorsCheckpoint {
+  pub fn new<T: Pixel>(ts: &TileStateMut<'_, T>, bsize: BlockSize, tile_bo: TileBlockOffset) -> BlockMotionVectorsCheckpoint {
+    let tile_mvs = &ts.mvs;
+    let cols = (ts.mi_width - tile_bo.0.x).min(bsize.width_mi());
+    let rows = (ts.mi_height - tile_bo.0.y).min(bsize.height_mi());
+    let mut cache_mvs: ArrayVec<[ArrayVec<[MotionVector; 1 << (MAX_MIB_SIZE_LOG2 * 2)]>; REF_FRAMES]> = ArrayVec::new();
+    for i in 0..REF_FRAMES {
+      cache_mvs.push(ArrayVec::new());
+      let src_mvs = &tile_mvs[i];
+      let dst_mvs = &mut cache_mvs[i];
+      for y in 0..rows {
+        dst_mvs.try_extend_from_slice(&src_mvs[y + tile_bo.0.y][tile_bo.0.x..tile_bo.0.x + cols]).unwrap();
+      }
+    }
+    BlockMotionVectorsCheckpoint { mvs: cache_mvs, cols, rows}
+  }
+
+  pub fn restore<T: Pixel>(&self, ts: &mut TileStateMut<'_, T>, tile_bo: TileBlockOffset) {
+    let tile_mvs = &mut ts.mvs;
+    let cache_mvs = &self.mvs;
+    for i in 0..REF_FRAMES {
+      let dst_mvs = &mut tile_mvs[i];
+      let src_mvs = &cache_mvs[i];
+      for y in 0..self.rows {
+        dst_mvs[y + tile_bo.0.y][tile_bo.0.x..tile_bo.0.x + self.cols].copy_from_slice(&src_mvs[y * self.cols..y*self.cols + self.cols]);
+      }
+    }
   }
 }
 

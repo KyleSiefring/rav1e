@@ -17,7 +17,7 @@ use crate::deblock::*;
 use crate::dist::*;
 use crate::ec::{Writer, WriterCounter, OD_BITRES};
 use crate::encode_block_with_modes;
-use crate::encoder::{FrameInvariants, IMPORTANCE_BLOCK_SIZE};
+use crate::encoder::{FrameInvariants, IMPORTANCE_BLOCK_SIZE, save_block_motion};
 use crate::frame::Frame;
 use crate::frame::*;
 use crate::header::ReferenceMode;
@@ -1784,6 +1784,27 @@ fn rdo_partition_simple<T: Pixel, W: Writer>(
       return None;
     }
 
+    let mode_luma = mode_decision.pred_mode_luma;
+    if !mode_luma.is_intra() {
+      save_block_motion(
+        ts,
+        mode_decision.bsize,
+        mode_decision.bo,
+        mode_decision.ref_frames[0].to_index(),
+        mode_decision.mvs[0],
+      );
+
+      /*if mode_luma.is_compound() {
+        save_block_motion(
+          ts,
+          mode_decision.bsize,
+          mode_decision.bo,
+          mode_decision.ref_frames[1].to_index(),
+          mode_decision.mvs[1],
+        );
+      }*/
+    }
+
     if subsize >= BlockSize::BLOCK_8X8 && subsize.is_sqr() {
       let w: &mut W = if cw.bc.cdef_coded { w_post_cdef } else { w_pre_cdef };
       cw.write_partition(w, offset, PartitionType::PARTITION_NONE, subsize);
@@ -1819,6 +1840,7 @@ pub fn rdo_partition_decision<T: Pixel, W: Writer>(
   let mut best_pred_modes = cached_block.part_modes.clone();
 
   let cw_checkpoint = cw.checkpoint();
+  let mv_checkpoint = BlockMotionVectorsCheckpoint::new(ts, bsize, tile_bo);
   let w_pre_checkpoint = w_pre_cdef.checkpoint();
   let w_post_checkpoint = w_post_cdef.checkpoint();
 
@@ -1868,6 +1890,8 @@ pub fn rdo_partition_decision<T: Pixel, W: Writer>(
         best_pred_modes = child_modes.clone();
       }
     }
+
+    mv_checkpoint.restore(ts, tile_bo);
     cw.rollback(&cw_checkpoint);
     w_pre_cdef.rollback(&w_pre_checkpoint);
     w_post_cdef.rollback(&w_post_checkpoint);
