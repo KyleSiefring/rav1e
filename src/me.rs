@@ -1225,7 +1225,7 @@ fn subpel_diamond_me_search<T: Pixel>(
   assert!(center.cost < std::u64::MAX);
 }
 
-#[inline]
+#[inline(always)]
 fn get_fullpel_mv_rd_cost<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
   p_ref: &Plane<T>, bit_depth: usize, pmv: [MotionVector; 2], lambda: u32,
