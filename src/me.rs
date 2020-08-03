@@ -199,8 +199,12 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       mv_size << MI_SIZE_LOG2,
     );
 
-    for y in (0..h_in_b).step_by(mv_size) {
-      for x in (0..w_in_b).step_by(mv_size) {
+    // Stop at 16x16 blocks when not on edge. Partition on edge.
+    let y_start = if mv_size_log2 >= 2 { 0 } else { h_in_b ^ mv_size };
+    let x_start = if mv_size_log2 >= 2 { 0 } else { w_in_b ^ mv_size };
+
+    for y in (y_start..h_in_b).step_by(mv_size) {
+      for x in (x_start..w_in_b).step_by(mv_size) {
         let corner: BlockCorner =
           match (init, y & mv_size == mv_size, x & mv_size == mv_size) {
             (true, _, _) => BlockCorner::INIT,
@@ -209,15 +213,15 @@ fn prep_square_block_motion_estimation<T: Pixel>(
             (_, true, false) => BlockCorner::SW,
             (_, true, true) => BlockCorner::SE,
           };
-        let bo = tile_bo.with_offset(x as isize, y as isize);
+        let sub_bo = tile_bo.with_offset(x as isize, y as isize);
         if let Some(results) =
-          estimate_motion_alt(fi, ts, bsize, bo, ref_frame, corner, init)
+          estimate_motion_alt(fi, ts, bsize, sub_bo, ref_frame, corner, init)
         {
           let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
           save_me_stats(
             ts,
             bsize,
-            bo,
+            sub_bo,
             ref_frame,
             MEStats { mv: results.mv, sad },
           );
@@ -225,7 +229,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       }
     }
 
-    if init || mv_size_log2 == 2 {
+    if init || mv_size_log2 == 0 {
       break;
     }
     mv_size_log2 -= 1;
