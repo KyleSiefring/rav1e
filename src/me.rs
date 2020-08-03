@@ -695,13 +695,13 @@ pub fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
   ref_frame_id: usize, bsize: BlockSize,
-) -> ArrayVec<[MotionVector; 16]> {
-  let mut predictors = ArrayVec::<[_; 16]>::new();
+) -> ArrayVec<[MotionVector; 17]> {
+  let mut predictors = ArrayVec::<[_; 17]>::new();
   let w = bsize.width_mi();
   let h = bsize.height_mi();
 
   // Add a candidate predictor, aligning to fullpel and filtering out zero mvs.
-  let add_cand = |predictors: &mut ArrayVec<[MotionVector; 16]>,
+  let add_cand = |predictors: &mut ArrayVec<[MotionVector; 17]>,
                   cand_mv: MotionVector| {
     let cand_mv = cand_mv.quantize_to_fullpel();
     if !cand_mv.is_zero() {
