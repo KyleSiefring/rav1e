@@ -30,6 +30,7 @@ use std::convert::identity;
 use std::iter;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
+use crate::partition::RefType::LAST_FRAME;
 
 #[derive(Debug, Clone)]
 pub struct FrameMotionVectors {
@@ -287,6 +288,7 @@ fn estimate_motion_alt<T: Pixel>(
   {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
+    let frame_dist = fi.sequence.get_relative_dist(fi.order_hint, rec.order_hint);
 
     let tile_bo_adj =
       adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
@@ -337,6 +339,7 @@ fn estimate_motion_alt<T: Pixel>(
       mvy_max,
       bsize,
       ref_frame,
+      frame_dist,
       corner,
       can_full_search,
       ssdec,
@@ -344,8 +347,8 @@ fn estimate_motion_alt<T: Pixel>(
 
     results.sad <<= ssdec * 2;
     results.mv = MotionVector {
-      col: results.mv.col << ssdec,
-      row: results.mv.row << ssdec,
+      col: (results.mv.col << ssdec) * 8 / frame_dist as i16,
+      row: (results.mv.row << ssdec) * 8 / frame_dist as i16,
     };
 
     Some(results)
@@ -359,7 +362,7 @@ fn full_pixel_me_alt<T: Pixel>(
   org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
   po: PlaneOffset, lambda: u32, pmv: [MotionVector; 2], mvx_min: isize,
   mvx_max: isize, mvy_min: isize, mvy_max: isize, bsize: BlockSize,
-  ref_frame: RefType, corner: BlockCorner, can_full_search: bool, ssdec: u8,
+  ref_frame: RefType, frame_dist: i32, corner: BlockCorner, can_full_search: bool, ssdec: u8,
 ) -> FullpelSearchResult {
   let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
   let frame_ref =
@@ -369,6 +372,7 @@ fn full_pixel_me_alt<T: Pixel>(
     tile_me_stats,
     frame_ref,
     ref_frame.to_index(),
+    frame_dist,
     bsize,
     mvx_min,
     mvx_max,
@@ -496,7 +500,7 @@ struct MotionEstimationSubsets {
 
 fn get_subset_predictors_alt<T: Pixel>(
   tile_bo: TileBlockOffset, tile_me_stats: &TileMEStats<'_>,
-  frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize,
+  frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize, frame_dist: i32,
   bsize: BlockSize, mvx_min: isize, mvx_max: isize, mvy_min: isize,
   mvy_max: isize, corner: BlockCorner, ssdec: u8,
 ) -> MotionEstimationSubsets {
@@ -512,8 +516,9 @@ fn get_subset_predictors_alt<T: Pixel>(
   // Sample the middle of bordering side of the left and top blocks.
 
   let mut process_cand = |stats: MEStats| -> MotionVector {
-    min_sad = min_sad.min(stats.sad);
-    let mv = stats.mv.quantize_to_fullpel();
+    let mv = stats.mv;
+    let mv = MotionVector { col: mv.col * frame_dist as i16 / 8, row: mv.row * frame_dist as i16 / 8 };
+    let mv = mv.quantize_to_fullpel();
     MotionVector {
       col: clamp(mv.col as isize, mvx_min, mvx_max) as i16,
       row: clamp(mv.row as isize, mvy_min, mvy_max) as i16,
@@ -725,7 +730,7 @@ const fn get_mv_range(
 pub fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
-  ref_frame_id: usize, bsize: BlockSize,
+  ref_frame_id: usize, frame_dist: i32, bsize: BlockSize,
 ) -> ArrayVec<[MotionVector; 16]> {
   let mut predictors = ArrayVec::<[_; 16]>::new();
   let w = bsize.width_mi();
@@ -733,10 +738,11 @@ pub fn get_subset_predictors<T: Pixel>(
 
   // Add a candidate predictor, aligning to fullpel and filtering out zero mvs.
   let add_cand = |predictors: &mut ArrayVec<[MotionVector; 16]>,
-                  cand_mv: MotionVector| {
-    let cand_mv = cand_mv.quantize_to_fullpel();
-    if !cand_mv.is_zero() {
-      predictors.push(cand_mv)
+                  mv: MotionVector| {
+    let mv = MotionVector { col: mv.col * frame_dist as i16 / 8, row: mv.row * frame_dist as i16 / 8 };
+    let mv = mv.quantize_to_fullpel();
+    if !mv.is_zero() {
+      predictors.push(mv)
     }
   };
 
@@ -866,6 +872,7 @@ pub fn motion_estimation<T: Pixel>(
 ) -> (MotionVector, u32) {
   match fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize] {
     Some(ref rec) => {
+      let frame_dist = fi.sequence.get_relative_dist(fi.order_hint, rec.order_hint);
       let blk_w = bsize.width();
       let blk_h = bsize.height();
       let frame_bo = ts.to_frame_block_offset(tile_bo);
@@ -897,6 +904,7 @@ pub fn motion_estimation<T: Pixel>(
         mvy_max,
         bsize,
         ref_frame,
+        frame_dist
       );
 
       let sad = best.sad;
@@ -988,6 +996,7 @@ pub fn estimate_motion<T: Pixel>(
   if let Some(ref rec) =
     fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize]
   {
+    let frame_dist = fi.sequence.get_relative_dist(fi.order_hint, rec.order_hint);
     let blk_w = bsize.width();
     let blk_h = bsize.height();
     let tile_bo_adj =
@@ -1020,6 +1029,7 @@ pub fn estimate_motion<T: Pixel>(
       mvy_max,
       bsize,
       ref_frame,
+      frame_dist
     );
 
     Some(MotionVector { row: best_mv.row, col: best_mv.col })
@@ -1033,7 +1043,7 @@ fn full_pixel_me<T: Pixel>(
   org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
   lambda: u32, cmvs: ArrayVec<[MotionVector; 7]>, pmv: [MotionVector; 2],
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
-  bsize: BlockSize, ref_frame: RefType,
+  bsize: BlockSize, ref_frame: RefType, frame_dist: i32
 ) -> FullpelSearchResult {
   let tile_mvs = &ts.mvs[ref_frame.to_index()].as_const();
   let frame_ref =
@@ -1044,6 +1054,7 @@ fn full_pixel_me<T: Pixel>(
     tile_mvs,
     frame_ref,
     ref_frame.to_index(),
+    frame_dist,
     bsize,
   );
 
@@ -1116,6 +1127,7 @@ fn me_ss2<T: Pixel>(
     tile_mvs,
     frame_ref,
     ref_frame.to_index(),
+    fi.sequence.get_relative_dist(fi.order_hint, rec.order_hint),
     bsize,
   );
 

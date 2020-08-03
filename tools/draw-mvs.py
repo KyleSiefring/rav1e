@@ -70,7 +70,6 @@ def draw_mvs(prefix):
     plt.savefig(prefix + "-mvs.png", bbox_inches="tight")
     plt.close(fig)
 
-
-for prefix in range(1, int(sys.argv[1])):
+for prefix in range(1, 2):
     print(prefix)
-    draw_mvs(str(prefix))
+    draw_mvs("0000000004")
