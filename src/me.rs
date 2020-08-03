@@ -342,13 +342,14 @@ fn full_pixel_me_alt<T: Pixel>(
 
   let try_cand = |predictors: &[MotionVector],
                   best: &mut FullpelSearchResult| {
-    let mut results = get_best_predictor_alt(
+    let mut results = get_best_predictor(
       fi,
       po,
       org_region,
       p_ref,
       predictors,
       fi.sequence.bit_depth,
+      pmv,
       lambda,
       mvx_min,
       mvx_max,
@@ -356,7 +357,6 @@ fn full_pixel_me_alt<T: Pixel>(
       mvy_max,
       bsize,
     );
-    let pmv = [results.mv, MotionVector::default()];
     fullpel_diamond_me_search_alt(
       fi,
       po,
@@ -645,34 +645,6 @@ fn fullpel_diamond_me_search_alt<T: Pixel>(
   }
 
   assert!(center.cost < std::u64::MAX);
-}
-
-fn get_best_predictor_alt<T: Pixel>(
-  fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
-  p_ref: &Plane<T>, predictors: &[MotionVector], bit_depth: usize,
-  lambda: u32, mvx_min: isize, mvx_max: isize,
-  mvy_min: isize, mvy_max: isize, bsize: BlockSize,
-) -> FullpelSearchResult {
-  let mut best: FullpelSearchResult = FullpelSearchResult {
-    mv: MotionVector::default(),
-    cost: u64::MAX,
-    sad: u32::MAX,
-  };
-
-  for &init_mv in predictors.iter() {
-    let cost = get_fullpel_mv_rd_cost(
-      fi, po, org_region, p_ref, bit_depth, [init_mv, MotionVector::default()], lambda, false, mvx_min,
-      mvx_max, mvy_min, mvy_max, bsize, init_mv,
-    );
-
-    if cost.0 < best.cost {
-      best.mv = init_mv;
-      best.cost = cost.0;
-      best.sad = cost.1;
-    }
-  }
-
-  best
 }
 
 const fn get_mv_range(
