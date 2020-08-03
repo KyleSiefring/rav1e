@@ -137,38 +137,55 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
 ) {
   for sby in 0..ts.sb_height {
     for sbx in 0..ts.sb_width {
-      prep_square_block_motion_estimation(
-        fi,
-        ts,
-        inter_cfg,
-        BlockSize::BLOCK_64X64.width_mi_log2(),
-        TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
-          .block_offset(0, 0),
-        true,
-      );
+      let mut tested_frames_flags = 0;
+      for &ref_frame in inter_cfg.allowed_ref_frames() {
+        let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
+        if tested_frames_flags & frame_flag == frame_flag {
+          continue;
+        }
+        tested_frames_flags |= frame_flag;
+
+        prep_square_block_motion_estimation(
+          fi,
+          ts,
+          ref_frame,
+          BlockSize::BLOCK_64X64.width_mi_log2(),
+          TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
+            .block_offset(0, 0),
+          true,
+        );
+      }
     }
   }
 
   for sby in 0..ts.sb_height {
     for sbx in 0..ts.sb_width {
-      prep_square_block_motion_estimation(
-        fi,
-        ts,
-        inter_cfg,
-        // TODO: Awkward with starting with splitting into 32x32
-        BlockSize::BLOCK_64X64.width_mi_log2(),
-        TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
-          .block_offset(0, 0),
-        false,
-      );
+      let mut tested_frames_flags = 0;
+      for &ref_frame in inter_cfg.allowed_ref_frames() {
+        let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
+        if tested_frames_flags & frame_flag == frame_flag {
+          continue;
+        }
+        tested_frames_flags |= frame_flag;
+
+        prep_square_block_motion_estimation(
+          fi,
+          ts,
+          ref_frame,
+          // TODO: Awkward with starting with splitting into 32x32
+          BlockSize::BLOCK_64X64.width_mi_log2(),
+          TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
+            .block_offset(0, 0),
+          false,
+        );
+      }
     }
   }
 }
 
 fn prep_square_block_motion_estimation<T: Pixel>(
-  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
-  inter_cfg: &InterConfig, size_mi_log2: usize, tile_bo: TileBlockOffset,
-  init: bool,
+  fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, ref_frame: RefType,
+  size_mi_log2: usize, tile_bo: TileBlockOffset, init: bool,
 ) {
   let size_mi = 1 << size_mi_log2;
   let mut mv_size_log2 = size_mi_log2 - if init { 0 } else { 1 };
@@ -182,37 +199,28 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       mv_size << MI_SIZE_LOG2,
     );
 
-    let mut tested_frames_flags = 0;
-    for &ref_frame in inter_cfg.allowed_ref_frames() {
-      let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
-      if tested_frames_flags & frame_flag == frame_flag {
-        continue;
-      }
-      tested_frames_flags |= frame_flag;
-
-      for y in (0..h_in_b).step_by(mv_size) {
-        for x in (0..w_in_b).step_by(mv_size) {
-          let corner: BlockCorner =
-            match (init, y & mv_size == mv_size, x & mv_size == mv_size) {
-              (true, _, _) => BlockCorner::INIT,
-              (_, false, false) => BlockCorner::NW,
-              (_, false, true) => BlockCorner::NE,
-              (_, true, false) => BlockCorner::SW,
-              (_, true, true) => BlockCorner::SE,
-            };
-          let bo = tile_bo.with_offset(x as isize, y as isize);
-          if let Some(results) =
-            estimate_motion_alt(fi, ts, bsize, bo, ref_frame, corner, init)
-          {
-            let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
-            save_me_stats(
-              ts,
-              bsize,
-              bo,
-              ref_frame,
-              MEStats { mv: results.mv, sad },
-            );
-          }
+    for y in (0..h_in_b).step_by(mv_size) {
+      for x in (0..w_in_b).step_by(mv_size) {
+        let corner: BlockCorner =
+          match (init, y & mv_size == mv_size, x & mv_size == mv_size) {
+            (true, _, _) => BlockCorner::INIT,
+            (_, false, false) => BlockCorner::NW,
+            (_, false, true) => BlockCorner::NE,
+            (_, true, false) => BlockCorner::SW,
+            (_, true, true) => BlockCorner::SE,
+          };
+        let bo = tile_bo.with_offset(x as isize, y as isize);
+        if let Some(results) =
+          estimate_motion_alt(fi, ts, bsize, bo, ref_frame, corner, init)
+        {
+          let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
+          save_me_stats(
+            ts,
+            bsize,
+            bo,
+            ref_frame,
+            MEStats { mv: results.mv, sad },
+          );
         }
       }
     }
@@ -335,7 +343,7 @@ fn full_pixel_me_alt<T: Pixel>(
   let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
   let frame_ref =
     fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
-  let mut subsets = get_subset_predictors_alt(
+  let subsets = get_subset_predictors_alt(
     tile_bo,
     tile_me_stats,
     frame_ref,
