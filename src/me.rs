@@ -204,7 +204,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
 
     let ssdec = if init {
       2
-    } else if mv_size >= 32 {
+    } else if mv_size >= 8 {
       1
     } else {
       0
