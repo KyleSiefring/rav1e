@@ -192,19 +192,26 @@ fn prep_square_block_motion_estimation<T: Pixel>(
 
       for y in (0..h_in_b).step_by(mv_size) {
         for x in (0..w_in_b).step_by(mv_size) {
-          let corner: BlockCorner = match (init, y & mv_size == mv_size, x & mv_size == mv_size) {
-            (true, _, _) => BlockCorner::INIT,
-            (_, false, false) => BlockCorner::NW,
-            (_, false, true) => BlockCorner::NE,
-            (_, true, false) => BlockCorner::SW,
-            (_, true, true) => BlockCorner::SE,
-          };
+          let corner: BlockCorner =
+            match (init, y & mv_size == mv_size, x & mv_size == mv_size) {
+              (true, _, _) => BlockCorner::INIT,
+              (_, false, false) => BlockCorner::NW,
+              (_, false, true) => BlockCorner::NE,
+              (_, true, false) => BlockCorner::SW,
+              (_, true, true) => BlockCorner::SE,
+            };
           let bo = tile_bo.with_offset(x as isize, y as isize);
           if let Some(results) =
             estimate_motion_alt(fi, ts, bsize, bo, ref_frame, corner, init)
           {
             let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
-            save_me_stats(ts, bsize, bo, ref_frame, MEStats { mv: results.mv, sad });
+            save_me_stats(
+              ts,
+              bsize,
+              bo,
+              ref_frame,
+              MEStats { mv: results.mv, sad },
+            );
           }
         }
       }
@@ -245,7 +252,13 @@ fn estimate_motion_alt<T: Pixel>(
   {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
-    let ssdec = if blk_w == 64 { 2 } else if blk_w == 32 { 1 } else { 0 };
+    let ssdec = if blk_w == 64 {
+      2
+    } else if blk_w == 32 {
+      1
+    } else {
+      0
+    };
     let tile_bo_adj =
       adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
     let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
@@ -256,26 +269,29 @@ fn estimate_motion_alt<T: Pixel>(
 
     // 0.5 and 0.125 are a fudge factors
     let lambda = (fi.me_lambda * 256.0 / (1 << (2 * ssdec)) as f64
-        * if blk_w <= 16 { 0.5 } else { 0.125 }) as u32;
+      * if blk_w <= 16 { 0.5 } else { 0.125 }) as u32;
 
     let po = frame_bo_adj.to_luma_plane_offset();
 
-    let (mvx_min, mvx_max, mvy_min, mvy_max) = (mvx_min >> ssdec, mvx_max >> ssdec, mvy_min >> ssdec, mvy_max >> ssdec);
-    let bsize = BlockSize::from_width_and_height(blk_w >> ssdec, blk_h >> ssdec);
+    let (mvx_min, mvx_max, mvy_min, mvy_max) =
+      (mvx_min >> ssdec, mvx_max >> ssdec, mvy_min >> ssdec, mvy_max >> ssdec);
+    let bsize =
+      BlockSize::from_width_and_height(blk_w >> ssdec, blk_h >> ssdec);
     let po = PlaneOffset { x: po.x >> ssdec, y: po.y >> ssdec };
     let p_ref = match ssdec {
       0 => &rec.frame.planes[0],
       1 => &rec.input_hres,
       2 => &rec.input_qres,
-      _ => unimplemented!()
+      _ => unimplemented!(),
     };
 
     let org_region = &match ssdec {
       0 => &ts.input.planes[0],
       1 => ts.input_hres,
       2 => ts.input_qres,
-      _ => unimplemented!()
-    }.region(Area::StartingAt { x: po.x, y: po.y });
+      _ => unimplemented!(),
+    }
+    .region(Area::StartingAt { x: po.x, y: po.y });
 
     let mut results: FullpelSearchResult = full_pixel_me_alt(
       fi,
@@ -298,7 +314,10 @@ fn estimate_motion_alt<T: Pixel>(
     );
 
     results.sad <<= ssdec * 2;
-    results.mv = MotionVector { col: results.mv.col << ssdec, row: results.mv.row << ssdec };
+    results.mv = MotionVector {
+      col: results.mv.col << ssdec,
+      row: results.mv.row << ssdec,
+    };
 
     Some(results)
   } else {
@@ -309,10 +328,9 @@ fn estimate_motion_alt<T: Pixel>(
 fn full_pixel_me_alt<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>,
   org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
-  po: PlaneOffset,
-  lambda: u32, pmv: [MotionVector; 2], mvx_min: isize, mvx_max: isize,
-  mvy_min: isize, mvy_max: isize, bsize: BlockSize, ref_frame: RefType,
-  corner: BlockCorner, can_full_search: bool, ssdec: u8,
+  po: PlaneOffset, lambda: u32, pmv: [MotionVector; 2], mvx_min: isize,
+  mvx_max: isize, mvy_min: isize, mvy_max: isize, bsize: BlockSize,
+  ref_frame: RefType, corner: BlockCorner, can_full_search: bool, ssdec: u8,
 ) -> FullpelSearchResult {
   let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
   let frame_ref =
@@ -379,7 +397,12 @@ fn full_pixel_me_alt<T: Pixel>(
   };
 
   if !can_full_search {
-    let allmvs: ArrayVec<[MotionVector; 11]> = subsets.median.into_iter().chain(subsets.subset_b).chain(subsets.subset_c).collect();
+    let allmvs: ArrayVec<[MotionVector; 11]> = subsets
+      .median
+      .into_iter()
+      .chain(subsets.subset_b)
+      .chain(subsets.subset_c)
+      .collect();
     try_cand(&allmvs, &mut best);
     best
   } else {
@@ -428,13 +451,11 @@ fn full_pixel_me_alt<T: Pixel>(
 
       if results.cost < best.cost {
         results
-      }
-      else {
+      } else {
         best
       }
     }
   }
-
 }
 
 struct MotionEstimationSubsets {
@@ -448,7 +469,7 @@ fn get_subset_predictors_alt<T: Pixel>(
   tile_bo: TileBlockOffset, tile_me_stats: &TileMEStats<'_>,
   frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize,
   bsize: BlockSize, mvx_min: isize, mvx_max: isize, mvy_min: isize,
-  mvy_max: isize, corner: BlockCorner, ssdec: u8
+  mvy_max: isize, corner: BlockCorner, ssdec: u8,
 ) -> MotionEstimationSubsets {
   let mut min_sad: u32 = u32::MAX;
   let mut subset_b = ArrayVec::<[MotionVector; 5]>::new();
@@ -535,7 +556,9 @@ fn get_subset_predictors_alt<T: Pixel>(
     && tile_bo.0.y < tile_me_stats.rows() - (h << 1)
   {
     // far bottom right
-    subset_b.push(process_cand(tile_me_stats[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w << 1)]));
+    subset_b.push(process_cand(
+      tile_me_stats[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w << 1)],
+    ));
   }
 
   // Zero motion vector, don't use add_cand since it skips zero vectors.
@@ -587,8 +610,11 @@ fn get_subset_predictors_alt<T: Pixel>(
     >> (MAX_MIB_SIZE_LOG2 * 2
       - (bsize.width_mi_log2() + bsize.height_mi_log2() + ssdec as usize * 2));
 
-  let dec_mv = |mv: MotionVector| MotionVector { col: mv.col >> ssdec, row: mv.row >> ssdec };
-  let median = median.and_then(|mv| Some(dec_mv(mv)) );
+  let dec_mv = |mv: MotionVector| MotionVector {
+    col: mv.col >> ssdec,
+    row: mv.row >> ssdec,
+  };
+  let median = median.and_then(|mv| Some(dec_mv(mv)));
   for mv in subset_b.iter_mut() {
     *mv = dec_mv(*mv);
   }
@@ -683,7 +709,8 @@ pub fn get_subset_predictors<T: Pixel>(
     }
   };
 
-  let corner: BlockCorner = match (tile_bo.0.y & h == h, tile_bo.0.x & h == h) {
+  let corner: BlockCorner = match (tile_bo.0.y & h == h, tile_bo.0.x & h == h)
+  {
     (false, false) => BlockCorner::NW,
     (false, true) => BlockCorner::NE,
     (true, false) => BlockCorner::SW,
@@ -707,7 +734,10 @@ pub fn get_subset_predictors<T: Pixel>(
     BlockCorner::NW | BlockCorner::SW => {
       if tile_bo.0.x < tile_mvs.cols() - w {
         // right
-        add_cand(&mut predictors, tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w]);
+        add_cand(
+          &mut predictors,
+          tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w],
+        );
       }
     }
     _ => {}
@@ -717,7 +747,10 @@ pub fn get_subset_predictors<T: Pixel>(
     BlockCorner::SW | BlockCorner::SE => {
       if tile_bo.0.y < tile_mvs.rows() - h {
         // bottom
-        add_cand(&mut predictors, tile_mvs[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)]);
+        add_cand(
+          &mut predictors,
+          tile_mvs[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)],
+        );
       }
     }
     _ => {}
@@ -725,11 +758,17 @@ pub fn get_subset_predictors<T: Pixel>(
 
   if tile_bo.0.x > 0 {
     // left
-    add_cand(&mut predictors, tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1]);
+    add_cand(
+      &mut predictors,
+      tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1],
+    );
   }
   if tile_bo.0.y > 0 {
     // top
-    add_cand(&mut predictors, tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)]);
+    add_cand(
+      &mut predictors,
+      tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)],
+    );
   }
 
   // median or middle sample
