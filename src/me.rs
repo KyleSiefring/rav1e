@@ -202,6 +202,14 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       mv_size << MI_SIZE_LOG2,
     );
 
+    let ssdec = if init {
+      2
+    } else if mv_size >= 32 {
+      1
+    } else {
+      0
+    }.min(mv_size_log2) as u8;
+
     // Stop at 16x16 blocks when not on edge. Partition on edge.
     let y_start = if !(edge_mode && horz_edge) {
       0
@@ -226,7 +234,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
           };
         let sub_bo = tile_bo.with_offset(x as isize, y as isize);
         if let Some(results) =
-          estimate_motion_alt(fi, ts, bsize, sub_bo, ref_frame, corner, init)
+          estimate_motion_alt(fi, ts, bsize, sub_bo, ref_frame, corner, init, ssdec)
         {
           let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
           save_me_stats(
@@ -272,20 +280,13 @@ fn save_me_stats<T: Pixel>(
 fn estimate_motion_alt<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, bsize: BlockSize,
   tile_bo: TileBlockOffset, ref_frame: RefType, corner: BlockCorner,
-  can_full_search: bool,
+  can_full_search: bool, ssdec: u8,
 ) -> Option<FullpelSearchResult> {
   if let Some(ref rec) =
     fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize]
   {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
-    let ssdec = if blk_w == 64 {
-      2
-    } else if blk_w == 32 {
-      1
-    } else {
-      0
-    };
 
     let tile_bo_adj =
       adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
