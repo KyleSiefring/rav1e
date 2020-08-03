@@ -191,6 +191,9 @@ fn prep_square_block_motion_estimation<T: Pixel>(
   let mut mv_size_log2 = size_mi_log2 - if init { 0 } else { 1 };
   let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
   let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
+  let mut edge_mode = false;
+  let horz_edge = h_in_b != size_mi;
+  let vert_edge = w_in_b != size_mi;
   // TODO: change to while loop since mv_size_log2 subtracted if not init
   loop {
     let mv_size = 1 << mv_size_log2;
@@ -200,8 +203,16 @@ fn prep_square_block_motion_estimation<T: Pixel>(
     );
 
     // Stop at 16x16 blocks when not on edge. Partition on edge.
-    let y_start = if mv_size_log2 >= 2 { 0 } else { h_in_b ^ mv_size };
-    let x_start = if mv_size_log2 >= 2 { 0 } else { w_in_b ^ mv_size };
+    let y_start = if !(edge_mode && horz_edge) {
+      0
+    } else {
+      h_in_b & !((mv_size << 1) - 1)
+    };
+    let x_start = if !(edge_mode && vert_edge) {
+      0
+    } else {
+      w_in_b & !((mv_size << 1) - 1)
+    };
 
     for y in (y_start..h_in_b).step_by(mv_size) {
       for x in (x_start..w_in_b).step_by(mv_size) {
@@ -229,8 +240,12 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       }
     }
 
-    if init || mv_size_log2 == 0 {
-      break;
+    if init || mv_size_log2 <= 2 {
+      if mv_size_log2 == 0 || !(vert_edge || horz_edge) {
+        break;
+      } else {
+        edge_mode = true;
+      }
     }
     mv_size_log2 -= 1;
   }
@@ -271,6 +286,7 @@ fn estimate_motion_alt<T: Pixel>(
     } else {
       0
     };
+
     let tile_bo_adj =
       adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
     let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
@@ -541,7 +557,9 @@ fn get_subset_predictors_alt<T: Pixel>(
   }
 
   let median = if corner != BlockCorner::INIT {
-    Some(process_cand(tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w >> 1)]))
+    Some(process_cand(
+      tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w >> 1)],
+    ))
   } else {
     if tile_bo.0.y > 0 && tile_bo.0.x < tile_me_stats.cols() - w {
       // top right
@@ -784,7 +802,10 @@ pub fn get_subset_predictors<T: Pixel>(
   }
 
   // middle sample
-  add_cand(&mut predictors, tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w >> 1)]);
+  add_cand(
+    &mut predictors,
+    tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w >> 1)],
+  );
 
   /*if tile_bo.0.x > 0 {
     let left = tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1];
