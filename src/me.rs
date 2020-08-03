@@ -541,7 +541,7 @@ fn get_subset_predictors_alt<T: Pixel>(
   }
 
   let median = if corner != BlockCorner::INIT {
-    Some(process_cand(tile_me_stats[tile_bo.0.y][tile_bo.0.x]))
+    Some(process_cand(tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w >> 1)]))
   } else {
     if tile_bo.0.y > 0 && tile_bo.0.x < tile_me_stats.cols() - w {
       // top right
@@ -783,8 +783,8 @@ pub fn get_subset_predictors<T: Pixel>(
     );
   }
 
-  // median or middle sample
-  add_cand(&mut predictors, tile_mvs[tile_bo.0.y][tile_bo.0.x]);
+  // middle sample
+  add_cand(&mut predictors, tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w >> 1)]);
 
   /*if tile_bo.0.x > 0 {
     let left = tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x - 1];
