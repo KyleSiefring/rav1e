@@ -158,9 +158,8 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
     }
   }
 
-
-  for sby in (0..ts.sb_height).step_by(2) {
-    for sbx in (0..ts.sb_width).step_by(2) {
+  for sby in 0..ts.sb_height {
+    for sbx in 0..ts.sb_width {
       let mut tested_frames_flags = 0;
       for &ref_frame in inter_cfg.allowed_ref_frames() {
         let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
@@ -174,7 +173,7 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
           ts,
           ref_frame,
           // TODO: Awkward with starting with splitting into 32x32
-          BlockSize::BLOCK_128X128.width_mi_log2(),
+          BlockSize::BLOCK_64X64.width_mi_log2(),
           TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
             .block_offset(0, 0),
           false,
