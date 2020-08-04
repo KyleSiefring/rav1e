@@ -688,8 +688,6 @@ impl<T: Pixel> ContextInner<T> {
       // backwards lower reference (so the closest previous frame).
       let index = if second_ref_frame.to_index() != 0 { 0 } else { 1 };
 
-      let frame_dist = fi.sequence.get_relative_dist(fi.order_hint,  reference.order_hint) as i16;
-
       let mvs = &fs.frame_mvs[index];
       use byteorder::{NativeEndian, WriteBytesExt};
       // dynamic allocation: debugging only
@@ -906,7 +904,7 @@ impl<T: Pixel> ContextInner<T> {
               .for_each(|((y, lookahead_intra_costs), block_importances)| {
                 (0..fi.w_in_imp_b).for_each(|x| {
                   let mv = mvs[y * 2][x * 2];
-                  let mv = MotionVector { col: mv.col * frame_dist, row: mv.row * frame_dist };
+                  let mv = MotionVector { col: mv.col * frame_dist, row: mv.row * frame_dist }.quantize_to_fullpel();
 
                   // Coordinates of the top-left corner of the reference block, in MV
                   // units.

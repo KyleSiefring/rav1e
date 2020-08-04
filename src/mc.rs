@@ -33,7 +33,7 @@ pub struct MotionVector {
 impl MotionVector {
   #[inline]
   pub const fn quantize_to_fullpel(self) -> Self {
-    Self { row: (self.row / 8) * 8, col: (self.col / 8) * 8 }
+    Self { row: ((self.row + 4) >> 3) << 3, col: ((self.col + 4) >> 3) << 3 }
   }
 
   #[inline]
