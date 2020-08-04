@@ -347,8 +347,8 @@ fn estimate_motion_alt<T: Pixel>(
 
     results.sad <<= ssdec * 2;
     results.mv = MotionVector {
-      col: (results.mv.col << ssdec) * 8 / frame_dist as i16,
-      row: (results.mv.row << ssdec) * 8 / frame_dist as i16,
+      col: (results.mv.col << ssdec) / frame_dist as i16,
+      row: (results.mv.row << ssdec) / frame_dist as i16,
     };
 
     Some(results)
@@ -517,7 +517,7 @@ fn get_subset_predictors_alt<T: Pixel>(
 
   let mut process_cand = |stats: MEStats| -> MotionVector {
     let mv = stats.mv;
-    let mv = MotionVector { col: mv.col * frame_dist as i16 / 8, row: mv.row * frame_dist as i16 / 8 };
+    let mv = MotionVector { col: mv.col * frame_dist as i16, row: mv.row * frame_dist as i16 };
     let mv = mv.quantize_to_fullpel();
     MotionVector {
       col: clamp(mv.col as isize, mvx_min, mvx_max) as i16,
@@ -739,7 +739,7 @@ pub fn get_subset_predictors<T: Pixel>(
   // Add a candidate predictor, aligning to fullpel and filtering out zero mvs.
   let add_cand = |predictors: &mut ArrayVec<[MotionVector; 16]>,
                   mv: MotionVector| {
-    let mv = MotionVector { col: mv.col * frame_dist as i16 / 8, row: mv.row * frame_dist as i16 / 8 };
+    let mv = MotionVector { col: mv.col * frame_dist as i16, row: mv.row * frame_dist as i16 };
     let mv = mv.quantize_to_fullpel();
     if !mv.is_zero() {
       predictors.push(mv)

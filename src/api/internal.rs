@@ -906,7 +906,7 @@ impl<T: Pixel> ContextInner<T> {
               .for_each(|((y, lookahead_intra_costs), block_importances)| {
                 (0..fi.w_in_imp_b).for_each(|x| {
                   let mv = mvs[y * 2][x * 2];
-                  let mv = MotionVector { col: mv.col * frame_dist / 8, row: mv.row * frame_dist / 8 };
+                  let mv = MotionVector { col: mv.col * frame_dist, row: mv.row * frame_dist };
 
                   // Coordinates of the top-left corner of the reference block, in MV
                   // units.

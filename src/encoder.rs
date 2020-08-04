@@ -2773,7 +2773,7 @@ fn encode_partition_topdown<T: Pixel, W: Writer>(
         {
           let frame_dist = fi.sequence.get_relative_dist(fi.order_hint, rec.order_hint) as i16;
           let mv = part_decision.mvs[0];
-          let mv = MotionVector { col: mv.col * 8 / frame_dist, row: mv.row * 8 / frame_dist };
+          let mv = MotionVector { col: mv.col / frame_dist, row: mv.row / frame_dist };
           save_block_motion(
             ts,
             part_decision.bsize,
