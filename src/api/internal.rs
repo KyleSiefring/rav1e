@@ -34,7 +34,6 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use crate::mc::MotionVector;
 
 /// The set of options that controls frame re-ordering and reference picture
 ///  selection.
@@ -688,8 +687,6 @@ impl<T: Pixel> ContextInner<T> {
       // backwards lower reference (so the closest previous frame).
       let index = if second_ref_frame.to_index() != 0 { 0 } else { 1 };
 
-      let frame_dist = fi.sequence.get_relative_dist(fi.order_hint,  reference.order_hint) as i16;
-
       let mvs = &fs.frame_mvs[index];
       use byteorder::{NativeEndian, WriteBytesExt};
       // dynamic allocation: debugging only
@@ -869,8 +866,6 @@ impl<T: Pixel> ContextInner<T> {
         let reference_output_frameno = reference.output_frameno;
         let mvs = &fi.lookahead_mvs[mv_index];
 
-        let frame_dist = fi.sequence.get_relative_dist(fi.order_hint,  reference.order_hint) as i16;
-
         // We should never use frame as its own reference.
         assert_ne!(reference_output_frameno, output_frameno);
 
@@ -887,7 +882,6 @@ impl<T: Pixel> ContextInner<T> {
             bsize,
             len,
             reference_frame_block_importances,
-            frame_dist
           );
 
           #[hawktracer(update_block_importances)]
@@ -895,7 +889,7 @@ impl<T: Pixel> ContextInner<T> {
             fi: &FrameInvariants<T>, mvs: &crate::me::FrameMotionVectors,
             frame: &Frame<T>, reference_frame: &Frame<T>, bit_depth: usize,
             bsize: BlockSize, len: usize,
-            reference_frame_block_importances: &mut [f32], frame_dist: i16
+            reference_frame_block_importances: &mut [f32],
           ) {
             let plane_org = &frame.planes[0];
             let plane_ref = &reference_frame.planes[0];
@@ -906,7 +900,6 @@ impl<T: Pixel> ContextInner<T> {
               .for_each(|((y, lookahead_intra_costs), block_importances)| {
                 (0..fi.w_in_imp_b).for_each(|x| {
                   let mv = mvs[y * 2][x * 2];
-                  let mv = MotionVector { col: mv.col * frame_dist / 8, row: mv.row * frame_dist / 8 };
 
                   // Coordinates of the top-left corner of the reference block, in MV
                   // units.
