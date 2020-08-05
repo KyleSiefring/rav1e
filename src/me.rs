@@ -197,6 +197,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
   // TODO: change to while loop since mv_size_log2 subtracted if not init
   loop {
     let mv_size = 1 << mv_size_log2;
+    // Stop at 16x16 blocks when not on edge. Partition on edge.
     let bsize = BlockSize::from_width_and_height(
       mv_size << MI_SIZE_LOG2,
       mv_size << MI_SIZE_LOG2,
@@ -210,31 +211,30 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       0
     }.min(mv_size_log2) as u8;
 
-    // Stop at 16x16 blocks when not on edge. Partition on edge.
     let y_start = if !(edge_mode && horz_edge) {
       0
     } else {
-      h_in_b & !((mv_size << 1) - 1)
+      h_in_b & (!0 - mv_size)
     };
     let x_start = if !(edge_mode && vert_edge) {
       0
     } else {
-      w_in_b & !((mv_size << 1) - 1)
+      w_in_b & (!0 - mv_size)
     };
 
-    for y in (y_start..h_in_b).step_by(mv_size) {
-      for x in (x_start..w_in_b).step_by(mv_size) {
+    for y in (y_start as isize..=h_in_b as isize - mv_size as isize).step_by(mv_size) {
+      for x in (x_start as isize..=w_in_b as isize - mv_size as isize).step_by(mv_size) {
         let corner: BlockCorner =
-          match (init, y & mv_size == mv_size, x & mv_size == mv_size) {
-            (true, _, _) => BlockCorner::INIT,
-            (_, false, false) => BlockCorner::NW,
-            (_, false, true) => BlockCorner::NE,
-            (_, true, false) => BlockCorner::SW,
-            (_, true, true) => BlockCorner::SE,
-          };
-        let sub_bo = tile_bo.with_offset(x as isize, y as isize);
+            match (init, y as usize & mv_size == mv_size, x as usize & mv_size == mv_size) {
+              (true, _, _) => BlockCorner::INIT,
+              (_, false, false) => BlockCorner::NW,
+              (_, false, true) => BlockCorner::NE,
+              (_, true, false) => BlockCorner::SW,
+              (_, true, true) => BlockCorner::SE,
+            };
+        let sub_bo = tile_bo.with_offset(x, y);
         if let Some(results) =
-          estimate_motion_alt(fi, ts, bsize, sub_bo, ref_frame, corner, init, ssdec)
+        estimate_motion_alt(fi, ts, bsize, sub_bo, ref_frame, corner, init, ssdec)
         {
           let sad = results.sad << (MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2;
           save_me_stats(
@@ -287,12 +287,10 @@ fn estimate_motion_alt<T: Pixel>(
   {
     let blk_w = bsize.width();
     let blk_h = bsize.height();
-
-    let tile_bo_adj =
-      adjust_bo(tile_bo, ts.mi_width, ts.mi_height, blk_w, blk_h);
-    let frame_bo_adj = ts.to_frame_block_offset(tile_bo_adj);
+    
+    let frame_bo = ts.to_frame_block_offset(tile_bo);
     let (mvx_min, mvx_max, mvy_min, mvy_max) =
-      get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo_adj, blk_w, blk_h);
+      get_mv_range(fi.w_in_b, fi.h_in_b, frame_bo, blk_w, blk_h);
 
     let global_mv = [MotionVector { row: 0, col: 0 }; 2];
 
@@ -300,7 +298,7 @@ fn estimate_motion_alt<T: Pixel>(
     let lambda = (fi.me_lambda * 256.0 / (1 << (2 * ssdec)) as f64
       * if blk_w <= 16 { 0.5 } else { 0.125 }) as u32;
 
-    let po = frame_bo_adj.to_luma_plane_offset();
+    let po = frame_bo.to_luma_plane_offset();
 
     let (mvx_min, mvx_max, mvy_min, mvy_max) =
       (mvx_min >> ssdec, mvx_max >> ssdec, mvy_min >> ssdec, mvy_max >> ssdec);
@@ -327,7 +325,7 @@ fn estimate_motion_alt<T: Pixel>(
       ts,
       org_region,
       p_ref,
-      tile_bo_adj,
+      tile_bo,
       po,
       lambda,
       global_mv,
