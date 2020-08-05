@@ -520,12 +520,19 @@ fn get_subset_predictors_alt<T: Pixel>(
     }
   };
 
+  // right
   match corner {
-    BlockCorner::NW | BlockCorner::SW => {
+    BlockCorner::NE | BlockCorner::SE => {
       if tile_bo.0.x < tile_me_stats.cols() - w {
-        // right
         subset_b.push(process_cand(
           tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w],
+        ));
+      }
+    }
+    BlockCorner::NW | BlockCorner::SW => {
+      if tile_bo.0.x < tile_me_stats.cols() - (w << 1) {
+        subset_b.push(process_cand(
+          tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w << 1)],
         ));
       }
     }
@@ -538,6 +545,14 @@ fn get_subset_predictors_alt<T: Pixel>(
         // bottom
         subset_b.push(process_cand(
           tile_me_stats[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)],
+        ));
+      }
+    }
+    BlockCorner::NW | BlockCorner::NE => {
+      if tile_bo.0.y < tile_me_stats.rows() - (h << 1) {
+        // bottom
+        subset_b.push(process_cand(
+          tile_me_stats[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w >> 1)],
         ));
       }
     }
@@ -582,7 +597,7 @@ fn get_subset_predictors_alt<T: Pixel>(
   };
 
   // Try to propagate from outside adjacent blocks
-  if corner == BlockCorner::NW
+  /*if corner == BlockCorner::NW
     && tile_bo.0.x < tile_me_stats.cols() - (w << 1)
     && tile_bo.0.y < tile_me_stats.rows() - (h << 1)
   {
@@ -590,7 +605,7 @@ fn get_subset_predictors_alt<T: Pixel>(
     subset_b.push(process_cand(
       tile_me_stats[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w << 1)],
     ));
-  }
+  }*/
 
   // Zero motion vector, don't use add_cand since it skips zero vectors.
   subset_b.push(MotionVector::default());
@@ -740,7 +755,7 @@ pub fn get_subset_predictors<T: Pixel>(
     }
   };
 
-  let corner: BlockCorner = match (tile_bo.0.y & h == h, tile_bo.0.x & h == h)
+  let corner: BlockCorner = match (tile_bo.0.y & h == h, tile_bo.0.x & w == w)
   {
     (false, false) => BlockCorner::NW,
     (false, true) => BlockCorner::NE,
@@ -761,26 +776,42 @@ pub fn get_subset_predictors<T: Pixel>(
   // for subset A.
   // Sample the middle of bordering side of the left and top blocks.
 
+  // right
   match corner {
-    BlockCorner::NW | BlockCorner::SW => {
+    BlockCorner::NE | BlockCorner::SE => {
       if tile_bo.0.x < tile_mvs.cols() - w {
-        // right
         add_cand(
           &mut predictors,
           tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w],
         );
       }
     }
+    BlockCorner::NW | BlockCorner::SW => {
+      if tile_bo.0.x < tile_mvs.cols() - (w << 1) {
+        add_cand(
+          &mut predictors,
+          tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w << 1)],
+        );
+      }
+    }
     _ => {}
   }
 
+  // bottom
   match corner {
     BlockCorner::SW | BlockCorner::SE => {
       if tile_bo.0.y < tile_mvs.rows() - h {
-        // bottom
         add_cand(
           &mut predictors,
           tile_mvs[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)],
+        );
+      }
+    }
+    BlockCorner::NW | BlockCorner::NE => {
+      if tile_bo.0.y < tile_mvs.rows() - (h << 1) {
+        add_cand(
+          &mut predictors,
+          tile_mvs[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w >> 1)],
         );
       }
     }
