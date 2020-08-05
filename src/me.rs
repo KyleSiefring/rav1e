@@ -755,14 +755,6 @@ pub fn get_subset_predictors<T: Pixel>(
     }
   };
 
-  let corner: BlockCorner = match (tile_bo.0.y & h == h, tile_bo.0.x & w == w)
-  {
-    (false, false) => BlockCorner::NW,
-    (false, true) => BlockCorner::NE,
-    (true, false) => BlockCorner::SW,
-    (true, true) => BlockCorner::SE,
-  };
-
   // Zero motion vector, don't use add_cand since it skips zero vectors.
   predictors.push(MotionVector::default());
 
@@ -776,46 +768,20 @@ pub fn get_subset_predictors<T: Pixel>(
   // for subset A.
   // Sample the middle of bordering side of the left and top blocks.
 
-  // right
-  match corner {
-    BlockCorner::NE | BlockCorner::SE => {
-      if tile_bo.0.x < tile_mvs.cols() - w {
-        add_cand(
-          &mut predictors,
-          tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w],
-        );
-      }
-    }
-    BlockCorner::NW | BlockCorner::SW => {
-      if tile_bo.0.x < tile_mvs.cols() - (w << 1) {
-        add_cand(
-          &mut predictors,
-          tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w << 1)],
-        );
-      }
-    }
-    _ => {}
+  if tile_bo.0.x < tile_mvs.cols() - w {
+    // right
+    add_cand(
+      &mut predictors,
+      tile_mvs[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w],
+    );
   }
 
-  // bottom
-  match corner {
-    BlockCorner::SW | BlockCorner::SE => {
-      if tile_bo.0.y < tile_mvs.rows() - h {
-        add_cand(
-          &mut predictors,
-          tile_mvs[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)],
-        );
-      }
-    }
-    BlockCorner::NW | BlockCorner::NE => {
-      if tile_bo.0.y < tile_mvs.rows() - (h << 1) {
-        add_cand(
-          &mut predictors,
-          tile_mvs[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w >> 1)],
-        );
-      }
-    }
-    _ => {}
+  if tile_bo.0.y < tile_mvs.rows() - h {
+    // bottom
+    add_cand(
+      &mut predictors,
+      tile_mvs[tile_bo.0.y + h][tile_bo.0.x + (w >> 1)],
+    );
   }
 
   if tile_bo.0.x > 0 {
