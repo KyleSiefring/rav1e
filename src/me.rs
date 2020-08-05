@@ -248,7 +248,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
       }
     }
 
-    if init || mv_size_log2 <= 2 {
+    if init || mv_size_log2 <= 1 {
       if mv_size_log2 == 0 || !(vert_edge || horz_edge) {
         break;
       } else {
