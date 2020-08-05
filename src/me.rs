@@ -194,6 +194,7 @@ fn prep_square_block_motion_estimation<T: Pixel>(
   let mut edge_mode = false;
   let horz_edge = h_in_b != size_mi;
   let vert_edge = w_in_b != size_mi;
+
   // TODO: change to while loop since mv_size_log2 subtracted if not init
   loop {
     let mv_size = 1 << mv_size_log2;
@@ -214,12 +215,12 @@ fn prep_square_block_motion_estimation<T: Pixel>(
     let y_start = if !(edge_mode && horz_edge) {
       0
     } else {
-      h_in_b & (!0 - mv_size)
+      h_in_b & (!0 << mv_size_log2 << 1)
     };
     let x_start = if !(edge_mode && vert_edge) {
       0
     } else {
-      w_in_b & (!0 - mv_size)
+      w_in_b & (!0 << mv_size_log2 << 1)
     };
 
     for y in (y_start as isize..=h_in_b as isize - mv_size as isize).step_by(mv_size) {
@@ -251,6 +252,8 @@ fn prep_square_block_motion_estimation<T: Pixel>(
     if init || mv_size_log2 <= 2 {
       if mv_size_log2 == 0 || !(vert_edge || horz_edge) {
         break;
+      } else if edge_mode {
+
       } else {
         edge_mode = true;
       }
