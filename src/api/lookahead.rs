@@ -217,8 +217,8 @@ pub(crate) fn compute_motion_vectors<T: Pixel>(
     .into_par_iter()
     .map(|mut ctx| {
       let ts = &mut ctx.ts;
-      //prep_tile_motion_estimation(fi, ts, inter_cfg);
-      compute_motion_vectors_per_tile(ts, fi, inter_cfg)
+      prep_tile_motion_estimation(fi, ts, inter_cfg);
+      //compute_motion_vectors_per_tile(ts, fi, inter_cfg)
     })
     .collect::<Vec<_>>();
 }
