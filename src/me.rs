@@ -131,7 +131,8 @@ enum BlockCorner {
   SE,
 }
 
-pub fn prep_tile_motion_estimation<T: Pixel>(
+#[hawktracer(estimate_tile_motion)]
+pub fn estimate_tile_motion<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   inter_cfg: &InterConfig,
 ) {
@@ -145,7 +146,7 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
         }
         tested_frames_flags |= frame_flag;
 
-        prep_square_block_motion_estimation(
+        estimate_square_block_motion(
           fi,
           ts,
           ref_frame,
@@ -168,7 +169,7 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
         }
         tested_frames_flags |= frame_flag;
 
-        prep_square_block_motion_estimation(
+        estimate_square_block_motion(
           fi,
           ts,
           ref_frame,
@@ -183,7 +184,7 @@ pub fn prep_tile_motion_estimation<T: Pixel>(
   }
 }
 
-fn prep_square_block_motion_estimation<T: Pixel>(
+fn estimate_square_block_motion<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, ref_frame: RefType,
   size_mi_log2: usize, tile_bo: TileBlockOffset, init: bool,
 ) {
