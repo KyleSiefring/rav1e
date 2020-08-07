@@ -261,7 +261,6 @@ fn estimate_square_block_motion<T: Pixel>(
     if init || mv_size_log2 <= 2 {
       if mv_size_log2 == 0 || !(vert_edge || horz_edge) {
         break;
-      } else if edge_mode {
       } else {
         edge_mode = true;
       }
