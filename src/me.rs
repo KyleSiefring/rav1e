@@ -371,7 +371,7 @@ fn full_pixel_me_alt<T: Pixel>(
     try_cand(&allmvs, &mut best);
     best
   } else {
-    /*if let Some(median) = subsets.median {
+    if let Some(median) = subsets.median {
       try_cand(&[median], &mut best);
 
       if best.sad < thresh {
@@ -389,7 +389,7 @@ fn full_pixel_me_alt<T: Pixel>(
 
     if best.sad < thresh {
       return best;
-    }*/
+    }
 
     {
       let range_x = 192 * fi.me_range_scale as isize >> ssdec;
