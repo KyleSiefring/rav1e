@@ -176,7 +176,7 @@ pub fn estimate_tile_motion<T: Pixel>(
           ts,
           ref_frame,
           // TODO: Awkward with starting with splitting into 32x32
-          BlockSize::BLOCK_64X64.width_mi_log2(),
+          BlockSize::BLOCK_128X128.width_mi_log2(),
           TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
             .block_offset(0, 0),
           false,
@@ -191,7 +191,7 @@ fn estimate_square_block_motion<T: Pixel>(
   size_mi_log2: usize, tile_bo: TileBlockOffset, init: bool,
 ) {
   let size_mi = 1 << size_mi_log2;
-  let mut mv_size_log2 = size_mi_log2 - if init { 0 } else { 1 };
+  let mut mv_size_log2 = if init { BlockSize::BLOCK_64X64 } else { BlockSize::BLOCK_32X32 }.width_mi_log2();//size_mi_log2 - if init { 0 } else { 1 };
   let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
   let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
   let mut edge_mode = false;
@@ -235,8 +235,8 @@ fn estimate_square_block_motion<T: Pixel>(
       {
         let corner: BlockCorner = match (
           init,
-          y as usize & mv_size == mv_size,
-          x as usize & mv_size == mv_size,
+          y as usize & mv_size == mv_size && mv_size != 16,
+          x as usize & mv_size == mv_size && mv_size != 16,
         ) {
           (true, _, _) => BlockCorner::INIT,
           (_, false, false) => BlockCorner::NW,
