@@ -9,8 +9,7 @@
 
 use crate::context::{
   BlockOffset, PlaneBlockOffset, SuperBlockOffset, TileBlockOffset,
-  TileSuperBlockOffset, BLOCK_TO_PLANE_SHIFT, MAX_MIB_SIZE_LOG2, MI_SIZE,
-  MI_SIZE_LOG2,
+  TileSuperBlockOffset, MAX_MIB_SIZE_LOG2, MI_SIZE, MI_SIZE_LOG2,
 };
 use crate::dist::*;
 use crate::encoder::ReferenceFrame;
@@ -26,7 +25,6 @@ use arrayvec::*;
 
 use crate::api::InterConfig;
 use crate::util::ILog;
-use std::convert::identity;
 use std::iter;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
