@@ -1049,7 +1049,7 @@ fn inter_frame_rdo_mode_decision<T: Pixel>(
       pmv[1] = mv_stack[1].this_mv;
     }
     let ref_slot = ref_slot_set[i] as usize;
-    let cmv = pmvs[ref_slot].unwrap_or_else(Default::default);
+    let cmv = MotionVector::default();
 
     let b_me =
       motion_estimation(fi, ts, bsize, tile_bo, ref_frames[0], cmv, pmv);
