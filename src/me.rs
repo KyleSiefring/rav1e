@@ -207,6 +207,8 @@ fn estimate_square_block_motion<T: Pixel>(
 
     let ssdec = if init {
       2
+    } else if mv_size >= 8 {
+      1
     } else {
       0
     }
