@@ -136,7 +136,7 @@ pub fn estimate_tile_motion<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   inter_cfg: &InterConfig,
 ) {
-  /*for sby in 0..ts.sb_height {
+  for sby in 0..ts.sb_height {
     for sbx in 0..ts.sb_width {
       let mut tested_frames_flags = 0;
       for &ref_frame in inter_cfg.allowed_ref_frames() {
@@ -157,28 +157,9 @@ pub fn estimate_tile_motion<T: Pixel>(
         );
       }
     }
-  }*/
-
-  let mut tested_frames_flags = 0;
-  for &ref_frame in inter_cfg.allowed_ref_frames() {
-    let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
-    if tested_frames_flags & frame_flag == frame_flag {
-      continue;
-    }
-    tested_frames_flags |= frame_flag;
-
-    estimate_square_block_motion(
-      fi,
-      ts,
-      ref_frame,
-      BlockSize::BLOCK_64X64.width_mi_log2(),
-      TileSuperBlockOffset(SuperBlockOffset { x: 0, y: 0 })
-          .block_offset(0, 0),
-      true,
-    );
   }
 
-  /*for sby in 0..ts.sb_height {
+  for sby in 0..ts.sb_height {
     for sbx in 0..ts.sb_width {
       let mut tested_frames_flags = 0;
       for &ref_frame in inter_cfg.allowed_ref_frames() {
@@ -201,34 +182,14 @@ pub fn estimate_tile_motion<T: Pixel>(
       }
     }
   }
-   */
-
-  let mut tested_frames_flags = 0;
-  for &ref_frame in inter_cfg.allowed_ref_frames() {
-    let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
-    if tested_frames_flags & frame_flag == frame_flag {
-      continue;
-    }
-    tested_frames_flags |= frame_flag;
-    estimate_square_block_motion(
-      fi,
-      ts,
-      ref_frame,
-      BlockSize::BLOCK_64X64.width_mi_log2(),
-      TileSuperBlockOffset(SuperBlockOffset { x: 0, y: 0 })
-          .block_offset(0, 0),
-      false,
-    );
-  }
 }
 
 fn estimate_square_block_motion<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, ref_frame: RefType,
   size_mi_log2: usize, tile_bo: TileBlockOffset, init: bool,
 ) {
-  let size_mi_log2 = 10;
   let size_mi = 1 << size_mi_log2;
-  let mut mv_size_log2 = if init { 4 } else { 3 }; //size_mi_log2 - if init { 0 } else { 1 };
+  let mut mv_size_log2 = size_mi_log2 - if init { 0 } else { 1 };
   let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
   let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
   let mut edge_mode = false;
