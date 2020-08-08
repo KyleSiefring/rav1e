@@ -7,10 +7,7 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
-use crate::context::{
-  BlockOffset, PlaneBlockOffset, SuperBlockOffset, TileBlockOffset,
-  TileSuperBlockOffset, MAX_MIB_SIZE_LOG2, MI_SIZE, MI_SIZE_LOG2,
-};
+use crate::context::{BlockOffset, PlaneBlockOffset, SuperBlockOffset, TileBlockOffset, TileSuperBlockOffset, MAX_MIB_SIZE_LOG2, MI_SIZE, MI_SIZE_LOG2, MIB_SIZE_LOG2, MIB_SIZE};
 use crate::dist::*;
 use crate::encoder::ReferenceFrame;
 use crate::frame::*;
@@ -136,49 +133,29 @@ pub fn estimate_tile_motion<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
   inter_cfg: &InterConfig,
 ) {
-  for sby in 0..ts.sb_height {
-    for sbx in 0..ts.sb_width {
-      let mut tested_frames_flags = 0;
-      for &ref_frame in inter_cfg.allowed_ref_frames() {
-        let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
-        if tested_frames_flags & frame_flag == frame_flag {
-          continue;
+  let init_size = MIB_SIZE_LOG2;
+  for mv_size_log2 in (2..=init_size).rev() {
+    let init = mv_size_log2 == init_size;
+    for sby in 0..ts.sb_height {
+      for sbx in 0..ts.sb_width {
+        let mut tested_frames_flags = 0;
+        for &ref_frame in inter_cfg.allowed_ref_frames() {
+          let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
+          if tested_frames_flags & frame_flag == frame_flag {
+            continue;
+          }
+          tested_frames_flags |= frame_flag;
+
+          estimate_square_block_motion(
+            fi,
+            ts,
+            ref_frame,
+            mv_size_log2,
+            TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
+                .block_offset(0, 0),
+            init,
+          );
         }
-        tested_frames_flags |= frame_flag;
-
-        estimate_square_block_motion(
-          fi,
-          ts,
-          ref_frame,
-          BlockSize::BLOCK_64X64.width_mi_log2(),
-          TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
-            .block_offset(0, 0),
-          true,
-        );
-      }
-    }
-  }
-
-  for sby in 0..ts.sb_height {
-    for sbx in 0..ts.sb_width {
-      let mut tested_frames_flags = 0;
-      for &ref_frame in inter_cfg.allowed_ref_frames() {
-        let frame_flag = 1 << fi.ref_frames[ref_frame.to_index()];
-        if tested_frames_flags & frame_flag == frame_flag {
-          continue;
-        }
-        tested_frames_flags |= frame_flag;
-
-        estimate_square_block_motion(
-          fi,
-          ts,
-          ref_frame,
-          // TODO: Awkward with starting with splitting into 32x32
-          BlockSize::BLOCK_64X64.width_mi_log2(),
-          TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
-            .block_offset(0, 0),
-          false,
-        );
       }
     }
   }
@@ -186,10 +163,9 @@ pub fn estimate_tile_motion<T: Pixel>(
 
 fn estimate_square_block_motion<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, ref_frame: RefType,
-  size_mi_log2: usize, tile_bo: TileBlockOffset, init: bool,
+  mut mv_size_log2: usize, tile_bo: TileBlockOffset, init: bool,
 ) {
-  let size_mi = 1 << size_mi_log2;
-  let mut mv_size_log2 = size_mi_log2 - if init { 0 } else { 1 };
+  let size_mi = MIB_SIZE;
   let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
   let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
   let mut edge_mode = false;
@@ -258,12 +234,10 @@ fn estimate_square_block_motion<T: Pixel>(
       }
     }
 
-    if init || mv_size_log2 <= 2 {
-      if mv_size_log2 == 0 || !(vert_edge || horz_edge) {
-        break;
-      } else {
-        edge_mode = true;
-      }
+    if mv_size_log2 == 0 || !(vert_edge || horz_edge) {
+      break;
+    } else {
+      edge_mode = true;
     }
     mv_size_log2 -= 1;
   }
