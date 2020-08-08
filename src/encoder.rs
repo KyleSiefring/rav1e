@@ -3303,7 +3303,7 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
                 BlockSize::BLOCK_16X16,
                 bo,
                 &[
-                  Some(pmv),
+                  None,//Some(pmv),
                   covering_half_res,
                   vertical_candidate_1,
                   vertical_candidate_2,
