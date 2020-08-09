@@ -439,11 +439,11 @@ fn get_subset_predictors_alt<T: Pixel>(
       }
     }
     BlockCorner::NW | BlockCorner::SW => {
-      /*if tile_bo.0.x < tile_me_stats.cols() - (w << 1) {
+      if tile_bo.0.x < tile_me_stats.cols() - (w << 1) {
         subset_b.push(process_cand(
           tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w << 1)],
         ));
-      }*/
+      }
     }
     _ => {}
   }
@@ -458,11 +458,11 @@ fn get_subset_predictors_alt<T: Pixel>(
       }
     }
     BlockCorner::NW | BlockCorner::NE => {
-      /*if tile_bo.0.y < tile_me_stats.rows() - (h << 1) {
+      if tile_bo.0.y < tile_me_stats.rows() - (h << 1) {
         subset_b.push(process_cand(
           tile_me_stats[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w >> 1)],
         ));
-      }*/
+      }
     }
     _ => {}
   }
