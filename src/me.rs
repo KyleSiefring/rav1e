@@ -89,7 +89,7 @@ const fn get_mv_range(
 pub fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, cmvs: ArrayVec<[MotionVector; 7]>,
   tile_mvs: &TileMotionVectors<'_>, frame_ref_opt: Option<&ReferenceFrame<T>>,
-  ref_frame_id: usize, bsize: BlockSize,
+  ref_frame_id: usize, bsize: BlockSize, est: bool
 ) -> ArrayVec<[MotionVector; 17]> {
   let mut predictors = ArrayVec::<[_; 17]>::new();
   let w = bsize.width_mi();
@@ -129,32 +129,34 @@ pub fn get_subset_predictors<T: Pixel>(
   // processing in raster order.
 
   // left
-  if tile_bo.0.x > 0 {
-    add_cand(
-      &mut predictors,
-      tile_mvs[tile_bo.0.y + clipped_half_h][tile_bo.0.x - 1],
-    );
-  }
-  // top
-  if tile_bo.0.y > 0 {
-    add_cand(
-      &mut predictors,
-      tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + clipped_half_w],
-    );
-  }
-  // right
-  if tile_bo.0.x < tile_mvs.cols() - w {
-    add_cand(
-      &mut predictors,
-      tile_mvs[tile_bo.0.y + clipped_half_h][tile_bo.0.x + w],
-    );
-  }
-  // bottom
-  if tile_bo.0.y < tile_mvs.rows() - h {
-    add_cand(
-      &mut predictors,
-      tile_mvs[tile_bo.0.y + h][tile_bo.0.x + clipped_half_w],
-    );
+  if !est {
+    if tile_bo.0.x > 0 {
+      add_cand(
+        &mut predictors,
+        tile_mvs[tile_bo.0.y + clipped_half_h][tile_bo.0.x - 1],
+      );
+    }
+    // top
+    if tile_bo.0.y > 0 {
+      add_cand(
+        &mut predictors,
+        tile_mvs[tile_bo.0.y - 1][tile_bo.0.x + clipped_half_w],
+      );
+    }
+    // right
+    if tile_bo.0.x < tile_mvs.cols() - w {
+      add_cand(
+        &mut predictors,
+        tile_mvs[tile_bo.0.y + clipped_half_h][tile_bo.0.x + w],
+      );
+    }
+    // bottom
+    if tile_bo.0.y < tile_mvs.rows() - h {
+      add_cand(
+        &mut predictors,
+        tile_mvs[tile_bo.0.y + h][tile_bo.0.x + clipped_half_w],
+      );
+    }
   }
 
   // EPZS subset C predictors.
@@ -240,6 +242,7 @@ pub fn motion_estimation<T: Pixel>(
         mvy_max,
         bsize,
         ref_frame,
+        false,
       );
 
       let use_satd: bool = fi.config.speed_settings.use_satd_subpel;
@@ -357,6 +360,7 @@ pub fn estimate_motion<T: Pixel>(
       mvy_max,
       bsize,
       ref_frame,
+      true,
     );
 
     Some(MotionVector { row: best_mv.row, col: best_mv.col })
@@ -370,7 +374,7 @@ fn full_pixel_me<T: Pixel>(
   org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
   lambda: u32, cmvs: ArrayVec<[MotionVector; 7]>, pmv: [MotionVector; 2],
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
-  bsize: BlockSize, ref_frame: RefType,
+  bsize: BlockSize, ref_frame: RefType, est: bool
 ) -> MVSearchResult {
   let tile_mvs = &ts.mvs[ref_frame.to_index()].as_const();
   let frame_ref =
@@ -382,6 +386,7 @@ fn full_pixel_me<T: Pixel>(
     frame_ref,
     ref_frame.to_index(),
     bsize,
+    est,
   );
 
   let frame_bo = ts.to_frame_block_offset(tile_bo);
@@ -454,6 +459,7 @@ fn me_ss2<T: Pixel>(
     frame_ref,
     ref_frame.to_index(),
     bsize,
+    false
   );
 
   for predictor in &mut predictors {
