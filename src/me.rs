@@ -486,7 +486,7 @@ fn full_pixel_me_alt<T: Pixel>(
     }
   };
 
-  if false {
+  if !can_full_search {
     let allmvs: ArrayVec<[MotionVector; 11]> = subsets
       .median
       .into_iter()
@@ -516,7 +516,7 @@ fn full_pixel_me_alt<T: Pixel>(
       return best;
     }
 
-    if can_full_search {
+    {
       let range_x = 192 * fi.me_range_scale as isize >> ssdec;
       let range_y = 64 * fi.me_range_scale as isize >> ssdec;
       let x_lo = po.x + (-range_x).max(mvx_min / 8);
@@ -544,8 +544,6 @@ fn full_pixel_me_alt<T: Pixel>(
       } else {
         best
       }
-    } else {
-      best
     }
   }
 }
