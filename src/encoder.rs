@@ -3264,13 +3264,7 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
               // also receive the 32×32 motion vectors from neighboring 64×64
               // blocks, even though not directly adjacent; same with middle
               // two columns.
-              let covering_half_res = match (x, y) {
-                (0..=1, 0..=1) => (half_res_pmvs_this_block[1][r]),
-                (2..=3, 0..=1) => (half_res_pmvs_this_block[2][r]),
-                (0..=1, 2..=3) => (half_res_pmvs_this_block[3][r]),
-                (2..=3, 2..=3) => (half_res_pmvs_this_block[4][r]),
-                _ => unreachable!(),
-              };
+              let covering_half_res = None;
 
               let (vertical_candidate_1, vertical_candidate_2) = match (x, y) {
                 (0..=1, 0) => (pmvs_n[0][r], pmvs_n[3][r]),
