@@ -3267,8 +3267,8 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
               let covering_half_res = None;
 
               let (vertical_candidate_1, vertical_candidate_2) = match (x, y) {
-                (0..=1, 0) => (None, pmvs_n[3][r]),
-                (2..=3, 0) => (None, pmvs_n[4][r]),
+                (0..=1, 0) => (pmvs_n[0][r], None),
+                (2..=3, 0) => (pmvs_n[0][r], None),
                 (0..=1, 1) => (pmvs_n[3][r], None),
                 (2..=3, 1) => (pmvs_n[4][r], None),
                 (0..=1, 2) => (pmvs_s[1][r], half_res_pmvs_this_block[1][r]),
@@ -3280,8 +3280,8 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
 
               let (horizontal_candidate_1, horizontal_candidate_2) =
                 match (x, y) {
-                  (0, 0..=1) => (None, pmvs_w[2][r]),
-                  (0, 2..=3) => (None, pmvs_w[4][r]),
+                  (0, 0..=1) => (pmvs_w[0][r], None),
+                  (0, 2..=3) => (pmvs_w[0][r], None),
                   (1, 0..=1) => (pmvs_w[2][r], None),
                   (1, 2..=3) => (pmvs_w[4][r], None),
                   (2, 0..=1) => (pmvs_e[1][r], half_res_pmvs_this_block[1][r]),
