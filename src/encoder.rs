@@ -3273,8 +3273,8 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
                 (2..=3, 1) => (pmvs_n[4][r], half_res_pmvs_this_block[4][r]),
                 (0..=1, 2) => (pmvs_s[1][r], half_res_pmvs_this_block[1][r]),
                 (2..=3, 2) => (pmvs_s[2][r], half_res_pmvs_this_block[2][r]),
-                (0..=1, 3) => (pmvs_s[0][r], pmvs_s[1][r]),
-                (2..=3, 3) => (pmvs_s[0][r], pmvs_s[2][r]),
+                (0..=1, 3) => (pmvs_s[0][r], None),
+                (2..=3, 3) => (pmvs_s[0][r], None),
                 _ => unreachable!(),
               };
 
@@ -3286,8 +3286,8 @@ pub(crate) fn build_full_res_pmvs<T: Pixel>(
                   (1, 2..=3) => (pmvs_w[4][r], half_res_pmvs_this_block[4][r]),
                   (2, 0..=1) => (pmvs_e[1][r], half_res_pmvs_this_block[1][r]),
                   (2, 2..=3) => (pmvs_e[3][r], half_res_pmvs_this_block[3][r]),
-                  (3, 0..=1) => (pmvs_e[0][r], pmvs_e[2][r]),
-                  (3, 2..=3) => (pmvs_e[0][r], pmvs_e[4][r]),
+                  (3, 0..=1) => (pmvs_e[0][r], None),
+                  (3, 2..=3) => (pmvs_e[0][r], None),
                   _ => unreachable!(),
                 };
 
