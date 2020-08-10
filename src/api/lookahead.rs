@@ -195,8 +195,8 @@ fn compute_motion_vectors_per_tile<T: Pixel>(
   }
 
   // Compute the full-resolution motion vectors.
-  for sby in (0..ts.sb_height).rev() {
-    for sbx in (0..ts.sb_width).rev() {
+  for sby in 0..ts.sb_height {
+    for sbx in 0..ts.sb_width {
       let tile_sbo = TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby });
       build_full_res_pmvs(fi, ts, tile_sbo, &half_res_pmvs);
     }
