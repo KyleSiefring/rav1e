@@ -427,6 +427,7 @@ fn get_subset_predictors_alt<T: Pixel>(
     }
   };
 
+  /*
   // right
   match corner {
     BlockCorner::NE | BlockCorner::SE => {
@@ -435,13 +436,6 @@ fn get_subset_predictors_alt<T: Pixel>(
           tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + w],
         ));
       }
-    }
-    BlockCorner::NW | BlockCorner::SW => {
-      /*if tile_bo.0.x < tile_me_stats.cols() - (w << 1) {
-        subset_b.push(process_cand(
-          tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w << 1)],
-        ));
-      }*/
     }
     _ => {}
   }
@@ -455,15 +449,9 @@ fn get_subset_predictors_alt<T: Pixel>(
         ));
       }
     }
-    BlockCorner::NW | BlockCorner::NE => {
-      /*if tile_bo.0.y < tile_me_stats.rows() - (h << 1) {
-        subset_b.push(process_cand(
-          tile_me_stats[tile_bo.0.y + (h << 1)][tile_bo.0.x + (w >> 1)],
-        ));
-      }*/
-    }
     _ => {}
   }
+  */
 
   // left
   if tile_bo.0.x > 0 {
@@ -476,6 +464,11 @@ fn get_subset_predictors_alt<T: Pixel>(
     subset_b.push(process_cand(
       tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + (w >> 1)],
     ));
+
+    // top right
+    if tile_bo.0.x < tile_me_stats.cols() - w {
+      subset_b.push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
+    }
   }
 
   let median = if corner != BlockCorner::INIT {
@@ -483,12 +476,6 @@ fn get_subset_predictors_alt<T: Pixel>(
       tile_me_stats[tile_bo.0.y + (h >> 1)][tile_bo.0.x + (w >> 1)],
     ))
   } else {
-    // top right
-    if tile_bo.0.y > 0 && tile_bo.0.x < tile_me_stats.cols() - w {
-      subset_b
-        .push(process_cand(tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + w]));
-    }
-
     if subset_b.len() < 3 {
       None
     } else {
