@@ -629,7 +629,8 @@ fn full_pixel_me<T: Pixel>(
       mvy_max,
       bsize,
     );
-    fullpel_diamond_me_search(
+    hexagon_search(
+    //fullpel_diamond_me_search(
       fi,
       po,
       org_region,
@@ -769,6 +770,40 @@ fn get_best_predictor<T: Pixel>(
   best
 }
 
+fn best_pattern<T: Pixel>(
+  fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
+  p_ref: &Plane<T>, bit_depth: usize, center: MotionVector,
+  pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
+  mvy_min: isize, mvy_max: isize, bsize: BlockSize, pattern: &[(i16, i16)]
+) -> FullpelSearchResult {
+  let mut best: FullpelSearchResult = FullpelSearchResult {
+    mv: MotionVector::default(),
+    sad: u32::MAX,
+    cost: u64::MAX,
+  };
+
+  for p in pattern.iter() {
+    let cand_mv = MotionVector {
+      row: center.row + (p.0 << 3),
+      col: center.col + (p.1 << 3),
+    };
+
+    let rd_cost = get_fullpel_mv_rd_cost(
+      fi, po, org_region, p_ref, bit_depth, pmv, lambda, false, mvx_min,
+      mvx_max, mvy_min, mvy_max, bsize, cand_mv,
+    );
+
+    if rd_cost.0 < best.cost {
+      best.mv = cand_mv;
+      best.cost = rd_cost.0;
+      best.sad = rd_cost.1;
+    }
+  }
+
+  best
+}
+
+
 fn fullpel_diamond_me_search<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
   p_ref: &Plane<T>, center: &mut FullpelSearchResult, bit_depth: usize,
@@ -812,6 +847,65 @@ fn fullpel_diamond_me_search<T: Pixel>(
     } else {
       *center = best_diamond;
     }
+  }
+
+  assert!(center.cost < std::u64::MAX);
+}
+
+fn hexagon_search<T: Pixel>(
+  fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
+  p_ref: &Plane<T>, center: &mut FullpelSearchResult, bit_depth: usize,
+  pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
+  mvy_min: isize, mvy_max: isize, bsize: BlockSize,
+) {
+  let hex_pattern = [(2i16, 0i16), (1, 2), (-1, 2), (-2, 0), (-1, -2), (1, -2)];
+  let square_pattern = [(0i16, 1i16), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)];
+
+  loop {
+    let best_hex = best_pattern(
+      fi,
+      po,
+      org_region,
+      p_ref,
+      bit_depth,
+      center.mv,
+      pmv,
+      lambda,
+      mvx_min,
+      mvx_max,
+      mvy_min,
+      mvy_max,
+      bsize,
+      &hex_pattern,
+    );
+
+
+    if center.cost <= best_hex.cost {
+      break;
+    } else {
+      *center = best_hex;
+    }
+  }
+
+  let best_square = best_pattern(
+    fi,
+    po,
+    org_region,
+    p_ref,
+    bit_depth,
+    center.mv,
+    pmv,
+    lambda,
+    mvx_min,
+    mvx_max,
+    mvy_min,
+    mvy_max,
+    bsize,
+    &square_pattern,
+  );
+
+  if center.cost > best_square.cost {
+    *center = best_square;
   }
 
   assert!(center.cost < std::u64::MAX);
