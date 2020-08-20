@@ -924,14 +924,17 @@ fn uneven_multi_hex_search<T: Pixel>(
     (-2, -3), (0, -4), (2, -3)
   ];
 
-  for i in 1..=3 {
+  let range = 3;
+
+  let center = best.mv;
+  for i in 1..=range {
     let best_hex = best_pattern(
       fi,
       po,
       org_region,
       p_ref,
       bit_depth,
-      best.mv,
+      center,
       pmv,
       lambda,
       mvx_min,
