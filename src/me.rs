@@ -629,7 +629,7 @@ fn full_pixel_me<T: Pixel>(
       mvy_max,
       bsize,
     );
-    hexagon_search(
+    uneven_multi_hex_search(
     //fullpel_diamond_me_search(
       fi,
       po,
@@ -770,40 +770,6 @@ fn get_best_predictor<T: Pixel>(
   best
 }
 
-fn best_pattern<T: Pixel>(
-  fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
-  p_ref: &Plane<T>, bit_depth: usize, center: MotionVector,
-  pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
-  mvy_min: isize, mvy_max: isize, bsize: BlockSize, pattern: &[(i16, i16)]
-) -> FullpelSearchResult {
-  let mut best: FullpelSearchResult = FullpelSearchResult {
-    mv: MotionVector::default(),
-    sad: u32::MAX,
-    cost: u64::MAX,
-  };
-
-  for p in pattern.iter() {
-    let cand_mv = MotionVector {
-      row: center.row + (p.0 << 3),
-      col: center.col + (p.1 << 3),
-    };
-
-    let rd_cost = get_fullpel_mv_rd_cost(
-      fi, po, org_region, p_ref, bit_depth, pmv, lambda, false, mvx_min,
-      mvx_max, mvy_min, mvy_max, bsize, cand_mv,
-    );
-
-    if rd_cost.0 < best.cost {
-      best.mv = cand_mv;
-      best.cost = rd_cost.0;
-      best.sad = rd_cost.1;
-    }
-  }
-
-  best
-}
-
-
 fn fullpel_diamond_me_search<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
   p_ref: &Plane<T>, center: &mut FullpelSearchResult, bit_depth: usize,
@@ -852,6 +818,39 @@ fn fullpel_diamond_me_search<T: Pixel>(
   assert!(center.cost < std::u64::MAX);
 }
 
+fn best_pattern<T: Pixel>(
+  fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
+  p_ref: &Plane<T>, bit_depth: usize, center: MotionVector,
+  pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
+  mvy_min: isize, mvy_max: isize, bsize: BlockSize, pattern: &[(i16, i16)], scale: i16
+) -> FullpelSearchResult {
+  let mut best: FullpelSearchResult = FullpelSearchResult {
+    mv: MotionVector::default(),
+    sad: u32::MAX,
+    cost: u64::MAX,
+  };
+
+  for p in pattern.iter() {
+    let cand_mv = MotionVector {
+      row: center.row + (p.0 << 3) * scale,
+      col: center.col + (p.1 << 3) * scale,
+    };
+
+    let rd_cost = get_fullpel_mv_rd_cost(
+      fi, po, org_region, p_ref, bit_depth, pmv, lambda, false, mvx_min,
+      mvx_max, mvy_min, mvy_max, bsize, cand_mv,
+    );
+
+    if rd_cost.0 < best.cost {
+      best.mv = cand_mv;
+      best.cost = rd_cost.0;
+      best.sad = rd_cost.1;
+    }
+  }
+
+  best
+}
+
 fn hexagon_search<T: Pixel>(
   fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
   p_ref: &Plane<T>, center: &mut FullpelSearchResult, bit_depth: usize,
@@ -877,8 +876,8 @@ fn hexagon_search<T: Pixel>(
       mvy_max,
       bsize,
       &hex_pattern,
+      1
     );
-
 
     if center.cost <= best_hex.cost {
       break;
@@ -902,6 +901,7 @@ fn hexagon_search<T: Pixel>(
     mvy_max,
     bsize,
     &square_pattern,
+    1
   );
 
   if center.cost > best_square.cost {
@@ -909,6 +909,60 @@ fn hexagon_search<T: Pixel>(
   }
 
   assert!(center.cost < std::u64::MAX);
+}
+
+fn uneven_multi_hex_search<T: Pixel>(
+  fi: &FrameInvariants<T>, po: PlaneOffset, org_region: &PlaneRegion<T>,
+  p_ref: &Plane<T>, best: &mut FullpelSearchResult, bit_depth: usize,
+  pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
+  mvy_min: isize, mvy_max: isize, bsize: BlockSize,
+) {
+  let multihex_pattern = [
+    (4, -2), (4, -1), (4, 0), (4, 1), (4, 2),
+    (2, 3), (0, 4), (-2, 3),
+    (-4, 2), (-4, 1), (-4, 0), (-4, -1), (-4, -2),
+    (-2, -3), (0, -4), (2, -3)
+  ];
+
+  for i in 1..=3 {
+    let best_hex = best_pattern(
+      fi,
+      po,
+      org_region,
+      p_ref,
+      bit_depth,
+      best.mv,
+      pmv,
+      lambda,
+      mvx_min,
+      mvx_max,
+      mvy_min,
+      mvy_max,
+      bsize,
+      &multihex_pattern,
+      i
+    );
+
+    if best.cost > best_hex.cost {
+      *best = best_hex;
+    }
+  }
+
+  hexagon_search(
+    fi,
+    po,
+    org_region,
+    p_ref,
+    best,
+    bit_depth,
+    pmv,
+    lambda,
+    mvx_min,
+    mvx_max,
+    mvy_min,
+    mvy_max,
+    bsize,
+  );
 }
 
 fn subpel_diamond_me_search<T: Pixel>(
