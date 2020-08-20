@@ -917,6 +917,8 @@ fn uneven_multi_hex_search<T: Pixel>(
   pmv: [MotionVector; 2], lambda: u32, mvx_min: isize, mvx_max: isize,
   mvy_min: isize, mvy_max: isize, bsize: BlockSize,
 ) {
+  let cross_pattern = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
   let multihex_pattern = [
     (4, -2), (4, -1), (4, 0), (4, 1), (4, 2),
     (2, 3), (0, 4), (-2, 3),
@@ -924,10 +926,36 @@ fn uneven_multi_hex_search<T: Pixel>(
     (-2, -3), (0, -4), (2, -3)
   ];
 
-  let range = 3;
+  let range = 12;
 
   let center = best.mv;
-  for i in 1..=range {
+  // even cross for now
+  for i in (1..=range).step_by(2) {
+    let best_cand = best_pattern(
+      fi,
+      po,
+      org_region,
+      p_ref,
+      bit_depth,
+      center,
+      pmv,
+      lambda,
+      mvx_min,
+      mvx_max,
+      mvy_min,
+      mvy_max,
+      bsize,
+      &cross_pattern,
+      i
+    );
+
+    if best.cost > best_cand.cost {
+      *best = best_cand;
+    }
+  }
+
+  let center = best.mv;
+  for i in 1..=(range >> 2) {
     let best_hex = best_pattern(
       fi,
       po,
