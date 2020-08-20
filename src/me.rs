@@ -954,6 +954,37 @@ fn uneven_multi_hex_search<T: Pixel>(
     }
   }
 
+  // Fill remain square candidates out
+  let square_pattern = [
+    (2, 0), (0, 2), (-2, 0), (0, -2),
+    (1, 1), (-1, 1), (-1, -1), (1, -1),
+    (2, 1), (-2, 1), (-2, -1), (2, -1),
+    (1, 2), (-1, 2), (-1, -2), (1, -2),
+  ];
+
+  let center = best.mv;
+  let best_cand = best_pattern(
+    fi,
+    po,
+    org_region,
+    p_ref,
+    bit_depth,
+    center,
+    pmv,
+    lambda,
+    mvx_min,
+    mvx_max,
+    mvy_min,
+    mvy_max,
+    bsize,
+    &square_pattern,
+    1
+  );
+
+  if best.cost > best_cand.cost {
+    *best = best_cand;
+  }
+
   let center = best.mv;
   for i in 1..=(range >> 2) {
     let best_hex = best_pattern(
