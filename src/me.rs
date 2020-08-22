@@ -926,7 +926,7 @@ fn uneven_multi_hex_search<T: Pixel>(
     (-2, -3), (0, -4), (2, -3)
   ];
 
-  let range = 24;
+  let range = 192 * fi.me_range_scale as i16;
 
   let center = best.mv;
   // even cross for now
