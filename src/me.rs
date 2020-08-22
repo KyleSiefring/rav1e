@@ -629,8 +629,8 @@ fn full_pixel_me<T: Pixel>(
       mvy_max,
       bsize,
     );
-    uneven_multi_hex_search(
-    //fullpel_diamond_me_search(
+    //uneven_multi_hex_search(
+    fullpel_diamond_me_search(
       fi,
       po,
       org_region,
@@ -686,7 +686,7 @@ fn full_pixel_me<T: Pixel>(
     }
 
     {
-      let range_x = 192 * fi.me_range_scale as isize >> ssdec;
+      /*let range_x = 192 * fi.me_range_scale as isize >> ssdec;
       let range_y = 64 * fi.me_range_scale as isize >> ssdec;
       let x_lo = po.x + (-range_x).max(mvx_min / 8);
       let x_hi = po.x + (range_x).min(mvx_max / 8);
@@ -706,13 +706,24 @@ fn full_pixel_me<T: Pixel>(
         4 >> ssdec,
         lambda,
         [MotionVector::default(); 2],
+      );*/
+      uneven_multi_hex_search(
+        fi,
+        po,
+        org_region,
+        p_ref,
+        &mut best,
+        fi.sequence.bit_depth,
+        pmv,
+        lambda,
+        mvx_min,
+        mvx_max,
+        mvy_min,
+        mvy_max,
+        bsize
       );
 
-      if results.cost < best.cost {
-        results
-      } else {
-        best
-      }
+      best
     }
   }
 }
