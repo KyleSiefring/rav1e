@@ -34,12 +34,13 @@ use crate::hawktracer::*;
 #[derive(Debug, Copy, Clone)]
 pub struct MEStats {
   pub mv: MotionVector,
-  pub sad: u32,
+  /// sad value, on the scale of a 128x128 block
+  pub normalized_sad: u32,
 }
 
 impl Default for MEStats {
   fn default() -> Self {
-    Self { mv: MotionVector::default(), sad: 0 }
+    Self { mv: MotionVector::default(), normalized_sad: 0 }
   }
 }
 
@@ -89,13 +90,10 @@ struct FullpelSearchResult {
   sad: u32,
 }
 
-#[derive(Eq, PartialEq)]
-enum BlockCorner {
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum MVSamplingMode {
   INIT,
-  NW,
-  NE,
-  SW,
-  SE,
+  CORNER { right: bool, bottom: bool },
 }
 
 #[hawktracer(estimate_tile_motion)]
@@ -106,6 +104,14 @@ pub fn estimate_tile_motion<T: Pixel>(
   let init_size = MIB_SIZE_LOG2;
   for mv_size_log2 in (2..=init_size).rev() {
     let init = mv_size_log2 == init_size;
+
+    // Choose subsampling. Pass one is quarter res and pass two is at half res.
+    let ssdec = match init_size - mv_size_log2 {
+      0 => 2,
+      1 => 1,
+      _ => 0,
+    };
+
     for sby in 0..ts.sb_height {
       for sbx in 0..ts.sb_width {
         let mut tested_frames_flags = 0;
@@ -116,7 +122,7 @@ pub fn estimate_tile_motion<T: Pixel>(
           }
           tested_frames_flags |= frame_flag;
 
-          estimate_square_block_motion(
+          estimate_sb_motion(
             fi,
             ts,
             ref_frame,
@@ -124,6 +130,7 @@ pub fn estimate_tile_motion<T: Pixel>(
             TileSuperBlockOffset(SuperBlockOffset { x: sbx, y: sby })
               .block_offset(0, 0),
             init,
+            ssdec,
           );
         }
       }
@@ -131,73 +138,77 @@ pub fn estimate_tile_motion<T: Pixel>(
   }
 }
 
-fn estimate_square_block_motion<T: Pixel>(
+fn estimate_sb_motion<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>, ref_frame: RefType,
-  mut mv_size_log2: usize, tile_bo: TileBlockOffset, init: bool,
+  mut mv_size_log2: usize, tile_bo: TileBlockOffset, init: bool, ssdec: u8,
 ) {
   let size_mi = MIB_SIZE;
   let h_in_b: usize = size_mi.min(ts.mi_height - tile_bo.0.y);
   let w_in_b: usize = size_mi.min(ts.mi_width - tile_bo.0.x);
   let mut edge_mode = false;
+
+  // Check for edge of the frame where size_mi doesn't fit neatly.
   let horz_edge = h_in_b != size_mi;
   let vert_edge = w_in_b != size_mi;
 
   loop {
     let mv_size = 1 << mv_size_log2;
-    // Stop at 16x16 blocks when not on edge. Partition on edge.
     let bsize = BlockSize::from_width_and_height(
       mv_size << MI_SIZE_LOG2,
       mv_size << MI_SIZE_LOG2,
     );
 
-    let ssdec = if init {
-      2
-    } else if mv_size >= 32 >> MI_SIZE_LOG2 {
-      1
-    } else {
-      0
-    }
-    .min(mv_size_log2) as u8;
+    // Clip subsampling to ensure sad is computed in chunk of 4x4 and up.
+    let ssdec = ssdec.min(mv_size_log2 as u8);
 
+    // Skip rows that have already been processed.
     let y_start = if !(edge_mode && horz_edge) {
       0
     } else {
       h_in_b & (!0 << mv_size_log2 << 1)
     };
-    let x_start = if !(edge_mode && vert_edge) {
-      0
-    } else {
-      w_in_b & (!0 << mv_size_log2 << 1)
-    };
 
-    for y in
-      (y_start as isize..=h_in_b as isize - mv_size as isize).step_by(mv_size)
+    // Process in blocks, excluding regions that cannot fit evenly into a block.
+    // Will either process starting at the first block or only on the edges.
+    for y in (
+      // Don't skip the vertical edge.
+      if vert_edge { 0 } else { y_start as isize }
+      ..=h_in_b as isize - mv_size as isize)
+      .step_by(mv_size)
     {
+      // Process unprocessed columns and the horizontal edge.
+      let x_start = if !(edge_mode && vert_edge) || y as usize > y_start {
+        0
+      } else {
+        w_in_b & (!0 << mv_size_log2 << 1)
+      };
+
       for x in (x_start as isize..=w_in_b as isize - mv_size as isize)
         .step_by(mv_size)
       {
-        let corner: BlockCorner = match (
-          init,
-          y as usize & mv_size == mv_size,
-          x as usize & mv_size == mv_size,
-        ) {
-          (true, _, _) => BlockCorner::INIT,
-          (_, false, false) => BlockCorner::NW,
-          (_, false, true) => BlockCorner::NE,
-          (_, true, false) => BlockCorner::SW,
-          (_, true, true) => BlockCorner::SE,
+        let corner: MVSamplingMode = if init {
+          MVSamplingMode::INIT
+        } else {
+          // Processing the block a size up produces data that can be used by
+          // the right and bottom corners.
+          MVSamplingMode::CORNER {
+            right: x as usize & mv_size == mv_size,
+            bottom: y as usize & mv_size == mv_size,
+          }
         };
+
         let sub_bo = tile_bo.with_offset(x, y);
         if let Some(results) = estimate_motion(
           fi, ts, bsize, sub_bo, ref_frame, corner, init, ssdec,
         ) {
+          // normalize sad to 128x128 block
           let sad = results.sad << ((MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2);
           save_me_stats(
             ts,
             bsize,
             sub_bo,
             ref_frame,
-            MEStats { mv: results.mv, sad },
+            MEStats { mv: results.mv, normalized_sad: sad },
           );
         }
       }
@@ -276,8 +287,11 @@ fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, tile_me_stats: &TileMEStats<'_>,
   frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize,
   bsize: BlockSize, mvx_min: isize, mvx_max: isize, mvy_min: isize,
-  mvy_max: isize, corner: BlockCorner, ssdec: u8,
+  mvy_max: isize, conf: &FullpelConfig,
 ) -> MotionEstimationSubsets {
+  let corner = conf.corner;
+  let ssdec = conf.ssdec;
+
   let mut min_sad: u32 = u32::MAX;
   let mut subset_b = ArrayVec::<[MotionVector; 5]>::new();
   let mut subset_c = ArrayVec::<[MotionVector; 5]>::new();
@@ -290,7 +304,7 @@ fn get_subset_predictors<T: Pixel>(
   let clipped_half_h = (h >> 1).min(tile_me_stats.rows() - 1 - tile_bo.0.y);
 
   let mut process_cand = |stats: MEStats| -> MotionVector {
-    min_sad = min_sad.min(stats.sad);
+    min_sad = min_sad.min(stats.normalized_sad);
     let mv = stats.mv.quantize_to_fullpel();
     MotionVector {
       col: clamp(mv.col as isize, mvx_min, mvx_max) as i16,
@@ -298,7 +312,7 @@ fn get_subset_predictors<T: Pixel>(
     }
   };
 
-  // Sample the middle of all blocks edges bordering this one.
+  // Sample the middle of all block edges bordering this one.
   // Note: If motion vectors haven't been precomputed to a given blocksize, then
   // the right and bottom edges will be duplicates of the center predictor when
   // processing in raster order.
@@ -315,9 +329,14 @@ fn get_subset_predictors<T: Pixel>(
       tile_me_stats[tile_bo.0.y - 1][tile_bo.0.x + clipped_half_w],
     ));
   }
+
+  // I tried sampling far right and far bottom edges, but this had worse results
+  // without an extensive threshold test (with threshold being applied after
+  // checking median and the best of each subset).
+
   // right
   match corner {
-    BlockCorner::NE | BlockCorner::SE => {
+    MVSamplingMode::CORNER { right: true, bottom: _ } => {
       if tile_bo.0.x + w < tile_me_stats.cols() {
         subset_b.push(process_cand(
           tile_me_stats[tile_bo.0.y + clipped_half_h][tile_bo.0.x + w],
@@ -328,7 +347,7 @@ fn get_subset_predictors<T: Pixel>(
   }
   // bottom
   match corner {
-    BlockCorner::SW | BlockCorner::SE => {
+    MVSamplingMode::CORNER { right: _, bottom: true } => {
       if tile_bo.0.y + h < tile_me_stats.rows() {
         subset_b.push(process_cand(
           tile_me_stats[tile_bo.0.y + h][tile_bo.0.x + clipped_half_w],
@@ -338,7 +357,7 @@ fn get_subset_predictors<T: Pixel>(
     _ => {}
   }
 
-  let median = if corner != BlockCorner::INIT {
+  let median = if corner != MVSamplingMode::INIT {
     // Sample the center of the current block.
     Some(process_cand(
       tile_me_stats[tile_bo.0.y + clipped_half_h]
@@ -404,6 +423,7 @@ fn get_subset_predictors<T: Pixel>(
     ));
   }
 
+  // Undo normalization to 128x128 block size
   let min_sad = min_sad
     >> (MAX_MIB_SIZE_LOG2 * 2
       - (bsize.width_mi_log2() + bsize.height_mi_log2() + ssdec as usize * 2));
@@ -455,16 +475,13 @@ pub fn motion_estimation<T: Pixel>(
         po,
         lambda,
         pmv,
+        bsize,
         mvx_min,
         mvx_max,
         mvy_min,
         mvy_max,
-        bsize,
         ref_frame,
-        // TODO: Confusing, Make gooderer before commiting
-        BlockCorner::SE,
-        false,
-        0,
+        &FullpelConfig::create_motion_estimation_config(),
       );
 
       let sad = best.sad;
@@ -506,7 +523,7 @@ pub fn motion_estimation<T: Pixel>(
 
 fn estimate_motion<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>, bsize: BlockSize,
-  tile_bo: TileBlockOffset, ref_frame: RefType, corner: BlockCorner,
+  tile_bo: TileBlockOffset, ref_frame: RefType, corner: MVSamplingMode,
   can_full_search: bool, ssdec: u8,
 ) -> Option<FullpelSearchResult> {
   if let Some(ref rec) =
@@ -557,15 +574,13 @@ fn estimate_motion<T: Pixel>(
       po,
       lambda,
       global_mv,
+      bsize,
       mvx_min,
       mvx_max,
       mvy_min,
       mvy_max,
-      bsize,
       ref_frame,
-      corner,
-      can_full_search,
-      ssdec,
+      &FullpelConfig { corner, can_full_search, ssdec },
     );
 
     results.sad <<= ssdec * 2;
@@ -580,13 +595,32 @@ fn estimate_motion<T: Pixel>(
   }
 }
 
+struct FullpelConfig {
+  corner: MVSamplingMode,
+  can_full_search: bool,
+  ssdec: u8,
+}
+
+impl FullpelConfig {
+  /// Configuration for motion estimation with full search and sub-sampling disabled.
+  fn create_motion_estimation_config() -> Self {
+    FullpelConfig {
+      corner: MVSamplingMode::CORNER { right: true, bottom: true },
+      can_full_search: false,
+      ssdec: 0,
+    }
+  }
+}
+
 fn full_pixel_me<T: Pixel>(
   fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>,
   org_region: &PlaneRegion<T>, p_ref: &Plane<T>, tile_bo: TileBlockOffset,
-  po: PlaneOffset, lambda: u32, pmv: [MotionVector; 2], mvx_min: isize,
-  mvx_max: isize, mvy_min: isize, mvy_max: isize, bsize: BlockSize,
-  ref_frame: RefType, corner: BlockCorner, can_full_search: bool, ssdec: u8,
+  po: PlaneOffset, lambda: u32, pmv: [MotionVector; 2], bsize: BlockSize,
+  mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
+  ref_frame: RefType, conf: &FullpelConfig,
 ) -> FullpelSearchResult {
+  let ssdec = conf.ssdec;
+
   let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
   let frame_ref =
     fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
@@ -600,8 +634,7 @@ fn full_pixel_me<T: Pixel>(
     mvx_max,
     mvy_min,
     mvy_max,
-    corner,
-    ssdec,
+    conf,
   );
 
   let mut best = FullpelSearchResult {
@@ -648,7 +681,7 @@ fn full_pixel_me<T: Pixel>(
     }
   };
 
-  if !can_full_search {
+  if !conf.can_full_search {
     try_cands(&subsets.all_mvs(), &mut best);
     best
   } else {

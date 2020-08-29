@@ -903,7 +903,6 @@ impl<T: Pixel> ContextInner<T> {
                   // units.
                   let reference_x =
                     x as i64 * IMP_BLOCK_SIZE_IN_MV_UNITS + mv.col as i64;
-
                   let reference_y =
                     y as i64 * IMP_BLOCK_SIZE_IN_MV_UNITS + mv.row as i64;
 
