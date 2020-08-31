@@ -177,7 +177,7 @@ fn estimate_sb_motion<T: Pixel>(
       .step_by(mv_size)
     {
       // Process unprocessed columns and the horizontal edge.
-      let x_start = if !(edge_mode && vert_edge) || y as usize > y_start {
+      let x_start = if !(edge_mode && vert_edge) || y as usize >= y_start {
         0
       } else {
         w_in_b & (!0 << mv_size_log2 << 1)
