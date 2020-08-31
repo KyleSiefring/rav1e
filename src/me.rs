@@ -330,7 +330,7 @@ fn get_subset_predictors<T: Pixel>(
     ));
   }
 
-  // I tried sampling far right and far bottom edges, but this had worse results
+  // Sampling far right and far bottom edges was tested, but had worse results
   // without an extensive threshold test (with threshold being applied after
   // checking median and the best of each subset).
 
