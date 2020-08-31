@@ -336,26 +336,20 @@ fn get_subset_predictors<T: Pixel>(
   // checking median and the best of each subset).
 
   // right
-  match corner {
-    MVSamplingMode::CORNER { right: true, bottom: _ } => {
-      if tile_bo.0.x + w < tile_me_stats.cols() {
-        subset_b.push(process_cand(
-          tile_me_stats[tile_bo.0.y + clipped_half_h][tile_bo.0.x + w],
-        ));
-      }
+  if let MVSamplingMode::CORNER { right: true, bottom: _ } = corner {
+    if tile_bo.0.x + w < tile_me_stats.cols() {
+      subset_b.push(process_cand(
+        tile_me_stats[tile_bo.0.y + clipped_half_h][tile_bo.0.x + w],
+      ));
     }
-    _ => {}
   }
   // bottom
-  match corner {
-    MVSamplingMode::CORNER { right: _, bottom: true } => {
-      if tile_bo.0.y + h < tile_me_stats.rows() {
-        subset_b.push(process_cand(
-          tile_me_stats[tile_bo.0.y + h][tile_bo.0.x + clipped_half_w],
-        ));
-      }
+  if let MVSamplingMode::CORNER { right: _, bottom: true } = corner {
+    if tile_bo.0.y + h < tile_me_stats.rows() {
+      subset_b.push(process_cand(
+        tile_me_stats[tile_bo.0.y + h][tile_bo.0.x + clipped_half_w],
+      ));
     }
-    _ => {}
   }
 
   let median = if corner != MVSamplingMode::INIT {
