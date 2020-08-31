@@ -173,7 +173,8 @@ fn estimate_sb_motion<T: Pixel>(
     for y in (
       // Don't skip the vertical edge.
       if vert_edge { 0 } else { y_start as isize }
-      ..=h_in_b as isize - mv_size as isize)
+        ..=h_in_b as isize - mv_size as isize
+    )
       .step_by(mv_size)
     {
       // Process unprocessed columns and the horizontal edge.
