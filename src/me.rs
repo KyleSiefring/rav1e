@@ -36,11 +36,12 @@ pub struct MEStats {
   pub mv: MotionVector,
   /// sad value, on the scale of a 128x128 block
   pub normalized_sad: u32,
+  pub ref_dist: i32,
 }
 
 impl Default for MEStats {
   fn default() -> Self {
-    Self { mv: MotionVector::default(), normalized_sad: 0 }
+    Self { mv: MotionVector::default(), normalized_sad: 0, ref_dist: 1 }
   }
 }
 
@@ -204,12 +205,18 @@ fn estimate_sb_motion<T: Pixel>(
         ) {
           // normalize sad to 128x128 block
           let sad = results.sad << ((MAX_MIB_SIZE_LOG2 - mv_size_log2) * 2);
+
+          let ref_dist: i32 = fi.sequence.get_relative_dist(
+            fi.order_hint,
+            fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize].as_ref().unwrap().order_hint
+          );
+
           save_me_stats(
             ts,
             bsize,
             sub_bo,
             ref_frame,
-            MEStats { mv: results.mv, normalized_sad: sad },
+            MEStats { mv: results.mv, normalized_sad: sad, ref_dist},
           );
         }
       }
@@ -286,7 +293,7 @@ impl MotionEstimationSubsets {
 
 fn get_subset_predictors<T: Pixel>(
   tile_bo: TileBlockOffset, tile_me_stats: &TileMEStats<'_>,
-  frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize,
+  frame_ref_opt: Option<&ReferenceFrame<T>>, ref_frame_id: usize, ref_dist: i32,
   bsize: BlockSize, mvx_min: isize, mvx_max: isize, mvy_min: isize,
   mvy_max: isize, conf: &FullpelConfig,
 ) -> MotionEstimationSubsets {
@@ -380,6 +387,19 @@ fn get_subset_predictors<T: Pixel>(
 
   if let Some(frame_ref) = frame_ref_opt {
     let prev_frame = &frame_ref.frame_me_stats[ref_frame_id];
+
+    let mut process_cand = |stats: MEStats| -> MotionVector {
+      min_sad = min_sad.min(stats.normalized_sad);
+      let mv = stats.mv;
+
+      // TODO: Currently keeping old behavior for matching distances. Simplify later.
+      let rnd = if ref_dist == stats.ref_dist { 0 } else { 4 };
+
+      MotionVector {
+        col: clamp((mv.col as i32 * ref_dist as i32 / stats.ref_dist as i32 + rnd) / 8 * 8, mvx_min as i32, mvx_max as i32) as i16,
+        row: clamp((mv.row as i32 * ref_dist as i32 / stats.ref_dist as i32 + rnd) / 8 * 8, mvy_min as i32, mvy_max as i32) as i16,
+      }
+    };
 
     let frame_bo = PlaneBlockOffset(BlockOffset {
       x: tile_me_stats.x() + tile_bo.0.x,
@@ -619,11 +639,16 @@ fn full_pixel_me<T: Pixel>(
   let tile_me_stats = &ts.me_stats[ref_frame.to_index()].as_const();
   let frame_ref =
     fi.rec_buffer.frames[fi.ref_frames[0] as usize].as_ref().map(Arc::as_ref);
+  let ref_dist: i32 = fi.sequence.get_relative_dist(
+    fi.order_hint,
+    fi.rec_buffer.frames[fi.ref_frames[ref_frame.to_index()] as usize].as_ref().unwrap().order_hint
+  );
   let subsets = get_subset_predictors(
     tile_bo,
     tile_me_stats,
     frame_ref,
     ref_frame.to_index(),
+    ref_dist,
     bsize,
     mvx_min,
     mvx_max,
