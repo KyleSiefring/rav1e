@@ -701,10 +701,10 @@ fn full_pixel_me<T: Pixel>(
     }
   };
 
-  if !conf.can_full_search {
+  /*if !conf.can_full_search {
     try_cands(&subsets.all_mvs(), &mut best);
     best
-  } else {
+  } else */ {
     // Perform a more thorough search before resorting to full search.
     // Search the median, the best mvs of neighboring blocks, and motion vectors
     // from the previous frame. Stop once a candidate with a sad less than a
@@ -735,7 +735,7 @@ fn full_pixel_me<T: Pixel>(
       return best;
     }
 
-    {
+    if !conf.can_full_search {
       let range_x = (192 * fi.me_range_scale as isize) >> ssdec;
       let range_y = (64 * fi.me_range_scale as isize) >> ssdec;
       let x_lo = po.x + (-range_x).max(mvx_min / 8);
@@ -763,6 +763,9 @@ fn full_pixel_me<T: Pixel>(
       } else {
         best
       }
+    }
+    else {
+      best
     }
   }
 }
