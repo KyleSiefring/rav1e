@@ -735,7 +735,7 @@ fn full_pixel_me<T: Pixel>(
       return best;
     }
 
-    if !conf.can_full_search {
+    if conf.can_full_search {
       let range_x = (192 * fi.me_range_scale as isize) >> ssdec;
       let range_y = (64 * fi.me_range_scale as isize) >> ssdec;
       let x_lo = po.x + (-range_x).max(mvx_min / 8);
